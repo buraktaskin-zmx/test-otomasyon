@@ -1,0 +1,30 @@
+app: NGC
+flow: DBS Firm Invoice Inquiry
+
+navigation:
+  main_menu: "NAKİT YÖNETİMİ"
+  sub_menu: "Firma Fatura Sorgulama"
+
+fields:
+  - label: "Firma Seçimi"
+    type: dropdown
+    options:
+      - "ÇAYKUR ÇAY Online DBS"
+  - label: "Hızlı Tarih Seçimi"
+    type: dropdown
+    options:
+      - "Bu Hafta"
+  # Summary fields rendered after the inquiry runs (modularFormTable: label
+  # and value live in separate cells — read by label via the value step).
+  - label: "Firma Kodu"
+    type: text
+    verifiable: true
+  - label: "Toplam Fatura Tutarı"
+    type: amount
+    verifiable: true
+  - label: "Onaylı Tutar (TL)"
+    type: amount
+    verifiable: true
+
+# Inquiry flow: no submit buttons, no success banner — the result is the
+# populated summary fields above.
