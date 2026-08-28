@@ -1,0 +1,85 @@
+# =============================================================================
+# One orchestrator, three executors, one network.
+#
+# Only the orchestrator is published. Executors use `expose`, so they are
+# reachable on the Docker network but not from the host: if a request path
+# implies the analyst's browser calling an executor, that is a design error.
+#
+# Three replicas rather than one service with three threads. Cucumber carries
+# static state and a hung Playwright call cannot be killed from Java — the
+# recovery is `docker restart` of one executor while the other two keep
+# serving. Do not "simplify" this into a thread pool.
+# =============================================================================
+
+x-proxy: &proxy
+  HTTP_PROXY: ${HTTP_PROXY:-}
+  HTTPS_PROXY: ${HTTPS_PROXY:-}
+  # Test-environment hosts must never go through the proxy.
+  NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,executor-1,executor-2,executor-3}
+
+x-executor: &executor
+  build:
+    context: .
+    dockerfile: uptest-executor/Dockerfile
+    args:
+      BASE_IMAGE: ${EXECUTOR_BASE_IMAGE:-mcr.microsoft.com/playwright/java:v1.58.0-noble}
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      NO_PROXY: ${NO_PROXY:-}
+  image: uptest-executor:${TAG:-latest}
+  expose: ["9035"]
+  # Chromium writes shared memory here and crashes on the 64 MB default.
+  shm_size: 1gb
+  mem_limit: 2g
+  environment:
+    <<: *proxy
+    SIMULTANEOUSLYRUN: "1"
+    FEATURESFOLDER: /var/qa/runs
+    UPTEST_HEADLESS: "true"
+    UPTEST_BROWSER_CHANNEL: ""
+    UPTEST_SLOWMO: "0"
+  volumes:
+    # Same host path in both services, so results need no transfer hop.
+    - ${RUNS_DIR:-/var/qa/runs}:/var/qa/runs
+  networks: [qa-net]
+  restart: unless-stopped
+
+services:
+
+  orchestrator:
+    build:
+      context: .
+      dockerfile: uptest-orchestrator/Dockerfile
+      args:
+        BASE_IMAGE: ${ORCHESTRATOR_BASE_IMAGE:-eclipse-temurin:21-jre-noble}
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        NO_PROXY: ${NO_PROXY:-}
+    image: uptest-orchestrator:${TAG:-latest}
+    container_name: qa-orchestrator
+    ports: ["8035:8035"]
+    mem_limit: 1g
+    environment:
+      <<: *proxy
+      EXECUTORS: executor-1:9035,executor-2:9035,executor-3:9035
+    volumes:
+      - ${RUNS_DIR:-/var/qa/runs}:/var/qa/runs:ro
+    networks: [qa-net]
+    depends_on: [executor-1, executor-2, executor-3]
+    restart: unless-stopped
+
+  executor-1:
+    <<: *executor
+    container_name: qa-executor-1
+
+  executor-2:
+    <<: *executor
+    container_name: qa-executor-2
+
+  executor-3:
+    <<: *executor
+    container_name: qa-executor-3
+
+networks:
+  qa-net:
+    driver: bridge

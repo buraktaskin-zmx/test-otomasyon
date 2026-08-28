@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="tr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Test Senaryo Stüdyosu</title>
+    <!-- No CDN anywhere: corporate SSL inspection blocks outbound fetches, so
+         every asset is served from this jar. -->
+    <link rel="stylesheet" href="app.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23004587'/><path d='M9 17l4.5 4.5L23 12' stroke='white' stroke-width='3.2' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+</head>
+<body>
+
+<header class="topbar">
+    <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span class="brand-name">Test Senaryo Stüdyosu</span>
+    </div>
+
+    <nav class="tabs" role="tablist">
+        <button class="tab is-active" data-view="workspace" role="tab">Çalışma Alanı</button>
+        <button class="tab" data-view="history" role="tab">Geçmiş</button>
+    </nav>
+
+    <div class="topbar-right">
+        <button id="executorStatus" class="node-pill" type="button" title="Yenilemek için tıklayın">
+            <span class="dot dot-unknown"></span><span id="executorLabel">bağlanıyor…</span>
+        </button>
+        <button id="themeToggle" class="icon-btn" type="button" title="Tema değiştir" aria-label="Tema değiştir">◐</button>
+    </div>
+</header>
+
+<main>
+    <!-- ======================= WORKSPACE ======================= -->
+    <section id="view-workspace" class="view is-active">
+
+        <div class="pane pane-editor">
+            <div class="pane-head">
+                <h2 class="pane-title">Senaryo</h2>
+                <div class="pane-actions">
+                    <span id="validationBadge" class="badge badge-idle">denetlenmedi</span>
+                    <button id="btnValidate" class="btn btn-ghost" type="button">Doğrula</button>
+                    <button id="btnRun" class="btn btn-primary" type="button">Çalıştır</button>
+                </div>
+            </div>
+
+            <div class="editor-wrap">
+                <div id="gutter" class="gutter" aria-hidden="true"></div>
+                <textarea id="editor" class="editor" spellcheck="false" autocomplete="off"
+                          aria-label="Gherkin senaryo düzenleyici"></textarea>
+            </div>
+
+            <div id="validation" class="validation"></div>
+        </div>
+
+        <aside class="pane pane-side">
+            <div class="pane-tabs" role="tablist">
+                <button class="side-tab is-active" data-side="vocab" role="tab">Adım Sözlüğü</button>
+                <button class="side-tab" data-side="timeline" role="tab">
+                    Zaman Çizelgesi <span id="timelineDot" class="tab-dot"></span>
+                </button>
+            </div>
+
+            <div id="side-vocab" class="side-panel is-active">
+                <div class="search-row">
+                    <input id="vocabSearch" class="search" type="search" placeholder="Adım ara…"
+                           aria-label="Adım ara">
+                </div>
+                <div id="vocabList" class="vocab-list"></div>
+            </div>
+
+            <div id="side-timeline" class="side-panel">
+                <div id="runHeader" class="run-header run-header-empty">
+                    Henüz çalıştırılmadı.
+                </div>
+                <ol id="timeline" class="timeline"></ol>
+                <div id="runFooter" class="run-footer"></div>
+            </div>
+        </aside>
+    </section>
+
+    <!-- ======================= HISTORY ======================= -->
+    <section id="view-history" class="view">
+        <div class="pane pane-history">
+            <div class="pane-head">
+                <h2 class="pane-title">Koşu Geçmişi</h2>
+                <div class="pane-actions">
+                    <div class="filters" id="historyFilters">
+                        <button class="chip is-active" data-filter="ALL">Tümü</button>
+                        <button class="chip" data-filter="RUNNING">Çalışıyor</button>
+                        <button class="chip" data-filter="DONE">Başarılı</button>
+                        <button class="chip" data-filter="FAILED">Başarısız</button>
+                    </div>
+                    <button id="btnRefreshHistory" class="btn btn-ghost" type="button">Yenile</button>
+                </div>
+            </div>
+            <div id="historyBody" class="history-body"></div>
+        </div>
+    </section>
+</main>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

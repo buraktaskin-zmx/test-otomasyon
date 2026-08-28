@@ -8,6 +8,13 @@ scenarios MUST treat this as a closed grammar.
 > step definitions (`CommonSteps`, `NGCSteps`, `NGISteps`). If a step is not in
 > this file, it does not exist. Do not invent steps. Do not write step
 > definitions or page-object code — only `.feature` files.
+>
+> **This file is the human-facing view; the machine-readable one is generated.**
+> The executor produces `vocabulary.json` from the `@Given/@When/@Then`
+> annotations at build time and serves it at `GET /cucumber/vocabulary`; the
+> orchestrator's validator and the LLM prompt both read that. If the two ever
+> disagree, the generated JSON is right and this file is stale — check with
+> `GET /api/v1/vocabulary` (currently 16 steps).
 
 ---
 
@@ -125,6 +132,24 @@ And select account at index {int} from {string}
 
 > Decision rule: a money/currency account field → use a `select account …` step.
 > Any other dropdown (dates, firm choice, type, etc.) → use plain `select … from`.
+
+---
+
+## Steps — Result grids (row selection)
+
+```
+And select row {string}
+And select row at index {int}
+```
+
+A result grid picks its row with a **radio button**, not a dropdown: there is no
+field label bound to it, so no `select … from` step can reach it.
+
+- `select row {string}` — pick the row containing this text. The radio's own
+  cell is matched first, then the whole row, so a value in any column works.
+  Example: `And select row "21203030786"`
+- `select row at index {int}` — pick by **0-based** position among the radios on
+  the page. Example: `And select row at index 0`
 
 ---
 

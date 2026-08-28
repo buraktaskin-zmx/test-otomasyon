@@ -1,0 +1,40 @@
+# Nothing enters an image unless it is named in a Dockerfile COPY, but the
+# build context is still sent to the daemon — and a secret in the context is a
+# secret one careless COPY away from shipping.
+
+# NEVER build this into an image: page objects and step variants carrying real
+# CIF numbers, user ids and passwords.
+DO_NOT_COMMIT/
+**/DO_NOT_COMMIT/
+
+# Credentials and local overrides
+*.env
+.env*
+**/application-local.properties
+**/*.p12
+**/*.jks
+**/*.pem
+**/*.key
+
+# Build output: the jars are copied explicitly by path, everything else in
+# target/ is noise that slows the context upload.
+**/target/*
+!**/target/*.jar
+
+# Run artifacts — scenario text, logs, traces from local runs
+runs/
+/var/qa/runs/
+
+# Tooling and VCS
+.git/
+.gitignore
+.idea/
+.claude/
+.mvn/
+**/*.iml
+
+# Docs and sources the runtime does not need
+*.md
+!README.md
+catalogs/
+scenarios/

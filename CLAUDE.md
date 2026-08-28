@@ -1,5 +1,6 @@
 # cucumber-uplift-test
-
+**Server side (orchestrator + executor API): see cucumber-uplift-test/src/main/java/server/CLAUDE.md.**
+This repo is the step vocabulary and page objects only.
 AI test automation for Yapı Kredi corporate internet banking (NGC).
 An LLM generates Gherkin scenarios using a fixed, human-written step
 vocabulary; it produces only `.feature` files, never step implementations.

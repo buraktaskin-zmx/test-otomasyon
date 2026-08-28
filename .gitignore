@@ -1,5 +1,21 @@
 target/
 !.mvn/wrapper/maven-wrapper.jar
+
+### Executor per-run working directories (application.properties: featuresFolder)
+runs/
+
+### Corporate CA certificates: site-specific, distributed like the VDI trust
+### bundle, not committed. See docker/certs/README.md.
+docker/certs/*.crt
+docker/certs/*.cer
+docker/certs/*.pem
+
+### Local compose overrides (proxy, registry, host paths)
+.env
+
+### Claude Code — local tooling config, per-machine, not project content
+.claude/
+.claude/**
 !**/src/main/**/target/
 !**/src/test/**/target/
 .kotlin
