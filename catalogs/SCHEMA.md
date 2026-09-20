@@ -34,8 +34,14 @@ all the generator needs to pick the correct login step pattern.
 navigation:
   main_menu: "NAKİT YÖNETİMİ"      # exact menu text
   sub_menu: "Firma Fatura Sorgulama"
+  entry_row: "FORD DBS ODEMELERI"  # optional: a result-grid row to pick first
   entry_button: "Ödeme Talep Et"   # optional: a button that opens the form
 ```
+
+`entry_row` is for flows whose sub-menu lands on a result grid rather than a
+form: the row is chosen with `select row` BEFORE `entry_button` is clicked.
+Online DBS İşlemleri works this way — the institution is picked from the grid,
+then "Fatura Oluştur" opens the form for it.
 
 ## `fields`
 
@@ -48,6 +54,19 @@ A list, in the order they appear on screen. Each entry:
 | `options` | for `dropdown` | List of exact selectable option texts. |
 | `accounts` | for `account_picker` | List of full account numbers (spacing as shown). |
 | `verifiable` | no | `true` if this field appears on a confirm/summary screen and can be asserted. Defaults to readable+writable per its type. |
+| `readonly` | no | `true` if the APPLICATION fills this field, not the scenario. Never written to, only verified. |
+| `shown_when` | no | `{field, value}` — this field only exists on screen once that field holds that value. |
+
+`shown_when` is for fields a choice reveals. On DBS Fatura Oluştur, picking
+"E-Fatura" for "Fatura Tipi" makes "E-Fatura Hash Kodu" appear and become
+required; with "Normal" it is not on the page at all, so a scenario that fills
+it hunts for a field that does not exist until it times out. A scenario either
+sets the named value AND fills the field, or does neither.
+
+`readonly` exists because a disabled input is not optional — it is not writable
+at all. On DBS Fatura Oluştur the app looks "Bayi Ünvanı" up from the chosen
+"Bayi Kodu"; a scenario that tries to type into it waits 30 s for an element
+that will never accept input, and the run is wasted.
 
 `type` maps directly to vocabulary verbs:
 

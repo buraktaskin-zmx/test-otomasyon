@@ -47,7 +47,10 @@
         pollTimer: null,
         validateTimer: null,
         historyFilter: "ALL",
-        lastErrors: []
+        lastErrors: [],
+        discoverRunId: null,
+        discoverPollTimer: null,
+        discoverStages: []
     };
 
     var el = {};
@@ -480,6 +483,242 @@
         });
     }
 
+    /* ============================ AI suggest ========================= */
+
+    /* The catalog list comes from the orchestrator, never from a list kept
+       here: a new catalogs/<app>/<flow>.yaml must show up without a UI change. */
+    function loadCatalogs() {
+        return api("GET", "/api/v1/scenarios/catalogs").then(function (result) {
+            var names = (result.ok && result.body && result.body.catalogs) || [];
+            el.suggestCatalog.innerHTML = names.length
+                ? names.map(function (n) {
+                    return '<option value="' + esc(n) + '">' + esc(n) + "</option>";
+                  }).join("")
+                : '<option value="">(katalog bulunamadı)</option>';
+            el.btnSuggest.disabled = names.length === 0;
+        });
+    }
+
+    function suggest() {
+        var choice = el.suggestCatalog.value;
+        var intent = el.suggestIntent.value.trim();
+
+        if (!choice) { toast("Önce bir ekran seçin", true); return; }
+        if (!intent) { toast("Ne test edileceğini yazın", true); el.suggestIntent.focus(); return; }
+
+        var parts = choice.split("/");
+        var cif = el.suggestCif.value.trim();
+        var userid = el.suggestUserid.value.trim();
+
+        /* The orchestrator builds the login step from these, so a missing
+           userid would otherwise surface as a 400 after the model had already
+           been called. */
+        if (cif && parts[0].toUpperCase() !== "NGI" && !userid) {
+            toast("NGC için kullanıcı ID zorunlu", true);
+            el.suggestUserid.focus();
+            return;
+        }
+
+        el.btnSuggest.disabled = true;
+        el.btnSuggest.textContent = "Üretiliyor…";
+        el.suggestStatus.innerHTML = '<div class="s-line">Model düşünüyor, bu 10-30 saniye sürebilir…</div>';
+
+        api("POST", "/api/v1/scenarios/suggest", {
+            app: parts[0], flow: parts[1], intent: intent, cif: cif, userid: userid
+        }).then(function (result) {
+            if (!result.ok) {
+                var message = (result.body && (result.body.error || result.body.detail)) || ("HTTP " + result.status);
+                el.suggestStatus.innerHTML = '<div class="s-line">' + esc(message) + "</div>";
+                toast("Üretim başarısız: " + message, true);
+                return;
+            }
+
+            var data = result.body || {};
+            /* Straight into the editor: the analyst reviews and edits there, and
+               the existing validation panel already explains what is wrong. */
+            el.editor.value = data.feature || "";
+            syncGutter();
+            validate();
+            renderSuggestStatus(data);
+
+            toast(data.valid
+                ? "Senaryo üretildi ve doğrulandı"
+                : "Taslak üretildi ama geçersiz — hataları düzeltin", !data.valid);
+        }).catch(function (e) {
+            el.suggestStatus.innerHTML = '<div class="s-line">' + esc(String(e)) + "</div>";
+            toast("Üretim başarısız", true);
+        }).then(function () {
+            el.btnSuggest.disabled = false;
+            el.btnSuggest.textContent = "Senaryo Üret";
+        });
+    }
+
+    /* How many model calls it took is worth showing: two attempts means the
+       first draft broke the vocabulary, which is a signal about the prompt. */
+    function renderSuggestStatus(data) {
+        var badge = data.valid
+            ? '<span class="badge badge-ok">geçerli</span>'
+            : '<span class="badge badge-fail">geçersiz</span>';
+
+        var html = '<div class="s-head">' + badge +
+            '<span class="s-line">' + (data.attempts || 1) + " model çağrısı</span></div>";
+
+        (data.log || []).forEach(function (line) {
+            html += '<div class="s-line mono">' + esc(line) + "</div>";
+        });
+        el.suggestStatus.innerHTML = html;
+    }
+
+    /* ========================= catalog discovery ====================== */
+
+    /**
+     * Read-only: opens a real browser, logs in, navigates to the given menu
+     * path, and reads the screen's fieldcontainers — it never fills a field or
+     * clicks anything but "discover screen catalog"'s own Select2 probes.
+     *
+     * Runs through the SAME dispatch/poll/artifact plumbing as a normal run
+     * (POST -> poll GET -> read a file), just against /api/v1/discovery
+     * instead of /api/v1/runs, because "discover screen catalog" is
+     * deliberately absent from vocabulary.json and would fail the normal
+     * run's validation step.
+     */
+    /* Ekran blokları innerHTML ile yeniden çizilir (sayfadaki diğer listelerle
+       aynı desen), bu yüzden her yeniden çizimden ÖNCE kutulardaki yazılanlar
+       state'e geri okunur — yoksa "+ Ekran Ekle" o an yazılan metni siler. */
+    function harvestStages() {
+        state.discoverStages.forEach(function (stage, index) {
+            var values = el.discoverStages.querySelector('[data-stage="' + index + '"][data-field="values"]');
+            var button = el.discoverStages.querySelector('[data-stage="' + index + '"][data-field="button"]');
+            if (values) { stage.values = values.value; }
+            if (button) { stage.button = button.value; }
+        });
+    }
+
+    function renderStages() {
+        if (!state.discoverStages.length) {
+            el.discoverStages.innerHTML =
+                '<div class="stage-empty">Ekran eklenmedi — yalnızca giriş ekranı taranır.</div>';
+            return;
+        }
+
+        el.discoverStages.innerHTML = state.discoverStages.map(function (stage, index) {
+            return '<div class="stage">' +
+                '<div class="stage-head"><span>Ekran ' + (index + 1) + "</span>" +
+                '<button class="stage-remove" type="button" data-remove="' + index + '">Sil</button></div>' +
+                '<textarea class="search stage-values" rows="4" data-stage="' + index + '" data-field="values" ' +
+                'placeholder="Alan Etiketi = Değer">' + esc(stage.values) + "</textarea>" +
+                '<input class="search stage-button" type="text" data-stage="' + index + '" data-field="button" ' +
+                'placeholder="Buton, örn: Devam" value="' + esc(stage.button) + '">' +
+                "</div>";
+        }).join("");
+    }
+
+    /* "Alan = Değer" satırlarını label->value nesnesine çevirir. Değerin kendisi
+       '=' içerebilir (tarih, formül), o yüzden yalnızca İLK '=' ayırıcıdır. */
+    function parseValueLines(text) {
+        var values = {};
+        text.split("\n").forEach(function (raw) {
+            var line = raw.trim();
+            if (!line || line.charAt(0) === "#") { return; }
+            var split = line.indexOf("=");
+            if (split === -1) { return; }
+            var label = line.slice(0, split).trim();
+            if (label) { values[label] = line.slice(split + 1).trim(); }
+        });
+        return values;
+    }
+
+    function discover() {
+        var app = el.discoverApp.value;
+        var cif = el.discoverCif.value.trim();
+        var userid = el.discoverUserid.value.trim();
+        var mainMenu = el.discoverMainMenu.value.trim();
+        var subMenu = el.discoverSubMenu.value.trim();
+        var entryButton = el.discoverEntryButton.value.trim();
+
+        harvestStages();
+        var stages = state.discoverStages.map(function (stage) {
+            return { values: parseValueLines(stage.values), button: stage.button.trim() };
+        });
+
+        if (!cif || !mainMenu || !subMenu) {
+            toast("CIF, ana menü ve alt menü zorunlu", true);
+            return;
+        }
+        if (app === "NGC" && !userid) {
+            toast("NGC için kullanıcı ID zorunlu", true);
+            return;
+        }
+        for (var i = 0; i < stages.length; i++) {
+            if (!stages[i].button) {
+                toast("Ekran " + (i + 1) + " için buton yazın", true);
+                return;
+            }
+        }
+
+        clearTimeout(state.discoverPollTimer);
+        el.btnDiscover.disabled = true;
+        el.btnDiscover.textContent = "Taranıyor…";
+        el.discoverOutput.value = "";
+        el.discoverStatus.innerHTML =
+            '<div class="s-line">Tarayıcı açılıyor, giriş yapılıyor, ekran taranıyor — bu 1-2 dakika sürebilir…</div>';
+
+        api("POST", "/api/v1/discovery", {
+            app: app, cif: cif, userid: userid, mainMenu: mainMenu, subMenu: subMenu,
+            entryButton: entryButton, stages: stages
+        }).then(function (result) {
+            if (result.status === 503 || !result.ok) {
+                var message = (result.body && result.body.error) || ("HTTP " + result.status);
+                el.discoverStatus.innerHTML = '<div class="s-line">' + esc(message) + "</div>";
+                toast("Keşif başlatılamadı: " + message, true);
+                resetDiscoverButton();
+                return;
+            }
+
+            state.discoverRunId = result.body.runId;
+            toast("Keşif başladı · " + result.body.executor);
+            pollDiscover();
+        });
+    }
+
+    function resetDiscoverButton() {
+        el.btnDiscover.disabled = false;
+        el.btnDiscover.textContent = "Ekranı Keşfet";
+    }
+
+    function pollDiscover() {
+        clearTimeout(state.discoverPollTimer);
+        if (!state.discoverRunId) { return; }
+
+        api("GET", "/api/v1/discovery/" + state.discoverRunId).then(function (result) {
+            if (!result.ok) {
+                el.discoverStatus.innerHTML = '<div class="s-line">Koşu durumu alınamadı.</div>';
+                resetDiscoverButton();
+                return;
+            }
+
+            var body = result.body || {};
+            var status = body.status || "UNKNOWN";
+            el.discoverStatus.innerHTML =
+                '<div class="s-line">Durum: <span class="mono">' + esc(status) + "</span></div>";
+
+            if (status === "RUNNING" || status === "UNKNOWN") {
+                state.discoverPollTimer = setTimeout(pollDiscover, POLL_MS);
+                return;
+            }
+
+            resetDiscoverButton();
+            if (body.catalogYaml) {
+                el.discoverOutput.value = body.catalogYaml;
+                toast("Katalog taslağı hazır");
+            } else {
+                el.discoverStatus.innerHTML += '<div class="s-line">' +
+                    esc(body.catalogError || "catalog-draft.yaml bulunamadı.") + "</div>";
+                toast("Taslak üretilemedi", true);
+            }
+        });
+    }
+
     /* ============================== views =========================== */
 
     function showView(name) {
@@ -497,6 +736,8 @@
         });
         $("side-vocab").classList.toggle("is-active", name === "vocab");
         $("side-timeline").classList.toggle("is-active", name === "timeline");
+        $("side-suggest").classList.toggle("is-active", name === "suggest");
+        $("side-discover").classList.toggle("is-active", name === "discover");
     }
 
     function applyTheme(theme) {
@@ -510,7 +751,14 @@
         ["editor", "gutter", "validation", "validationBadge", "btnValidate", "btnRun",
             "vocabList", "vocabSearch", "timeline", "timelineDot", "runHeader", "runFooter",
             "historyBody", "btnRefreshHistory", "executorStatus", "executorLabel",
-            "themeToggle", "toast"].forEach(function (id) { el[id] = $(id); });
+            "themeToggle", "toast",
+            "suggestCatalog", "suggestCif", "suggestUserid", "suggestUseridRow",
+            "suggestIntent", "btnSuggest", "suggestStatus",
+            "discoverApp", "discoverCif", "discoverUserid", "discoverUseridRow",
+            "discoverMainMenu", "discoverSubMenu", "discoverEntryButton",
+            "discoverStages", "btnAddStage",
+            "btnDiscover", "discoverStatus", "discoverOutput"
+        ].forEach(function (id) { el[id] = $(id); });
 
         var savedTheme = null;
         try { savedTheme = localStorage.getItem("uptest.theme"); } catch (e) { /* ignore */ }
@@ -556,6 +804,39 @@
             loadHistory();
         });
 
+        el.btnSuggest.addEventListener("click", suggest);
+        /* NGI logs in with a customer code only, so its userid box would be a
+           field with nothing to put in it. */
+        el.suggestCatalog.addEventListener("change", function () {
+            var app = (el.suggestCatalog.value.split("/")[0] || "").toUpperCase();
+            el.suggestUseridRow.classList.toggle("is-hidden", app === "NGI");
+        });
+        el.btnDiscover.addEventListener("click", discover);
+        /* NGI logs in with cif only (password/OTP are hardcoded in the page
+           object, not exposed as a step argument) — see NGISteps. */
+        el.discoverApp.addEventListener("change", function () {
+            el.discoverUseridRow.classList.toggle("is-hidden", el.discoverApp.value === "NGI");
+        });
+
+        el.btnAddStage.addEventListener("click", function () {
+            harvestStages();
+            state.discoverStages.push({ values: "", button: "" });
+            renderStages();
+        });
+        el.discoverStages.addEventListener("click", function (event) {
+            var remove = event.target.closest(".stage-remove");
+            if (!remove) { return; }
+            harvestStages();
+            state.discoverStages.splice(Number(remove.dataset.remove), 1);
+            renderStages();
+        });
+        renderStages();
+        /* Ctrl+Enter from the intent box: the same shortcut people expect in
+           any "type a prompt, press go" field. */
+        el.suggestIntent.addEventListener("keydown", function (event) {
+            if ((event.ctrlKey || event.metaKey) && event.key === "Enter") { suggest(); }
+        });
+
         el.btnRefreshHistory.addEventListener("click", loadHistory);
         el.executorStatus.addEventListener("click", function () {
             loadExecutors();
@@ -570,6 +851,7 @@
 
         loadExecutors();
         loadVocabulary().then(validate);
+        loadCatalogs();
         loadHistory();
         setInterval(loadExecutors, 15000);
     }

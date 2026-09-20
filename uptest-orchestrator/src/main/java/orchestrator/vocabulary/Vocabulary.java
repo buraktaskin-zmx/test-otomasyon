@@ -1,5 +1,6 @@
 package orchestrator.vocabulary;
 
+import io.cucumber.cucumberexpressions.Argument;
 import io.cucumber.cucumberexpressions.Expression;
 import io.cucumber.cucumberexpressions.ExpressionFactory;
 import io.cucumber.cucumberexpressions.ParameterTypeRegistry;
@@ -58,12 +59,38 @@ public class Vocabulary {
 
     /** The step definition this Gherkin line would bind to, if any. */
     public Optional<VocabularyStep> match(String stepText) {
+        return matchWithArguments(stepText).map(Match::step);
+    }
+
+    /** A bound step, together with the values Cucumber pulled out of the line. */
+    public record Match(VocabularyStep step, List<String> arguments) {
+    }
+
+    /**
+     * Like {@link #match}, but keeps the arguments.
+     *
+     * The plain match throws them away, which is all the vocabulary check
+     * needs — but a catalog check lives entirely inside the quotes: whether
+     * "Toplam Tutarı" is a real label, whether a dropdown was driven with
+     * `enter`. Neither question can be asked without the values.
+     */
+    public Optional<Match> matchWithArguments(String stepText) {
         for (Map.Entry<VocabularyStep, Expression> entry : expressions.entrySet()) {
-            if (entry.getValue().match(stepText) != null) {
-                return Optional.of(entry.getKey());
+            List<Argument<?>> arguments = entry.getValue().match(stepText);
+            if (arguments != null) {
+                return Optional.of(new Match(entry.getKey(), values(arguments)));
             }
         }
         return Optional.empty();
+    }
+
+    private static List<String> values(List<Argument<?>> arguments) {
+        List<String> values = new ArrayList<>(arguments.size());
+        for (Argument<?> argument : arguments) {
+            Object value = argument.getValue();
+            values.add(value == null ? "" : value.toString());
+        }
+        return values;
     }
 
     /**

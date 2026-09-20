@@ -1,0 +1,76 @@
+app: NGC
+flow: Online DBS Fatura Oluştur
+
+navigation:
+  main_menu: "NAKİT YÖNETİMİ"
+  sub_menu: "Online DBS İşlemleri"
+  entry_row: "FORD DBS ODEMELERI"
+  entry_button: "Fatura Oluştur"
+
+fields:
+  # Bayi Kodu ÖNCE gelmeli: uygulama buna tepki olarak Bayi Ünvanı'nı doldurur
+  # ve Döviz Cinsi'nin seçeneklerini yükler. Sıra işlevsel, kozmetik değil.
+  - label: "Bayi Kodu"
+    type: dropdown
+    options: ["93002"]
+    verifiable: true
+  - label: "Bayi Ünvanı"
+    type: text
+    readonly: true          # Bayi Kodu seçilince uygulama kendisi doldurur
+    verifiable: true
+  - label: "Başlangıç Vadesi"
+    type: date
+    verifiable: true
+  - label: "Fatura No"
+    type: text
+    verifiable: true
+  - label: "Orijinal Fatura Numarası"
+    type: text
+    verifiable: true
+  - label: "Döviz Cinsi"
+    type: dropdown
+    options: ["TL"]
+    verifiable: true
+  - label: "Taksit Adedi"
+    type: text
+    verifiable: true
+  - label: "Toplam Tutar"
+    type: amount
+    verifiable: true
+  - label: "Orijinal Fatura Tutarı"
+    type: amount
+    verifiable: true
+  - label: "Taksit Periyot Birimi"
+    type: dropdown
+    options: ["Ay"]
+    verifiable: true
+  - label: "Taksit Periyodu"
+    type: text
+    verifiable: true
+  - label: "Fatura Dönemi"
+    type: text
+    verifiable: true
+  - label: "Fatura Tarihi"
+    type: date
+    verifiable: true
+  - label: "Fatura Tipi"
+    type: dropdown
+    options: ["Normal", "E-Fatura"]
+    verifiable: true
+  # Ekranda sürekli durmuyor: "Fatura Tipi" = "E-Fatura" seçilince JS bunu
+  # yerinde gösteriyor ve zorunlu hâle geliyor. "Normal" seçen bir senaryo bu
+  # alana dokunmamalı — dokunursa görünmeyen bir alanı arar ve zaman aşımına
+  # uğrar.
+  - label: "E-Fatura Hash Kodu"
+    type: text
+    shown_when:
+      field: "Fatura Tipi"
+      value: "E-Fatura"
+    verifiable: true
+
+buttons:
+  - "Devam"
+  - "Onay"
+
+# Onay sonrası sonuç ekranının metni henüz görülmedi, o yüzden success_message
+# yok — mesaj verilmeyince model doğrulama da yazmıyor.

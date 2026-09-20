@@ -582,3 +582,128 @@ table.history tbody tr:hover { background: var(--brand-tint); }
     .view.is-active { flex-direction: column; }
     #view-workspace .pane-side { max-width: none; min-width: 0; flex: 1 1 auto; }
 }
+
+/* ===================== AI generation panel ===========================
+   Shares .search / .btn with the rest of the page so the form inherits
+   focus rings and dark-theme tokens rather than redefining them. */
+.suggest-form {
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 0 0 auto;
+    border-bottom: 1px solid var(--border-soft);
+}
+
+.suggest-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-top: 4px;
+}
+
+.suggest-intent {
+    resize: vertical;
+    min-height: 80px;
+    font-family: var(--sans);
+    line-height: 1.45;
+}
+
+.suggest-go { margin-top: 10px; }
+
+.suggest-hint {
+    margin: 8px 0 0;
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: var(--text-faint);
+}
+
+.suggest-status { overflow: auto; padding: 12px; flex: 1 1 auto; }
+.suggest-status:empty { display: none; }
+
+.s-line {
+    font-size: 12px;
+    color: var(--text-muted);
+    padding: 3px 0;
+}
+
+.s-line .mono { font-family: var(--mono); }
+
+#suggestUseridRow.is-hidden { display: none; }
+
+/* ===================== Catalog discovery panel =======================
+   This panel's form GROWS as screens are added, unlike the fixed-height AI
+   panel, so the panel itself scrolls and its children keep their natural
+   height instead of being squeezed out of view. */
+#side-discover { overflow-y: auto; }
+#side-discover .suggest-status { flex: 0 0 auto; }
+
+#discoverUseridRow.is-hidden { display: none; }
+
+.stage {
+    border: 1px solid var(--border-soft);
+    border-radius: 6px;
+    padding: 8px;
+    margin-bottom: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.stage-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.stage-remove {
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+    font: inherit;
+    color: var(--text-faint);
+}
+
+.stage-remove:hover { color: var(--text); }
+
+.stage-values {
+    resize: vertical;
+    min-height: 64px;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.stage-empty {
+    font-size: 11.5px;
+    color: var(--text-faint);
+    padding: 4px 0;
+}
+
+.stage-add { align-self: flex-start; }
+
+.discover-output {
+    margin: 0 12px 12px;
+    width: calc(100% - 24px);
+    flex: 0 0 auto;
+    resize: vertical;
+    min-height: 200px;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.s-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}

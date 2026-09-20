@@ -37,6 +37,13 @@ public final class VocabularyExtractor {
      *  Turkish keywords. */
     private static final String CUCUMBER_ANNOTATION_PACKAGE = "io.cucumber.java.";
 
+    /**
+     * Steps here read a screen for catalog discovery; they do not describe how
+     * to test one, so an analyst/LLM must never see them as a usable pattern.
+     * See DiscoverySteps for the step this excludes.
+     */
+    private static final String DISCOVERY_PACKAGE = "com.ykb.uplift.uptest.playwright.discovery.";
+
     private static final Pattern PARAMETER = Pattern.compile("\\{(\\w*)}");
 
     private VocabularyExtractor() {
@@ -122,6 +129,9 @@ public final class VocabularyExtractor {
 
             for (Path classFile : classFiles) {
                 String className = toClassName(classesDir, classFile);
+                if (className.startsWith(DISCOVERY_PACKAGE)) {
+                    continue;
+                }
                 Class<?> type;
                 try {
                     // initialize=false: never run static initialisers of page

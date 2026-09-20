@@ -21,4 +21,27 @@ public record ValidationError(
     public static ValidationError undefinedStep(long line, String step, List<String> suggestions) {
         return new ValidationError(line, step, "Tanımsız adım", suggestions);
     }
+
+    /**
+     * A label the catalog does not list. The step pattern itself is fine, so
+     * the message has to say where the real mistake is — inside the quotes.
+     */
+    public static ValidationError unknownLabel(long line, String step, String label, List<String> nearest) {
+        return new ValidationError(line, step,
+                "Katalogda \"" + label + "\" diye bir alan yok", nearest);
+    }
+
+    /** The right pattern for what this field actually is. */
+    public static ValidationError wrongVerb(long line, String step, String label, String type, String expected) {
+        return new ValidationError(line, step,
+                "\"" + label + "\" alanının tipi " + type + "; bu adım onu süremez",
+                List.of(expected));
+    }
+
+    /** A value the field does not offer, answered with the values it does. */
+    public static ValidationError unknownOption(long line, String step, String label, String value,
+                                                List<String> allowed) {
+        return new ValidationError(line, step,
+                "\"" + label + "\" alanı \"" + value + "\" değerini sunmuyor", allowed);
+    }
 }

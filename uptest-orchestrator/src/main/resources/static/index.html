@@ -59,6 +59,8 @@
                 <button class="side-tab" data-side="timeline" role="tab">
                     Zaman Çizelgesi <span id="timelineDot" class="tab-dot"></span>
                 </button>
+                <button class="side-tab" data-side="suggest" role="tab">AI Üret</button>
+                <button class="side-tab" data-side="discover" role="tab">Katalog Keşfet</button>
             </div>
 
             <div id="side-vocab" class="side-panel is-active">
@@ -67,6 +69,80 @@
                            aria-label="Adım ara">
                 </div>
                 <div id="vocabList" class="vocab-list"></div>
+            </div>
+
+            <div id="side-suggest" class="side-panel">
+                <div class="suggest-form">
+                    <label class="suggest-label" for="suggestCatalog">Ekran</label>
+                    <select id="suggestCatalog" class="search"></select>
+
+                    <label class="suggest-label" for="suggestCif">CIF / Müşteri Kodu</label>
+                    <input id="suggestCif" class="search" type="text" autocomplete="off">
+
+                    <div id="suggestUseridRow">
+                        <label class="suggest-label" for="suggestUserid">Kullanıcı ID</label>
+                        <input id="suggestUserid" class="search" type="text" autocomplete="off">
+                    </div>
+
+                    <label class="suggest-label" for="suggestIntent">Ne test edilsin?</label>
+                    <textarea id="suggestIntent" class="search suggest-intent" rows="5"
+                              placeholder="Örn: DI00002018 / 3014 ile giriş yapıp 1.250,55 TL ödeme talebi oluştur ve tutarı onay ekranında doğrula"></textarea>
+
+                    <button id="btnSuggest" class="btn btn-primary suggest-go" type="button">Senaryo Üret</button>
+
+                    <p class="suggest-hint">
+                        Model yalnızca sağdaki sözlükteki adımları kullanabilir. Giriş
+                        adımını model değil orchestrator yazar — kataloğun uygulamasına
+                        göre. Üretilen taslak doğrulanır; geçersizse model bir kez
+                        düzeltmeyi dener. Sonuç editöre yazılır — çalıştırmadan önce
+                        gözden geçirin.
+                    </p>
+                </div>
+                <div id="suggestStatus" class="suggest-status"></div>
+            </div>
+
+            <div id="side-discover" class="side-panel">
+                <div class="suggest-form">
+                    <label class="suggest-label" for="discoverApp">Uygulama</label>
+                    <select id="discoverApp" class="search">
+                        <option value="NGC">NGC (Kurumsal)</option>
+                        <option value="NGI">NGI (Bireysel)</option>
+                    </select>
+
+                    <label class="suggest-label" for="discoverCif">CIF / Müşteri Kodu</label>
+                    <input id="discoverCif" class="search" type="text" autocomplete="off">
+
+                    <div id="discoverUseridRow">
+                        <label class="suggest-label" for="discoverUserid">Kullanıcı ID</label>
+                        <input id="discoverUserid" class="search" type="text" autocomplete="off">
+                    </div>
+
+                    <label class="suggest-label" for="discoverMainMenu">Ana Menü</label>
+                    <input id="discoverMainMenu" class="search" type="text" placeholder="Örn: NAKİT YÖNETİMİ">
+
+                    <label class="suggest-label" for="discoverSubMenu">Alt Menü</label>
+                    <input id="discoverSubMenu" class="search" type="text" placeholder="Örn: Ödeme Oluştur / Talep Et">
+
+                    <label class="suggest-label" for="discoverEntryButton">Giriş Butonu (opsiyonel)</label>
+                    <input id="discoverEntryButton" class="search" type="text" placeholder="Örn: Ödeme Talep Et">
+
+                    <label class="suggest-label">Ekranlar</label>
+                    <div id="discoverStages"></div>
+                    <button id="btnAddStage" class="btn btn-ghost stage-add" type="button">+ Ekran Ekle</button>
+
+                    <button id="btnDiscover" class="btn btn-primary suggest-go" type="button">Ekranı Keşfet</button>
+
+                    <p class="suggest-hint">
+                        Her ekran için <b>ne</b> yazılacağını söylersiniz; <b>nasıl</b> yazılacağına
+                        (enter / enter amount / select / select account) DOM taraması karar verir.
+                        Her ekranın butonuna basıldıktan sonra bir sonraki ekran da taranır.
+                        Hiç ekran eklemezseniz yalnızca giriş ekranı taranır, hiçbir şey
+                        doldurulmaz. <code>success_message</code> elle eklenmeli.
+                    </p>
+                </div>
+                <div id="discoverStatus" class="suggest-status"></div>
+                <textarea id="discoverOutput" class="search discover-output" spellcheck="false"
+                          readonly rows="14" placeholder="Keşif tamamlanınca taslak YAML burada görünecek."></textarea>
             </div>
 
             <div id="side-timeline" class="side-panel">
