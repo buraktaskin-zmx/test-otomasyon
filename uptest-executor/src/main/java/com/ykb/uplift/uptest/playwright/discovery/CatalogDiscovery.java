@@ -24,6 +24,12 @@ import java.util.regex.Pattern;
  * {@code select account} is read off the DOM, never asked of the analyst —
  * that mapping is exactly what a catalog exists to record.
  *
+ * Alongside the verb it records what each box ACCEPTS — maxlength, a number
+ * input's range, whether only digits go in (see {@link Limits}). That is for the
+ * generator rather than for the run: producing five scenarios with five
+ * different values is only honest if something knows where the boundaries are,
+ * and these attributes are the only place on the page that says.
+ *
  * v3 vs v4 Select2 render IDENTICALLY on screen (see
  * CommonActions.selectAccount vs components/selectbox/account/AccountSelectBox)
  * so no screenshot can separate them. The DOM can: v4's closed widget carries
@@ -134,6 +140,7 @@ public class CatalogDiscovery {
         DATE("date"),
         DROPDOWN("dropdown"),
         ACCOUNT_PICKER("account_picker"),
+        CHECKBOX("checkbox"),
         UNSUPPORTED_V3("UNSUPPORTED_V3"),
         SKIP("");
 
@@ -144,19 +151,54 @@ public class CatalogDiscovery {
         }
     }
 
+    /**
+     * What the box itself says it will accept, read straight off its attributes.
+     *
+     * This exists for the generator rather than for the run: VariationPlanner
+     * has to invent a DIFFERENT value for each of N scenarios, and the only
+     * honest way to pick a boundary value is to know where the boundary is. A
+     * 16-character invoice number typed into a 3-character box is silently
+     * truncated by the browser, so the form then validates a value nobody chose.
+     *
+     * A null component means the DOM did not say — never "unbounded". The
+     * difference is the whole point: the planner falls back to a conservative
+     * ladder AND reports that it had to, instead of guessing confidently.
+     *
+     * Known blind spot: a jQuery-masked field enforces its shape in JavaScript,
+     * not in attributes, so a mask that permits only digits is invisible here
+     * unless the markup also says so. Read off attributes only, deliberately —
+     * guessing "numeric" from a label's wording is how "Fatura No" becomes a
+     * number field on a screen that accepts "FTR-2026-0001".
+     */
+    private record Limits(Integer maxLength, Integer min, Integer max, boolean numeric) {
+
+        static final Limits NONE = new Limits(null, null, null, false);
+
+        boolean known() {
+            return maxLength != null || min != null || max != null || numeric;
+        }
+    }
+
     private static final class Field {
         final String label;
         final Type type;
-        final List<String> choices;
+        /**
+         * Not final: a dependent dropdown is empty when the scan reads it and
+         * only fills in once its parent is chosen, so the list is replaced the
+         * moment the screen is seen to load one.
+         */
+        List<String> choices;
+        final Limits limits;
         final int firstSeenScreen;
         boolean verifiable;
         /** The application owns this value: a scenario verifies it, never types it. */
         boolean readonly;
 
-        Field(String label, Type type, List<String> choices, int firstSeenScreen) {
+        Field(String label, Type type, List<String> choices, Limits limits, int firstSeenScreen) {
             this.label = label;
             this.type = type;
             this.choices = choices;
+            this.limits = limits;
             this.firstSeenScreen = firstSeenScreen;
         }
     }
@@ -174,6 +216,9 @@ public class CatalogDiscovery {
 
     /** Effects keyed by the field that caused them, in the order they were filled. */
     private final Map<String, List<Effect>> effects = new LinkedHashMap<>();
+
+    /** Label -> the control that was found but not understood. */
+    private final Map<String, String> unrecognised = new LinkedHashMap<>();
 
     /* ============================== scanning ============================== */
 
@@ -200,7 +245,7 @@ public class CatalogDiscovery {
 
             Field field = catalog.get(label);
             if (field == null) {
-                field = new Field(label, probe.type(), probe.choices(), screensScanned);
+                field = new Field(label, probe.type(), probe.choices(), probe.limits(), screensScanned);
                 catalog.put(label, field);
             }
             // Only fields with a real editable control land here, so a confirm
@@ -276,6 +321,15 @@ public class CatalogDiscovery {
             return;
         }
 
+        // Something actionable that classify did not recognise. Reported, not
+        // catalogued, and not treated as a confirm-screen value either — it is
+        // neither, and calling it either would be a guess.
+        String control = unrecognisedControl(container);
+        if (control != null) {
+            unrecognised.putIfAbsent(label, control);
+            return;
+        }
+
         // A container that HAS a control but every one of them is switched off
         // is not page furniture — it is a field the application fills in
         // itself. "Bayi Ünvanı" is exactly this, and dropping it left the
@@ -286,7 +340,9 @@ public class CatalogDiscovery {
             return;
         }
 
-        Field display = new Field(label, displayType(container), List.of(), screensScanned);
+        // No limits for a display-only value: nothing will be typed into it, so
+        // what it would have accepted is not a question anyone asks.
+        Field display = new Field(label, displayType(container), List.of(), Limits.NONE, screensScanned);
         display.verifiable = true;
         display.readonly = hasDisabledControl;
         catalog.put(label, display);
@@ -303,7 +359,11 @@ public class CatalogDiscovery {
         return safeText(container).contains("TL") ? Type.AMOUNT : Type.TEXT;
     }
 
-    private record Probe(Type type, List<String> choices) {
+    private record Probe(Type type, List<String> choices, Limits limits) {
+
+        Probe(Type type, List<String> choices) {
+            this(type, choices, Limits.NONE);
+        }
     }
 
     /**
@@ -359,16 +419,124 @@ public class CatalogDiscovery {
             return new Probe(Type.DROPDOWN, selectable.isEmpty() ? options : selectable);
         }
 
+        // Before the plain-input check below, which would otherwise claim a
+        // checkbox as "text" — input:not([type]) does not match it, but a
+        // container holding both a box and a text input would resolve the
+        // wrong way round.
+        if (container.locator(enabled("input[type='checkbox']", "[role='checkbox']")).count() > 0) {
+            return new Probe(Type.CHECKBOX, List.of());
+        }
         if (container.locator(enabled("input[id$='-integer']", "input[id$='-decimal']")).count() > 0) {
-            return new Probe(Type.AMOUNT, List.of());
+            // The INTEGER box only: an amount is two inputs and the lira part is
+            // what bounds the amount. Reading the kuruş box instead would report
+            // a two-digit ceiling for a field that accepts millions.
+            return new Probe(Type.AMOUNT, List.of(), limitsOf(container, enabled("input[id$='-integer']")));
         }
         if (container.locator(enabled("input.hasDatepicker", "input[type='date']")).count() > 0) {
+            // No limits read for a date: the shape is fixed at gg/aa/yyyy and a
+            // maxlength of 10 says nothing a planner can use.
             return new Probe(Type.DATE, List.of());
         }
-        if (container.locator(enabled("input[type='text']", "input:not([type])")).count() > 0) {
-            return new Probe(Type.TEXT, List.of());
+        String plainInput = enabled("input[type='text']", "input:not([type])", "input[type='number']",
+                "input[type='tel']");
+        if (container.locator(plainInput).count() > 0) {
+            return new Probe(Type.TEXT, List.of(), limitsOf(container, plainInput));
         }
         return new Probe(Type.SKIP, List.of());
+    }
+
+    /**
+     * Attribute names that mean "digits only", with the values that count.
+     *
+     * {@code inputmode} is the modern spelling and {@code type} the old one; both
+     * appear on this application. A {@code pattern} is deliberately NOT read:
+     * deciding whether an arbitrary regex permits only digits is a parsing job
+     * with a wrong answer in both directions, and a wrong "numeric" sends digits
+     * into a box that wanted "FTR-2026-0001".
+     */
+    private static final List<String> NUMERIC_INPUTMODES = List.of("numeric", "decimal", "tel");
+
+    /**
+     * What the first matching input in this container will accept.
+     *
+     * Everything here is a read of an attribute that is either present or not,
+     * which is why it can run on every field of every screen without costing
+     * anything. Absent attributes come back null and that is a real answer —
+     * see {@link Limits}.
+     */
+    private static Limits limitsOf(Locator container, String selector) {
+        Locator inputs = container.locator(selector);
+        if (inputs.count() == 0) {
+            return Limits.NONE;
+        }
+        Locator input = inputs.first();
+        try {
+            String type = lower(input.getAttribute("type"));
+            String inputMode = lower(input.getAttribute("inputmode"));
+            return new Limits(
+                    positive(input.getAttribute("maxlength")),
+                    number(input.getAttribute("min")),
+                    number(input.getAttribute("max")),
+                    "number".equals(type) || NUMERIC_INPUTMODES.contains(inputMode));
+        } catch (RuntimeException gone) {
+            // The element can be replaced between the count and the read on a
+            // screen that is still assembling itself. Nothing to report is
+            // better than failing a whole discovery run over an attribute.
+            return Limits.NONE;
+        }
+    }
+
+    private static String lower(String value) {
+        return value == null ? "" : value.trim().toLowerCase();
+    }
+
+    /** A maxlength of 0 or less is not a limit anyone meant; treat it as absent. */
+    private static Integer positive(String value) {
+        Integer parsed = number(value);
+        return (parsed == null || parsed <= 0) ? null : parsed;
+    }
+
+    private static Integer number(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            // Truncating rather than refusing: min="0.01" on a money input is a
+            // real thing and its integer part is still a usable floor.
+            return (int) Double.parseDouble(value.trim());
+        } catch (NumberFormatException notANumber) {
+            return null;
+        }
+    }
+
+    /**
+     * Anything a user could act on that the rules above did not recognise —
+     * a radio, a textarea, a custom widget.
+     *
+     * Such a container used to fall through to noteDisplayOnly and, on the
+     * entry screen, vanish without a trace: the draft was quietly incomplete
+     * and the gap only surfaced minutes later as a failing run. Saying "I saw
+     * something here and do not know what it is" costs one comment line and
+     * turns a silent hole into a question someone can answer.
+     *
+     * Deliberately NOT catalogued as a field: no vocabulary step drives these,
+     * so a catalogued one would produce a scenario that cannot run. Same
+     * reasoning as UNSUPPORTED_V3.
+     */
+    private static final String[] UNRECOGNISED = {
+            "input[type='radio']", "textarea",
+            "[contenteditable='true']", "[role='radio']", "input"
+    };
+
+    private static String unrecognisedControl(Locator container) {
+        for (String selector : UNRECOGNISED) {
+            // Enabled only: a switched-off control is the readonly case below,
+            // which the draft already describes properly.
+            if (container.locator(enabled(selector)).count() > 0) {
+                return selector;
+            }
+        }
+        return null;
     }
 
     /**
@@ -430,7 +598,15 @@ public class CatalogDiscovery {
      * falls back to what it already read.
      */
     private List<String> selectableOptions(Locator container) {
-        return normalize(container.locator("select option:not([value=''])").allInnerTexts());
+        // Three ways an option can be unpickable, all of them attributes rather
+        // than words: no value to submit, switched off, or hidden. Matching on
+        // attributes keeps this working on a screen that says "Select" instead
+        // of "Seçiniz". NOTE: this app was seen to give its "Seçiniz" a real
+        // value, so these three may not catch it — if a placeholder still
+        // reaches a draft, run with UPTEST_DISCOVERY_DEBUG=true and read the
+        // nativeOptions=[value=text] dump to find out how it IS marked.
+        return normalize(container.locator(
+                "select option:not([value='']):not([disabled]):not([hidden])").allInnerTexts());
     }
 
     /**
@@ -641,6 +817,19 @@ public class CatalogDiscovery {
             }
             if (was.optionCount() == 0 && now.optionCount() > 0) {
                 found.add(new Effect(label, "seçenekleri yüklendi"));
+                // Read them NOW, while they exist. The scan saw this dropdown
+                // before its parent was chosen, so it recorded an empty list —
+                // or worse, only the placeholder, which the draft then offered
+                // as the one thing a scenario could choose ("Döviz Cinsi" came
+                // back as options: ["Seçiniz"]). This is the one moment the
+                // real list is on screen and nobody was looking.
+                Field loaded = catalog.get(label);
+                if (loaded != null) {
+                    List<String> live = liveOptions(label);
+                    if (!live.isEmpty()) {
+                        loaded.choices = live;
+                    }
+                }
             }
             if (was.value().isEmpty() && !now.value().isEmpty()) {
                 found.add(new Effect(label, "otomatik doldu"));
@@ -779,16 +968,22 @@ public class CatalogDiscovery {
      * Falls back to what the scan recorded when the live read comes up empty.
      */
     private List<String> freshOptions(Field field) {
+        List<String> live = liveOptions(field.label);
+        return live.isEmpty() ? field.choices : live;
+    }
+
+    /**
+     * What this field offers on screen right now — empty when the field cannot
+     * be found or has nothing to offer yet. No fallback here on purpose: the
+     * callers differ on what "nothing" should mean.
+     */
+    private List<String> liveOptions(String label) {
         Locator container = page.locator("div[class*='fieldcontainer']")
                 .filter(new Locator.FilterOptions().setHas(
-                        page.locator("label:text-is(\"" + field.label.replace("\"", "\\\"") + "\")")))
+                        page.locator("label:text-is(\"" + label.replace("\"", "\\\"") + "\")")))
                 .first();
 
-        if (container.count() == 0) {
-            return field.choices;
-        }
-        List<String> live = selectableOptions(container);
-        return live.isEmpty() ? field.choices : live;
+        return container.count() == 0 ? List.of() : selectableOptions(container);
     }
 
     /* =============================== output =============================== */
@@ -831,6 +1026,7 @@ public class CatalogDiscovery {
             if (field.verifiable) {
                 yaml.append("    verifiable: true\n");
             }
+            appendLimits(yaml, field);
             if (field.type == Type.DROPDOWN) {
                 appendList(yaml, "    ", "options", field.choices);
             } else if (field.type == Type.ACCOUNT_PICKER) {
@@ -841,8 +1037,62 @@ public class CatalogDiscovery {
         }
 
         appendButtons(yaml);
+        appendUnrecognised(yaml);
         yaml.append(debugLog);
         return yaml.toString();
+    }
+
+    /**
+     * What the field's own attributes said it accepts.
+     *
+     * Only what was actually read: an absent key means the screen did not say,
+     * and the generator treats that differently from a limit of zero. Writing
+     * {@code max_length: 0} for a box with no maxlength would be the kind of
+     * confident wrong answer this class exists to avoid.
+     *
+     * This is the one part of a catalog only the DOM scan can produce. The MCP
+     * agent works from an accessibility snapshot, which carries no attributes at
+     * all, so an agent-written catalog is silent here and the planner says so
+     * rather than inventing a bound. Same shape as the Select2 v3-versus-v4 split
+     * — two producers, opposite blind spots, both kept.
+     */
+    private static void appendLimits(StringBuilder yaml, Field field) {
+        if (!field.limits.known()) {
+            return;
+        }
+        if (field.limits.maxLength() != null) {
+            yaml.append("    max_length: ").append(field.limits.maxLength()).append('\n');
+        }
+        if (field.limits.min() != null) {
+            yaml.append("    min: ").append(field.limits.min()).append('\n');
+        }
+        if (field.limits.max() != null) {
+            yaml.append("    max: ").append(field.limits.max()).append('\n');
+        }
+        if (field.limits.numeric()) {
+            yaml.append("    numeric: true\n");
+        }
+    }
+
+    /**
+     * Fields the scan saw but could not type. A comment, not a catalog entry:
+     * no vocabulary step drives a radio outside a grid or a textarea, so
+     * listing one as a field would produce a scenario that fails in the
+     * browser. Listing it as a comment tells whoever reads the draft that the
+     * screen has more on it than the catalog claims.
+     *
+     * Checkboxes used to be in here and are not any more: `check {string}`
+     * drives them, so they are catalogued as `checkbox` like any other field.
+     */
+    private void appendUnrecognised(StringBuilder yaml) {
+        if (unrecognised.isEmpty()) {
+            return;
+        }
+        yaml.append("\n# taninmayan alanlar - katalogda yok, elle bakin:\n");
+        unrecognised.forEach((label, control) -> {
+            yaml.append("#   \"").append(escape(label)).append("\" -> ").append(control).append('\n');
+            System.out.println("[uptest] taninmayan alan: \"" + label + "\" -> " + control);
+        });
     }
 
     /**
@@ -907,12 +1157,49 @@ public class CatalogDiscovery {
                     .append(" s2c=").append(c.locator(".select2-container").count())
                     .append(" s2s=").append(c.locator(".select2-selection").count())
                     .append(" | extractLabel=\"").append(extractLabel(c)).append('"')
+                    .append(attributeDump(c))
                     .append(nativeOptionDump(c))
                     .append(" | text=\"").append(truncate(safeText(c))).append("\"\n");
         }
         if (total > DEBUG_LIMIT) {
             out.append("#   ... ").append(total - DEBUG_LIMIT).append(" tane daha\n");
         }
+    }
+
+    /**
+     * The constraint attributes of every input in this container, raw.
+     *
+     * The question it answers: when a catalog comes back without a
+     * {@code max_length} for a field that clearly has one on screen, is the
+     * attribute missing or is {@link #limitsOf} looking at the wrong input? One
+     * is an application fact, the other is our bug, and nothing else in the
+     * output separates them. CLAUDE.md's rule again — print the counts before
+     * assuming why a locator failed.
+     */
+    private static String attributeDump(Locator container) {
+        Locator inputs = container.locator("input");
+        int count = inputs.count();
+        if (count == 0) {
+            return "";
+        }
+        StringBuilder out = new StringBuilder(" | inputs=");
+        for (int i = 0; i < Math.min(count, DEBUG_OPTIONS); i++) {
+            Locator input = inputs.nth(i);
+            try {
+                out.append('[')
+                        .append("id=").append(input.getAttribute("id"))
+                        .append(" type=").append(input.getAttribute("type"))
+                        .append(" maxlength=").append(input.getAttribute("maxlength"))
+                        .append(" inputmode=").append(input.getAttribute("inputmode"))
+                        .append(" min=").append(input.getAttribute("min"))
+                        .append(" max=").append(input.getAttribute("max"))
+                        .append(" pattern=").append(input.getAttribute("pattern"))
+                        .append(']');
+            } catch (RuntimeException gone) {
+                out.append("[okunamadi]");
+            }
+        }
+        return out.toString();
     }
 
     /**

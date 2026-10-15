@@ -17,10 +17,7 @@ import java.util.Optional;
  * The closed grammar a scenario may use, with the matcher that decides whether
  * a Gherkin line belongs to it.
  *
- * Matching uses Cucumber's own {@link CucumberExpression} rather than a
- * home-grown placeholder regex, so "the validator said yes" and "Cucumber found
- * the step" cannot disagree — which is the entire point of validating before a
- * browser is launched.
+
  */
 public class Vocabulary {
 
@@ -55,6 +52,19 @@ public class Vocabulary {
 
     public boolean isEmpty() {
         return steps.isEmpty();
+    }
+
+    /**
+     * Whether the deployed executors actually publish this step pattern.
+     *
+     * Asked by anything that REWRITES a draft into a different step, which is a
+     * move only safe against the vocabulary that is really running. The
+     * orchestrator and the executors are deployed separately and restart
+     * separately, so "the step I just added" and "the step the executor serves"
+     * are different questions for as long as one of them is behind.
+     */
+    public boolean has(String pattern) {
+        return steps.stream().anyMatch(step -> step.pattern().equals(pattern));
     }
 
     /** The step definition this Gherkin line would bind to, if any. */

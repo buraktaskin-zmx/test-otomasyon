@@ -4,14 +4,80 @@ target/
 ### Executor per-run working directories (application.properties: featuresFolder)
 runs/
 
+### Page object and steps variants with HARDCODED TEST DATA — real CIF, userid
+### and passwords. CLAUDE.md has always said "both .gitignore and .dockerignore
+### guard it"; .dockerignore did, THIS FILE DID NOT — the only mention here was
+### a comment on another rule, so a `git add .` or a select-all in the IDE's
+### commit dialog would have committed live bank credentials. Found 2026-10-06.
+DO_NOT_COMMIT/
+**/DO_NOT_COMMIT/
+
+### Playwright MCP's browser profile: holds a logged-in bank session cookie.
+### Never commit — same reasoning as DO_NOT_COMMIT.
+.mcp-browser-profile/
+
+### NOT ignored, on purpose: .mcp.json, which sits right next to the directory
+### above and looks like the same kind of local-tooling file. It is not. The
+### ORCHESTRATOR reads it at startup — application.properties points
+### spring.ai.mcp.client.stdio.servers-configuration at it — so a checkout
+### without it has no "Ajan", and ignoring it would mean every machine that
+### runs the orchestrator has to be told to hand-write one.
+###
+### The objection to committing it is that it carries an absolute path
+### (C:/tools/playwright-mcp/...), which is the shape that made .idea/misc.xml
+### flip back and forth between two machines forever. That is answered by
+### fixing the path rather than by ignoring the file: the tool is installed at
+### the SAME location on the local machine and on the VDI (confirmed writable
+### there, 2026-10-15), so there is no per-machine value left to fight over.
+### If a third machine ever cannot use C:/tools, the fix is an .mcp.json.example
+### plus a local override — NOT a different path committed here.
+
+### Node tooling is installed OUTSIDE this repo (see .mcp.json), but a stray
+### `npm install` here would otherwise commit thousands of files.
+node_modules/
+
+### npm's failure log. It is written into the CURRENT directory, so a failed
+### install under src/main/frontend leaves it there — and that directory's own
+### .gitignore covers node_modules/ and nothing else. Installs there go through
+### the corporate proxy, which is exactly the setup that fails often enough for
+### this file to appear. It records the registry URL and every resolved
+### dependency path.
+npm-debug.log*
+yarn-error.log*
+
 ### Corporate CA certificates: site-specific, distributed like the VDI trust
 ### bundle, not committed. See docker/certs/README.md.
 docker/certs/*.crt
 docker/certs/*.cer
 docker/certs/*.pem
 
-### Local compose overrides (proxy, registry, host paths)
+### Keys, keystores and truststores ANYWHERE in the tree, not just under
+### docker/certs/. .dockerignore has guarded these since it was written
+### (**/*.p12, **/*.jks, **/*.key, **/*.pem) and this file did not — the same
+### asymmetry that let DO_NOT_COMMIT/ go unguarded here for months. The path
+### that makes it concrete: fixing Java's PKIX failures on the VDI means
+### exporting the Windows-ROOT bundle into a truststore, and the obvious place
+### to drop that file is next to the pom you are running.
+*.jks
+*.p12
+*.pfx
+*.keystore
+*.truststore
+*.key
+cacerts
+
+### Local compose overrides (proxy, registry, host paths). The bare `.env` was
+### the only form covered; .dockerignore already took `.env*`, and the variants
+### people actually write (.env.local, .env.vdi) were being offered for commit.
 .env
+.env.*
+!.env.example
+
+### Spring's local profile override — by convention the file you put the real
+### datasource URL, proxy host or credentials in so you do not have to edit the
+### committed application.properties. .dockerignore keeps it out of an image;
+### keep it out of history too.
+**/application-local.properties
 
 ### Claude Code — local tooling config, per-machine, not project content
 .claude/
@@ -21,10 +87,39 @@ docker/certs/*.pem
 .kotlin
 
 ### IntelliJ IDEA ###
+### workspace.xml is per-developer UI state — open tabs, window layout, run
+### configurations, the local history of what you looked at. Committing it
+### means every checkout fights over it.
+.idea/workspace.xml
 .idea/modules.xml
 .idea/jarRepositories.xml
 .idea/compiler.xml
 .idea/libraries/
+
+### Machine-specific: it records project-jdk-name ("temurin-21" here) and the
+### language level. The VDI's JDK has a different name, so IntelliJ rewrites
+### this file on every open and the two machines flip it back and forth forever.
+### Nothing in it is worth sharing — the BUILD's Java version comes from
+### maven.compiler.release in pom.xml, not from here.
+###
+### NOTE: this file is already TRACKED, and git applies no ignore rule to a
+### tracked file. The rule below does nothing until you also run, on EACH
+### machine (the two index files are separate):
+###     git rm --cached .idea/misc.xml
+.idea/misc.xml
+
+### IntelliJ's own compiler output. misc.xml points at it
+### (<output url="$PROJECT_DIR$/out" />), so a Build > Build Project — rather
+### than Maven — fills it with hundreds of .class files that then show up as
+### unversioned. The Maven build uses target/, which is ignored on line 1.
+out/
+
+### Kept ON PURPOSE, do not add them here: .idea/.gitignore (it is what ignores
+### workspace.xml and friends), .idea/vcs.xml (four lines, never changes) and
+### .idea/encodings.xml (project-wide UTF-8 — load-bearing for a codebase this
+### full of Turkish text, and for .properties files, which IntelliJ otherwise
+### reads as ISO-8859-1).
+
 *.iws
 *.iml
 *.ipr
@@ -53,3 +148,46 @@ build/
 
 ### Mac OS ###
 .DS_Store
+
+### Windows ###
+### The Mac rule above was here and its Windows counterpart was not, on a
+### checkout that lives on a Windows SMB share. Explorer writes both of these
+### by itself — no one runs a command to create them — and desktop.ini in
+### particular appears the moment a folder gets an icon or is marked read-only
+### by the share.
+Thumbs.db
+ehthumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+### H2 run-history database (application.properties: spring.datasource.url)
+# Normally NOT in the checkout at all: the database lives under LOCALAPPDATA,
+# on the VDI's local disk, because the checkout itself sits on an SMB share and
+# H2 must not keep a database file there.
+#
+# These rules cover the two cases where it still lands here: the fallback path
+# when LOCALAPPDATA is unset, and anyone pointing SPRING_DATASOURCE_URL at the
+# repo for an afternoon. It holds run history and analyst intent text.
+#
+# Note *.trace.db especially — it is H2's error log and it quotes failing SQL
+# INCLUDING BOUND PARAMETER VALUES, which for this schema means scenario text.
+data/
+*.mv.db
+*.trace.db
+*.lock.db
+
+# graphify knowledge graph output (local only, regenerate with /graphify .)
+graphify-out/
+
+### JVM crash dumps. Note where they land: the WORKING DIRECTORY, not target/,
+### so line 1 does not catch them. Every scenario starts a Playwright node
+### driver and a browser out of this JVM, which is the kind of native-boundary
+### work that produces an hs_err file when it goes wrong. They are large and
+### they quote the full command line and environment.
+hs_err_pid*.log
+replay_pid*.log
+
+### Merge and patch leftovers. Harmless, but a committed *.orig is a second
+### copy of a file that silently stops tracking the real one.
+*.orig
+*.rej

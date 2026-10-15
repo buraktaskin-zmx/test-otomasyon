@@ -9,6 +9,11 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 /**
  * Generate a scenario, check it, and let the model fix its own mistakes.
@@ -35,18 +40,31 @@ public class SuggestService {
      */
     private final int maxRepairs;
 
+    /** Upper bound on one batch, so a typed "500" cannot occupy the model for an hour. */
+    private final int maxScenarios;
+
+    /** How many scenarios of one batch are generated at the same time. */
+    private final int batchConcurrency;
+
     private final LlmClient llm;
     private final PromptBuilder prompts;
     private final ScenarioValidator validator;
+    private final VariationPlanner planner;
 
     public SuggestService(LlmClient llm,
                           PromptBuilder prompts,
                           ScenarioValidator validator,
-                          @Value("${llm.max-repairs:1}") int maxRepairs) {
+                          VariationPlanner planner,
+                          @Value("${llm.max-repairs:1}") int maxRepairs,
+                          @Value("${llm.max-scenarios:10}") int maxScenarios,
+                          @Value("${llm.batch-concurrency:4}") int batchConcurrency) {
         this.llm = llm;
         this.prompts = prompts;
         this.validator = validator;
+        this.planner = planner;
         this.maxRepairs = maxRepairs;
+        this.maxScenarios = maxScenarios;
+        this.batchConcurrency = Math.max(1, batchConcurrency);
     }
 
     /**
@@ -71,17 +89,36 @@ public class SuggestService {
      *                  request and this is the guarantee.
      */
     public Suggestion suggest(String catalogYaml, String intent, Vocabulary vocabulary, String loginStep) {
-        String system = prompts.system(vocabulary);
-        String userMessage = prompts.user(catalogYaml, intent, loginStep);
-        List<String> log = new ArrayList<>();
-
         // Parsed once, then used by every validation pass including repairs.
         // Empty when the catalog will not parse — the checks simply do not run,
         // which is how this worked before they existed.
         CatalogModel catalog = CatalogModel.parse(catalogYaml).orElse(null);
 
-        String draft = LoginStep.apply(LlmOutputCleaner.clean(llm.ask(system, userMessage)), loginStep);
-        ValidationResult result = validator.validate(draft, vocabulary, catalog);
+        // No variation: this is the single-scenario path, where the analyst's
+        // intent really may ask for several input rows and a Scenario Outline
+        // is the right answer. OutlineFlattener reads that null and stands
+        // aside.
+        return one(prompts.system(vocabulary),
+                prompts.user(catalogYaml, intent, loginStep),
+                catalog, vocabulary, loginStep, intent, null);
+    }
+
+    /**
+     * One scenario, from the prompt that asks for it to a verdict on what came
+     * back — generate, validate, repair, validate again.
+     *
+     * Extracted so {@link #suggest} and {@link #suggestMany} share it rather
+     * than each carrying a copy. The copies would have been identical on the day
+     * they were written and would have drifted at the first prompt change, with
+     * the batch path silently keeping the older behaviour.
+     */
+    private Suggestion one(String system, String userMessage, CatalogModel catalog,
+                           Vocabulary vocabulary, String loginStep, String intent,
+                           VariationPlanner.Variation variation) {
+        List<String> log = new ArrayList<>();
+
+        String draft = settle(llm.ask(system, userMessage), loginStep, catalog, vocabulary, variation);
+        ValidationResult result = validator.validate(draft, vocabulary, catalog, intent);
         int attempts = 1;
         log.add(describe(attempts, result));
 
@@ -89,9 +126,9 @@ public class SuggestService {
             // The repair turn carries the draft and the verdict, not the
             // original task: the model already knows what it was asked for and
             // repeating it invites a fresh scenario instead of a fix.
-            draft = LoginStep.apply(
-                    LlmOutputCleaner.clean(llm.ask(system, prompts.repair(draft, result))), loginStep);
-            result = validator.validate(draft, vocabulary, catalog);
+            draft = settle(llm.ask(system, prompts.repair(draft, result)), loginStep, catalog,
+                    vocabulary, variation);
+            result = validator.validate(draft, vocabulary, catalog, intent);
             attempts++;
             log.add(describe(attempts, result));
         }
@@ -99,10 +136,200 @@ public class SuggestService {
         return new Suggestion(draft, result.valid(), result, attempts, log);
     }
 
+    /**
+     * Everything done TO a draft between the model answering and the validator
+     * reading it, in the order it has to happen.
+     *
+     * Collected into one method because it is applied twice — after the first
+     * generation and after every repair — and the two copies had already started
+     * to differ once: LoginStep was on both, DateVerb would have gone on one.
+     * A repair turn that skipped a correction would hand back a draft worse than
+     * the one it was fixing.
+     *
+     * Order is load-bearing. Cleaning strips the reasoning block and the code
+     * fence, so it must come first or the patterns below match inside them.
+     * LoginStep rewrites the first step, DateVerb the field steps, EntryRow one
+     * navigation step; no two of them touch the same line. EntryRow may DELETE a
+     * line, which shifts the numbers the validator reports -- harmless only
+     * because it runs before the validation, never between its passes.
+     */
+    private static String settle(String answer, String loginStep, CatalogModel catalog,
+                                 Vocabulary vocabulary, VariationPlanner.Variation variation) {
+        return OutlineFlattener.apply(
+                EntryRow.apply(
+                        DateVerb.apply(
+                                LoginStep.apply(LlmOutputCleaner.clean(answer), loginStep),
+                                catalog, vocabulary),
+                        catalog, vocabulary),
+                variation);
+    }
+
+    /* =========================== batch generation ========================== */
+
+    /**
+     * One scenario plus the data combination it was built to exercise.
+     *
+     * The variation travels back to the UI because it is what makes the list of
+     * drafts readable: "E-Fatura + hash kodu" tells an analyst what this one is
+     * for, where "Senaryo 3" tells them nothing. It comes from the planner, not
+     * from the model's own Scenario title, which is unverified text.
+     */
+    public record Scenario(int index, String label, Map<String, String> values,
+                           List<String> ticked, List<String> excluded, Suggestion suggestion) {
+    }
+
+    /**
+     * @param notes  what the analyst should know about the plan's limits, possibly empty
+     * @param tokens what the whole batch spent, or 0 when the server reported
+     *               nothing. Shown rather than hidden because it is the only
+     *               number that makes the cost of a batch comparable with the
+     *               cost of an agent walk — and until this existed, both were
+     *               guesses from prompt sizes.
+     */
+    public record Batch(List<Scenario> scenarios, List<String> notes, long tokens) {
+    }
+
+    /**
+     * N scenarios for one screen, each exercising a different combination of the
+     * values that screen offers.
+     *
+     * N SEPARATE documents, not one file holding N scenarios, and the reason is
+     * in the validator: {@code collectFromFeature} gathers every scenario's
+     * steps into ONE list and {@code checkAssertionsAreEarned} walks it with ONE
+     * set of written labels. In a five-scenario file the fifth scenario's
+     * `verify` is therefore "earned" by the first scenario's `enter` — the same
+     * hole that let an invented "Bayi Ünvanı" reach a browser run. Separate
+     * documents keep each check as strict as it is for a single scenario, give
+     * each draft its own repair turn so one bad generation cannot poison the
+     * rest, and leave each scenario independently runnable.
+     *
+     * CONCURRENT, up to {@code llm.batch-concurrency}. It was sequential, on the
+     * reasoning that one vLLM deployment means five requests share one GPU and
+     * finish no sooner — and that reasoning was wrong about the one server it
+     * was about. Continuous batching is what vLLM exists for: concurrent
+     * requests are folded into the same forward pass. The model makes it
+     * starker still — Qwen3.6-35B-A3B is a mixture of experts with 3B active
+     * parameters, so a single request is memory-bandwidth bound and leaves the
+     * GPU idle. Five at once finishes closer to the time of one than of five.
+     *
+     * Bounded rather than unbounded because this server is shared: firing a
+     * batch of ten in one go pushes every other team's request behind it.
+     */
+    public Batch suggestMany(String catalogYaml, String intent, Vocabulary vocabulary,
+                             String loginStep, int count) {
+        int wanted = Math.max(1, Math.min(count, maxScenarios));
+        String system = prompts.system(vocabulary);
+        CatalogModel catalog = CatalogModel.parse(catalogYaml).orElse(null);
+
+        List<Scenario> scenarios = new ArrayList<>();
+        List<String> notes = new ArrayList<>();
+        if (count > maxScenarios) {
+            notes.add("En fazla " + maxScenarios + " senaryo üretilebilir; " + count
+                    + " istendi, " + wanted + " üretildi.");
+        }
+
+        // No parsed catalog means no variation plan: the planner reads fields,
+        // types and option lists, and there are none. The batch still runs —
+        // N drafts of the same request, which is what the analyst asked for —
+        // and says why they will look alike. Same choice as everywhere else
+        // here: an unparseable catalog switches checks OFF, it does not fail.
+        VariationPlanner.Plan plan = (catalog == null)
+                ? null
+                : planner.plan(catalog, wanted);
+        if (plan == null) {
+            // The reason, not just the fact. "Check the fields block" named neither
+            // the line nor the cause, and the causes are not guessable from the
+            // outside — a tab in the indent, a colon inside an unquoted Turkish
+            // sentence, a field written as a string. CatalogModel.diagnose re-reads
+            // the YAML only on this path, so a healthy catalog pays nothing.
+            notes.add("Katalog ayrıştırılamadı, bu yüzden veri kombinasyonu planlanamadı: "
+                    + wanted + " senaryo da aynı istekten üretildi ve birbirine çok "
+                    + "benzeyecek. SEBEP: " + CatalogModel.diagnose(catalogYaml));
+        } else {
+            notes.addAll(plan.notes());
+        }
+
+        // Read before the calls and subtracted after: see LlmClient.spent() for
+        // why a counter rather than a per-call return value.
+        long before = LlmClient.spent();
+
+        // Indexed, not appended: the tasks finish in whatever order the model
+        // answers them, and the analyst's list must still read 1..N.
+        Scenario[] done = new Scenario[wanted];
+        ExecutorService pool = Executors.newFixedThreadPool(Math.min(batchConcurrency, wanted));
+        try {
+            List<Future<?>> running = new ArrayList<>();
+            for (int i = 0; i < wanted; i++) {
+                final int index = i;
+                final VariationPlanner.Variation variation =
+                        (plan == null) ? null : plan.variations().get(i);
+                running.add(pool.submit(() -> {
+                    Suggestion suggestion = one(
+                            system,
+                            prompts.user(catalogYaml, intent, loginStep, variation),
+                            catalog, vocabulary, loginStep, intent, variation);
+                    done[index] = variation == null
+                            ? new Scenario(index, "Senaryo " + (index + 1),
+                                    Map.of(), List.of(), List.of(), suggestion)
+                            : new Scenario(index, variation.label(), variation.values(),
+                                    variation.ticked(), variation.excluded(), suggestion);
+                }));
+            }
+            for (int i = 0; i < running.size(); i++) {
+                awaitOne(running.get(i), i, done, plan, notes);
+            }
+        } finally {
+            // Per request, never a field: a long-lived pool would hold threads
+            // for a batch nobody is waiting on any more, and would still be
+            // running them while Spring tries to shut down.
+            pool.shutdownNow();
+        }
+
+        for (Scenario scenario : done) {
+            if (scenario != null) {
+                scenarios.add(scenario);
+            }
+        }
+
+        long tokens = LlmClient.spent() - before;
+        System.out.println("[uptest] suggest-many: " + scenarios.size() + "/" + wanted
+                + " senaryo, " + tokens + " token");
+        return new Batch(scenarios, notes, tokens);
+    }
+
+    /**
+     * Waits for one scenario and keeps a failure from taking the batch with it.
+     *
+     * Four drafts an analyst can read beat an error page that mentions none of
+     * them, and a batch is exactly the shape where one bad answer should not
+     * cost the other four — they are independent model calls with nothing
+     * shared between them. The failure is reported as a note naming WHICH
+     * scenario died, because a silently shorter list looks like the planner
+     * decided to produce fewer.
+     */
+    private static void awaitOne(Future<?> task, int index, Scenario[] done,
+                                 VariationPlanner.Plan plan, List<String> notes) {
+        try {
+            task.get();
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            notes.add((index + 1) + ". senaryo üretimi yarıda kesildi.");
+        } catch (ExecutionException failed) {
+            Throwable cause = failed.getCause() == null ? failed : failed.getCause();
+            String label = (plan == null)
+                    ? "Senaryo " + (index + 1)
+                    : plan.variations().get(index).label();
+            notes.add((index + 1) + ". senaryo üretilemedi (" + label + "): "
+                    + cause.getClass().getSimpleName() + ": " + cause.getMessage()
+                    + ". Diğer senaryolar etkilenmedi.");
+            System.out.println("[uptest] suggest-many: " + (index + 1) + ". senaryo basarisiz — "
+                    + cause);
+        }
+    }
+
     private static String describe(int attempt, ValidationResult result) {
         return "attempt " + attempt + ": "
                 + (result.valid()
                 ? "valid, " + result.stepCount() + " steps"
                 : result.errors().size() + " error(s), " + result.stepCount() + " steps");
-    }
-}
+    }}

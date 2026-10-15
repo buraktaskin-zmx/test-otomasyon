@@ -1,0 +1,60 @@
+/*
+  Additive-only stylesheet for the React tree. app.css is never edited --
+  every rule here either (a) resets a native element to the look app.css's
+  existing class already implies, because React uses a semantically correct
+  element (<button>) where app.js used a non-interactive one (<span> + click
+  delegation), or (b) is a genuinely new, narrow-scope visual touch the
+  "dar modernizasyon" decision covers (focus rings, mainly -- app.css today
+  ships almost no :focus-visible treatment).
+
+  Loaded AFTER app.css (see main.tsx), so these rules can assume app.css's
+  tokens exist and layer cleanly on top of them.
+*/
+
+/* ---- Native-element resets for class names app.css already styles ----
+
+   app.css's .v-line rule (color/weight/cursor/underline) was written
+   against a <span> with a click LISTENER delegated from a parent, not a
+   real interactive element -- so it carries no background/border/padding/
+   font reset. React uses a real <button> here instead (keyboard and screen
+   reader support for free), which means the browser's own button chrome
+   has to be switched off by hand, exactly the way app.css's .sug rule
+   already does for the suggestion chips. */
+.v-line,
+.unstyled-button {
+    appearance: none;
+    background: none;
+    border: 0;
+    padding: 0;
+    font: inherit;
+    cursor: pointer;
+    text-align: inherit;
+}
+
+/* .multi-card is styled as a real <button> in app.css already (font:
+   inherit, color: inherit are both there) -- nothing to reset. Listed here
+   only so the next person extending this file has one place to check
+   before assuming a native element needs resetting. */
+
+/* ---------------------------- Focus visibility ---------------------------
+
+   app.css ships a handful of :focus-visible rules (search inputs, the multi
+   card) but most interactive elements -- .btn, .chip, .tab, .side-tab,
+   .vocab-item, .icon-btn, .node-pill -- have none, so keyboard-only
+   navigation loses track of where it is. One rule, reusing the token
+   app.css already defines for exactly this purpose (--brand), applied to
+   every interactive class the React tree renders. Mouse/touch users see
+   nothing new: :focus-visible does not fire on a pointer click in a
+   modern browser. */
+.btn:focus-visible,
+.chip:focus-visible,
+.tab:focus-visible,
+.side-tab:focus-visible,
+.vocab-item:focus-visible,
+.icon-btn:focus-visible,
+.node-pill:focus-visible,
+.v-line:focus-visible,
+.artifact:focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 1px;
+}

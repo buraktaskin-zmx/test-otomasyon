@@ -1,7 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="Encoding">
-    <file url="file://$PROJECT_DIR$/src/main/java" charset="UTF-8" />
-    <file url="file://$PROJECT_DIR$/src/main/resources" charset="UTF-8" />
+  <!--
+    Project-wide UTF-8. This file used to name $PROJECT_DIR$/src/main/java and
+    /src/main/resources — neither of which EXISTS here: the sources live under
+    uptest-executor/ and uptest-orchestrator/. So it was configuring nothing,
+    left over from a single-module layout.
+
+    "PROJECT" sets the default for every module, including any added later.
+
+    defaultCharsetForPropertiesFiles matters most: IntelliJ defaults .properties
+    files to ISO-8859-1, and application.properties here is full of Turkish
+    text and em dashes. That default is how "ö" silently becomes mojibake in a
+    file nobody thought they had re-encoded.
+  -->
+  <component name="Encoding" defaultCharsetForPropertiesFiles="UTF-8" addBOMForNewFiles="with NO BOM">
+    <file url="PROJECT" charset="UTF-8" />
   </component>
 </project>

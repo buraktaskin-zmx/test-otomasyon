@@ -6,6 +6,11 @@ navigation:
   sub_menu: "Online DBS İşlemleri"
   entry_row: "FORD DBS ODEMELERI"
   entry_button: "Fatura Oluştur"
+  # "Fatura Oluştur" formu DEĞİL, bir yol ayrımı açıyor: "Oluşturma Tipi" =
+  # Bilgi Girişi / Dosya Yükleme. Aşağıdaki 16 alan yalnızca "Bilgi Girişi"
+  # formunun alanları; "Dosya Yükleme" bambaşka bir ekran ve kendi kataloğunu
+  # ister. Bu yüzden burada bir ALAN değil, navigasyon adımı.
+  entry_choice: "Bilgi Girişi"
 
 fields:
   # Bayi Kodu ÖNCE gelmeli: uygulama buna tepki olarak Bayi Ünvanı'nı doldurur
@@ -53,19 +58,43 @@ fields:
   - label: "Fatura Tarihi"
     type: date
     verifiable: true
+  # DÜZELTİLDİ: "E-Arşiv Fatura" eksikti. Bir ajan keşfi üç seçeneği de
+  # ölçtü. Eksikliği sessizdi ama ucuz değildi: aşağıdaki "Vergisiz Tutar"
+  # yalnızca bu değerle açılıyor, yani seçenek listede olmadan koşul HİÇBİR
+  # senaryoda sağlanamaz ve alan ölü yük olarak durur.
   - label: "Fatura Tipi"
     type: dropdown
-    options: ["Normal", "E-Fatura"]
+    options: ["Normal", "E-Fatura", "E-Arşiv Fatura"]
     verifiable: true
-  # Ekranda sürekli durmuyor: "Fatura Tipi" = "E-Fatura" seçilince JS bunu
-  # yerinde gösteriyor ve zorunlu hâle geliyor. "Normal" seçen bir senaryo bu
-  # alana dokunmamalı — dokunursa görünmeyen bir alanı arar ve zaman aşımına
-  # uğrar.
+  # Üç tipin her biri kendi ek alanını açıyor (analist, ekranda doğruladı):
+  #   Normal          → ek alan yok
+  #   E-Fatura        → E-Fatura Hash Kodu
+  #   E-Arşiv Fatura  → Vergisiz Tutar
+  # Her koşullu alanın TEK tetikleyicisi var, bu yüzden shown_when'in tek
+  # değer alması burada kısıt değil.
+  #
+  # İkisi de "Fatura Tipi"nden SONRA duruyor ve bu yer kritik:
+  # VariationPlanner alanları tek geçişte katalog sırasıyla geziyor, ebeveyn
+  # henüz atanmamışsa koşulu değerlendiremiyor ve alan hiçbir senaryoda
+  # doldurulmuyor.
   - label: "E-Fatura Hash Kodu"
     type: text
     shown_when:
       field: "Fatura Tipi"
       value: "E-Fatura"
+    verifiable: true
+  # type: amount, çünkü ekranda yan yana lira/kuruş kutuları ve "TL" var —
+  # "Toplam Tutar" ile aynı şekil. Senaryo `enter amount` kullanacak; `enter`
+  # olsaydı tek kutuya yazıp formu boş bırakırdı.
+  #
+  # ÖLÇÜLMEDİ: verifiable. Hiçbir ajan yürüyüşü henüz "E-Fatura" ya da
+  # "E-Arşiv Fatura" seçmedi — hepsi "Normal" ile geçti — yani bu iki alanın
+  # onay ekranında görünüp görünmediği note_confirmation ile doğrulanmadı.
+  - label: "Vergisiz Tutar"
+    type: amount
+    shown_when:
+      field: "Fatura Tipi"
+      value: "E-Arşiv Fatura"
     verifiable: true
 
 buttons:

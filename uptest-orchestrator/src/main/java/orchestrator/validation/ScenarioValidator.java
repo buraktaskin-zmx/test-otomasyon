@@ -15,8 +15,12 @@ import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
@@ -48,6 +52,17 @@ public class ScenarioValidator {
      * @param catalog may be null; then nothing below the vocabulary check runs
      */
     public ValidationResult validate(String featureText, Vocabulary vocabulary, CatalogModel catalog) {
+        return validate(featureText, vocabulary, catalog, null);
+    }
+
+    /**
+     * @param intent what the analyst asked for, or null. Used for one check
+     *               only: a value the scenario asserts without ever typing it
+     *               is allowed when the analyst supplied that value, and is an
+     *               invention otherwise.
+     */
+    public ValidationResult validate(String featureText, Vocabulary vocabulary, CatalogModel catalog,
+                                     String intent) {
         List<ValidationError> errors = new ArrayList<>();
 
         GherkinParser parser = GherkinParser.builder().includePickles(false).build();
@@ -88,10 +103,19 @@ public class ScenarioValidator {
 
         // Only once every line is a known step. Asking the catalog about a
         // line that binds to nothing would report the same mistake twice.
-        if (errors.isEmpty() && catalog != null) {
+        // Whether every line bound to a step, captured BEFORE the checks below
+        // add anything. The catalog checks need that to be true — asking what
+        // a step's arguments mean is pointless when the step is unknown — but
+        // they must not be silenced by findings that leave the steps intact.
+        boolean everyStepIsKnown = errors.isEmpty();
+
+        checkOutlineIsUsed(featureText, errors);
+
+        if (everyStepIsKnown && catalog != null) {
             for (Step step : steps) {
                 checkAgainstCatalog(step, vocabulary, catalog, errors);
             }
+            checkAssertionsAreEarned(steps, vocabulary, catalog, intent, errors);
         }
 
         return errors.isEmpty()
@@ -100,6 +124,122 @@ public class ScenarioValidator {
     }
 
     /* ========================== catalog checks ========================== */
+
+    /**
+     * Every assertion must be earned: either the scenario typed the value, or
+     * the analyst supplied it.
+     *
+     * A field the scenario never filled holds whatever the application
+     * derived, and the model has no way to know it — so it invents something
+     * plausible. Real case: asked to check "Bayi Ünvanı", which the app looks
+     * up from the chosen dealer code, it asserted "Ford Otomobil Ticaret A.Ş."
+     * against a screen that says "TEST / TEST UNVANI".
+     *
+     * The intent is the escape hatch, and the right one: an analyst who knows
+     * the expected value writes it down, and then asserting it is knowledge
+     * rather than invention.
+     */
+    private static void checkAssertionsAreEarned(List<Step> steps, Vocabulary vocabulary, CatalogModel catalog,
+                                                 String intent, List<ValidationError> errors) {
+        Set<String> written = new HashSet<>();
+        String said = intent == null ? "" : fold(intent);
+
+        for (Step step : steps) {
+            String text = step.getText().trim();
+            Vocabulary.Match match = vocabulary.matchWithArguments(text).orElse(null);
+            if (match == null) {
+                continue;
+            }
+            String pattern = match.step().pattern();
+
+            if (pattern.startsWith("verify ") && pattern.endsWith("text is displayed")
+                    && !match.arguments().isEmpty()) {
+                checkMessageIsCatalogued(text, match.arguments().get(0),
+                        step.getLocation().getLine(), catalog, said, errors);
+                continue;
+            }
+
+            Roles roles = roles(pattern, match.arguments().size());
+            if (roles == null) {
+                continue;
+            }
+            String label = match.arguments().get(roles.label());
+            String value = match.arguments().get(roles.value());
+
+            if (!pattern.startsWith("verify ")) {
+                written.add(label);
+                continue;
+            }
+            if (written.contains(label) || said.contains(fold(value))) {
+                continue;
+            }
+            // Only for fields the catalog knows; an unknown label is already
+            // reported by the check above and one complaint is enough.
+            if (catalog.field(label).isPresent()) {
+                errors.add(ValidationError.unearnedAssertion(
+                        step.getLocation().getLine(), text, label, value));
+            }
+        }
+    }
+
+    /**
+     * The catalog's confirmation text, copied rather than paraphrased.
+     *
+     * A message is not test data (the prompt says so and the model agreed,
+     * then wrote "Fatura başarıyla oluşturuldu" for a screen that says
+     * "Fatura Oluşturma işleminiz başarıyla gerçekleşmiştir."). Checked only
+     * when the catalog actually gives a message — a flow without one has
+     * nothing to compare against.
+     *
+     * Known limitation: a negative scenario asserting an error dialog's text
+     * is flagged too. That is arguable rather than wrong — a message a test
+     * depends on belongs in the catalog either way — but it is the reason
+     * this fires only on catalogs that carry a success_message.
+     */
+    private static void checkMessageIsCatalogued(String text, String asserted, long line,
+                                                 CatalogModel catalog, String said,
+                                                 List<ValidationError> errors) {
+        String expected = catalog.successMessage();
+
+        if (expected == null || expected.isBlank()) {
+            // No message in the catalog, so there is nothing on this screen the
+            // scenario is entitled to claim. The prompt already says to end
+            // without one; a model that writes a plausible sentence anyway
+            // sends a run hunting for text the application never prints.
+            // Unless the analyst dictated it — then it is knowledge, not
+            // invention, the same exception assertions get.
+            if (!said.contains(fold(asserted))) {
+                errors.add(ValidationError.uncataloguedMessage(line, text));
+            }
+            return;
+        }
+        if (!fold(expected).equals(fold(asserted))) {
+            errors.add(ValidationError.paraphrasedMessage(line, text, expected));
+        }
+    }
+
+    /**
+     * A Scenario Outline whose Examples nothing reads.
+     *
+     * Generated as "Scenario Outline" with a one-row table and steps carrying
+     * literal values, so the table is decoration: it says the scenario is data
+     * driven when it is not, and the next person edits the table expecting the
+     * run to change.
+     *
+     * Checked on the raw text rather than the AST because the question is
+     * whether a "<placeholder>" appears anywhere in the steps at all, which is
+     * exactly what the source shows.
+     */
+    private static void checkOutlineIsUsed(String featureText, List<ValidationError> errors) {
+        Matcher outline = OUTLINE.matcher(featureText);
+        if (outline.find() && !PLACEHOLDER.matcher(featureText).find()) {
+            long line = featureText.substring(0, outline.start()).split("\\R", -1).length;
+            errors.add(ValidationError.unusedOutline(line));
+        }
+    }
+
+    private static final Pattern OUTLINE = Pattern.compile("(?m)^\\s*(Scenario Outline|Senaryo Taslağı)\\s*:");
+    private static final Pattern PLACEHOLDER = Pattern.compile("<[^<>\\s][^<>]*>");
 
     /**
      * Which argument is the field label and which is the value.
@@ -138,12 +278,43 @@ public class ScenarioValidator {
             return;
         }
         String pattern = match.step().pattern();
+        long line = step.getLocation().getLine();
+
+        // A `click` of the entry ROW. Both steps are valid patterns and the
+        // value is a real catalogued one, so neither the grammar check nor the
+        // label check has anything to say — and the model emitted BOTH
+        // `click "FORD DBS ODEMELERI"` and `select row "FORD DBS ODEMELERI"`.
+        // `click` resolves getByRole(BUTTON|LINK); a grid cell is neither, so it
+        // spends its full timeout and the run dies on a line that merely
+        // repeated the line above it.
+        if (pattern.equals("click {string}") && match.arguments().size() == 1
+                && !catalog.entryRow().isEmpty()
+                && fold(catalog.entryRow()).equals(fold(match.arguments().get(0)))) {
+            errors.add(ValidationError.rowNotClickable(line, text, catalog.entryRow()));
+            return;
+        }
+
+        // "check" is the one field step with a single argument, so the
+        // label/value pairing below cannot place it. Its argument is a label,
+        // and the only field it may name is a checkbox: ticking a text box is
+        // a mistake the browser reports minutes later, if at all.
+        if (pattern.startsWith("check ") && match.arguments().size() == 1) {
+            String box = match.arguments().get(0);
+            CatalogModel.CatalogField ticked = catalog.field(box).orElse(null);
+            if (ticked == null) {
+                errors.add(ValidationError.unknownLabel(line, text, box, nearestLabels(box, catalog)));
+            } else if (!"checkbox".equals(ticked.type())) {
+                errors.add(ValidationError.wrongVerb(line, text, box, describeType(ticked),
+                        expectedPattern(ticked)));
+            }
+            return;
+        }
+
         Roles roles = roles(pattern, match.arguments().size());
         if (roles == null) {
             return;
         }
 
-        long line = step.getLocation().getLine();
         String label = match.arguments().get(roles.label());
         String value = match.arguments().get(roles.value());
 
@@ -153,8 +324,6 @@ public class ScenarioValidator {
             return;
         }
 
-        // A verify step reads; every type can be read, so only the writing
-        // steps have a type to disagree with.
         if (!pattern.startsWith("verify ")) {
             String expected = expectedPattern(field);
             if (expected != null && !pattern.equals(expected)) {
@@ -162,7 +331,33 @@ public class ScenarioValidator {
                 return;
             }
             checkValue(line, text, field, value, errors);
+            return;
         }
+
+        // Reading used to be unchecked — every type can be read, so no verb
+        // could be wrong. A date broke that. It is written as an OFFSET
+        // ("+3 gün") and only `verify the {} has date {}` resolves one; the
+        // plain equals compares text exactly and would look at a screen showing
+        // 11/10/2026 for the literal string "+3 gün". A field set perfectly
+        // then fails its own assertion, minutes into a browser run, which is
+        // precisely the silent-wrong this validator exists to catch early.
+        String expectedVerify = expectedVerifyPattern(field);
+        if (expectedVerify != null && !pattern.equals(expectedVerify)) {
+            errors.add(ValidationError.wrongVerb(line, text, label, describeType(field), expectedVerify));
+        }
+    }
+
+    /**
+     * The one step that reads this field, or null when any of them will do.
+     *
+     * Null for everything except a date, deliberately. Text, amounts and
+     * dropdowns all render as text on a confirm screen and the plain equals
+     * reads them all; inventing a rule there would reject correct scenarios for
+     * tidiness. A date is the exception because its WRITTEN form is not its
+     * DISPLAYED form.
+     */
+    private static String expectedVerifyPattern(CatalogModel.CatalogField field) {
+        return "date".equals(field.type()) ? "verify the {string} has date {string}" : null;
     }
 
     /**
@@ -176,10 +371,17 @@ public class ScenarioValidator {
             return "verify the {string} field equals {string}";
         }
         return switch (field.type()) {
-            case "text", "date" -> "enter {string} {string}";
+            case "text" -> "enter {string} {string}";
+            // `enter` would also set a date and the browser would not complain.
+            // What it cannot do is keep working: a literal date freezes the day
+            // the scenario was generated, and a maturity date behind today is
+            // refused by the form. `enter date` resolves "+3 gün" at run time,
+            // so the scenario stays runnable for as long as it exists.
+            case "date" -> "enter date {string} {string}";
             case "amount" -> "enter amount {string} {string}";
             case "dropdown" -> "select {string} from {string}";
             case "account_picker" -> "select account {string} from {string}";
+            case "checkbox" -> "check {string}";
             default -> null;
         };
     }

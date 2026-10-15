@@ -1,0 +1,97 @@
+# Line-ending policy, owned by the REPOSITORY rather than by each machine's
+# Git installation.
+#
+# Why this file exists at all. When it was written, core.autocrlf was set in
+# neither the local nor the global config — it was `true` in the SYSTEM config,
+# which is where the Git for Windows installer puts the answer you gave it
+# during setup. That makes the policy a property of the INSTALL, not of the
+# project: a second Windows machine whose Git was installed with
+# "checkout as-is, commit as-is" gets `false`, commits CRLF into the index, and
+# every file in the tree then reads as modified on the first machine. Nothing
+# about the content changed. This repo is edited on two Windows machines (the
+# local checkout and the VDI), so that is not a hypothetical.
+#
+# Measured before adding this file: all 105 tracked files were already `i/lf`
+# in the index (`git ls-files --eol`). So `text=auto` below matches what is
+# already stored and renormalizes NOTHING. That is why it was added at this
+# moment — the same line costs a whole-tree diff once a single CRLF file has
+# landed.
+
+# Default for everything: normalize to LF in the repository, check out in the
+# platform's native ending. Git decides text-vs-binary by content, so a file
+# type not listed below is still handled sanely.
+* text=auto
+
+
+# ---------------------------------------------------------------------------
+# Scripts whose line endings are not a preference
+# ---------------------------------------------------------------------------
+
+# cmd.exe can mis-parse a .bat/.cmd saved with LF — labels and `goto` are the
+# usual casualties, and the failure is a silently skipped line rather than an
+# error. None are tracked today; the rule is here so the first one added is
+# right without anyone remembering this.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# PowerShell 5.1 (what the VDI runs) does execute LF scripts, so this is
+# convention and caution rather than a fix for a known break: these two files
+# are Windows-only by nature and anyone opening them in a basic Windows editor
+# should not see one long line.
+*.ps1 text eol=crlf
+
+# The opposite case: a shell script with CRLF fails on the very first line,
+# because the `\r` becomes part of the interpreter path in the shebang.
+# Relevant to the Docker images, which are Linux.
+*.sh text eol=lf
+mvnw  text eol=lf
+*.bash text eol=lf
+
+
+# ---------------------------------------------------------------------------
+# Generated frontend bundle
+# ---------------------------------------------------------------------------
+#
+# `npm run build` writes here (vite.config.ts outDir) and the output IS
+# committed on purpose — frontend/.gitignore explains why: the VDI is expected
+# to run the jar without building the UI first.
+#
+# -diff:  the bundle and its 1.2 MB sourcemap are machine-written. A textual
+#         diff of them is noise that buries the real changes in the same commit.
+# -merge: two machines that both ran a build produce different hashed files and
+#         there is no sensible way to merge them. Git now refuses to try and
+#         marks a conflict instead. THE RESOLUTION IS ALWAYS TO REBUILD, never
+#         to hand-edit or to pick a side — a half-merged bundle would still
+#         load, and would be wrong in a way no test here would catch.
+uptest-orchestrator/src/main/resources/static/ui/** -diff -merge
+
+# Same reasoning, less severe: npm writes it, nobody reads the diff. Merge is
+# left enabled because the fix for a conflicted lockfile is a plain
+# `npm install`, which regenerates it.
+package-lock.json -diff
+
+
+# ---------------------------------------------------------------------------
+# Binary types
+# ---------------------------------------------------------------------------
+#
+# None are tracked today. Listed anyway because the cost of getting it wrong is
+# asymmetric: `text=auto` guesses from content, and a binary it guesses wrong
+# about is CORRUPTED by newline translation, not merely shown badly.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.woff binary
+*.woff2 binary
+*.ttf  binary
+*.eot  binary
+*.pdf  binary
+*.jar  binary
+*.zip  binary
+*.xlsx binary
+*.mv.db binary
+
+# SVG is left OUT of that list on purpose: it is XML, it is hand-edited here,
+# and a readable diff is worth more than treating it as an opaque blob.

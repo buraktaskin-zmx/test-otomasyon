@@ -1,0 +1,19 @@
+/*
+  The only CSS this rewrite adds. app.css is ported verbatim and must stay that
+  way -- 703 lines of working rules are the lowest-risk part of the migration.
+
+  app.css makes <body> the flex column that holds the top bar and <main>
+  (body { display: flex; flex-direction: column } with html, body at 100%
+  height). React, though, has to mount into an element, and a plain <div id=
+  "root"> would insert itself between body and those children, swallowing the
+  flex chain: the top bar would lose its fixed 52px row and <main> its
+  flex: 1 1 auto.
+
+  display: contents removes the wrapper from layout without removing it from
+  the DOM, so the children it holds are laid out as if they were body's own.
+  That keeps app.css honest instead of teaching it about a wrapper that exists
+  only because of the framework.
+*/
+#root {
+    display: contents;
+}

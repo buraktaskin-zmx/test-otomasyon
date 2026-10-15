@@ -5,23 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Test Senaryo Stüdyosu</title>
     <!-- No CDN anywhere: corporate SSL inspection blocks outbound fetches, so
-         every asset is served from this jar. -->
+             every asset is served from this jar. -->
     <link rel="stylesheet" href="app.css">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23004587'/><path d='M9 17l4.5 4.5L23 12' stroke='white' stroke-width='3.2' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
 </head>
 <body>
-
 <header class="topbar">
     <div class="brand">
         <span class="brand-mark" aria-hidden="true"></span>
         <span class="brand-name">Test Senaryo Stüdyosu</span>
     </div>
-
     <nav class="tabs" role="tablist">
         <button class="tab is-active" data-view="workspace" role="tab">Çalışma Alanı</button>
         <button class="tab" data-view="history" role="tab">Geçmiş</button>
     </nav>
-
     <div class="topbar-right">
         <button id="executorStatus" class="node-pill" type="button" title="Yenilemek için tıklayın">
             <span class="dot dot-unknown"></span><span id="executorLabel">bağlanıyor…</span>
@@ -29,11 +26,9 @@
         <button id="themeToggle" class="icon-btn" type="button" title="Tema değiştir" aria-label="Tema değiştir">◐</button>
     </div>
 </header>
-
 <main>
     <!-- ======================= WORKSPACE ======================= -->
     <section id="view-workspace" class="view is-active">
-
         <div class="pane pane-editor">
             <div class="pane-head">
                 <h2 class="pane-title">Senaryo</h2>
@@ -43,16 +38,26 @@
                     <button id="btnRun" class="btn btn-primary" type="button">Çalıştır</button>
                 </div>
             </div>
-
+            <!-- Shown only while a batch is open: the strip tells the analyst
+                 which of N drafts the editor holds and how to get back to the
+                 list. Hidden entirely for a single scenario, so the ordinary
+                 one-scenario workflow looks exactly as it did. -->
+            <div id="multiBar" class="multi-bar" hidden>
+                <button id="btnBackToList" class="btn btn-ghost multi-back" type="button">← Tümü</button>
+                <span id="multiPosition" class="multi-position"></span>
+                <span id="multiChips" class="multi-chips"></span>
+            </div>
             <div class="editor-wrap">
                 <div id="gutter" class="gutter" aria-hidden="true"></div>
                 <textarea id="editor" class="editor" spellcheck="false" autocomplete="off"
                           aria-label="Gherkin senaryo düzenleyici"></textarea>
             </div>
-
             <div id="validation" class="validation"></div>
+            <!-- Covers the editor rather than sitting beside it: the list IS the
+                 view while a batch is unopened, and two scrollable panes fighting
+                 for the same column is the problem the side panel already has. -->
+            <div id="multiList" class="multi-list" hidden></div>
         </div>
-
         <aside class="pane pane-side">
             <div class="pane-tabs" role="tablist">
                 <button class="side-tab is-active" data-side="vocab" role="tab">Adım Sözlüğü</button>
@@ -60,9 +65,9 @@
                     Zaman Çizelgesi <span id="timelineDot" class="tab-dot"></span>
                 </button>
                 <button class="side-tab" data-side="suggest" role="tab">AI Üret</button>
-                <button class="side-tab" data-side="discover" role="tab">Katalog Keşfet</button>
+                <button class="side-tab" data-side="multi" role="tab">Çoklu Üret</button>
+                <button class="side-tab" data-side="agent" role="tab">Ajan</button>
             </div>
-
             <div id="side-vocab" class="side-panel is-active">
                 <div class="search-row">
                     <input id="vocabSearch" class="search" type="search" placeholder="Adım ara…"
@@ -70,26 +75,20 @@
                 </div>
                 <div id="vocabList" class="vocab-list"></div>
             </div>
-
             <div id="side-suggest" class="side-panel">
                 <div class="suggest-form">
                     <label class="suggest-label" for="suggestCatalog">Ekran</label>
                     <select id="suggestCatalog" class="search"></select>
-
                     <label class="suggest-label" for="suggestCif">CIF / Müşteri Kodu</label>
                     <input id="suggestCif" class="search" type="text" autocomplete="off">
-
                     <div id="suggestUseridRow">
                         <label class="suggest-label" for="suggestUserid">Kullanıcı ID</label>
                         <input id="suggestUserid" class="search" type="text" autocomplete="off">
                     </div>
-
                     <label class="suggest-label" for="suggestIntent">Ne test edilsin?</label>
                     <textarea id="suggestIntent" class="search suggest-intent" rows="5"
                               placeholder="Örn: DI00002018 / 3014 ile giriş yapıp 1.250,55 TL ödeme talebi oluştur ve tutarı onay ekranında doğrula"></textarea>
-
                     <button id="btnSuggest" class="btn btn-primary suggest-go" type="button">Senaryo Üret</button>
-
                     <p class="suggest-hint">
                         Model yalnızca sağdaki sözlükteki adımları kullanabilir. Giriş
                         adımını model değil orchestrator yazar — kataloğun uygulamasına
@@ -100,7 +99,66 @@
                 </div>
                 <div id="suggestStatus" class="suggest-status"></div>
             </div>
-
+            <div id="side-multi" class="side-panel">
+                <div class="suggest-form">
+                    <label class="suggest-label" for="multiCatalog">Ekran</label>
+                    <select id="multiCatalog" class="search"></select>
+                    <label class="suggest-label" for="multiCif">CIF / Müşteri Kodu</label>
+                    <input id="multiCif" class="search" type="text" autocomplete="off">
+                    <div id="multiUseridRow">
+                        <label class="suggest-label" for="multiUserid">Kullanıcı ID</label>
+                        <input id="multiUserid" class="search" type="text" autocomplete="off">
+                    </div>
+                    <label class="suggest-label" for="multiCount">Senaryo sayısı</label>
+                    <input id="multiCount" class="search" type="number" min="1" max="10" step="1" value="5">
+                    <!-- The one decision the catalog cannot make and the planner
+                         must not guess: how far down the flow to go. It used to
+                         live in free prose, which meant the analyst had to write
+                         a sentence before anything could run AND the choice was
+                         only as reliable as the model's reading of it. Pressing
+                         the final confirm creates a real, irreversible record in
+                         the test bank, so it belongs in a control, not a
+                         paragraph. Safe option first and selected by default. -->
+                    <label class="suggest-label">Akış nereye kadar gitsin?</label>
+                    <div class="choice-group">
+                        <label class="choice">
+                            <input type="radio" name="multiDepth" value="confirm" checked>
+                            <span>
+                                <b>Devam'da dur</b>
+                                <small>Formu doldurur, Devam'a basar, özet ekranındaki
+                                    değerleri doğrular. Kayıt oluşturmaz.</small>
+                            </span>
+                        </label>
+                        <label class="choice">
+                            <input type="radio" name="multiDepth" value="submit">
+                            <span>
+                                <b>Sonuna kadar — Onay'a bas</b>
+                                <small class="choice-warn">⚠ Her senaryo test bankasında
+                                    <b>gerçek bir kayıt</b> oluşturur.</small>
+                            </span>
+                        </label>
+                    </div>
+                    <label class="suggest-label" for="multiIntent">
+                        Ek not <span class="suggest-optional">(opsiyonel — boş bırakabilirsiniz)</span>
+                    </label>
+                    <textarea id="multiIntent" class="search suggest-intent" rows="3"
+                              placeholder="Örn: Fatura Tipi her senaryoda farklı olsun"></textarea>
+                    <button id="btnMulti" class="btn btn-primary suggest-go" type="button">Senaryoları Üret</button>
+                    <p class="suggest-hint">
+                        Her senaryo için <b>farklı bir veri kombinasyonu</b> orchestrator'da
+                        hesaplanır — modele "çeşitlendir" denmez, seçilen değerler
+                        <b>harfi harfine</b> verilir. Açılır listelerde katalogdaki seçenekler
+                        sırayla dolaşılır; tutar, tarih ve metin alanlarında sınır değerleri
+                        denenir. <code>shown_when</code> ile görünen bir alan yalnızca onu
+                        açan seçimi yapan senaryoda doldurulur.
+                        <b>Değer yazmayın</b> — alanların değerlerini planlayıcı seçiyor; nota
+                        yazılan bir değer iki kaynağı çeliştirir.
+                        Her senaryo <b>ayrı</b> doğrulanır ve ayrı onarılır, bu yüzden 5 senaryo
+                        1-2 dakika sürer.
+                    </p>
+                </div>
+                <div id="multiStatus" class="suggest-status"></div>
+            </div>
             <div id="side-discover" class="side-panel">
                 <div class="suggest-form">
                     <label class="suggest-label" for="discoverApp">Uygulama</label>
@@ -108,33 +166,29 @@
                         <option value="NGC">NGC (Kurumsal)</option>
                         <option value="NGI">NGI (Bireysel)</option>
                     </select>
-
                     <label class="suggest-label" for="discoverCif">CIF / Müşteri Kodu</label>
                     <input id="discoverCif" class="search" type="text" autocomplete="off">
-
                     <div id="discoverUseridRow">
                         <label class="suggest-label" for="discoverUserid">Kullanıcı ID</label>
                         <input id="discoverUserid" class="search" type="text" autocomplete="off">
                     </div>
-
                     <label class="suggest-label" for="discoverMainMenu">Ana Menü</label>
                     <input id="discoverMainMenu" class="search" type="text" placeholder="Örn: NAKİT YÖNETİMİ">
-
                     <label class="suggest-label" for="discoverSubMenu">Alt Menü</label>
                     <input id="discoverSubMenu" class="search" type="text" placeholder="Örn: Ödeme Oluştur / Talep Et">
-
+                    <label class="suggest-label" for="discoverEntryRow">Izgara Satırı (opsiyonel)</label>
+                    <input id="discoverEntryRow" class="search" type="text" placeholder="Örn: FORD DBS ODEMELERI">
                     <label class="suggest-label" for="discoverEntryButton">Giriş Butonu (opsiyonel)</label>
                     <input id="discoverEntryButton" class="search" type="text" placeholder="Örn: Ödeme Talep Et">
-
                     <label class="suggest-label">Ekranlar</label>
                     <div id="discoverStages"></div>
                     <button id="btnAddStage" class="btn btn-ghost stage-add" type="button">+ Ekran Ekle</button>
-
                     <button id="btnDiscover" class="btn btn-primary suggest-go" type="button">Ekranı Keşfet</button>
-
                     <p class="suggest-hint">
                         Her ekran için <b>ne</b> yazılacağını söylersiniz; <b>nasıl</b> yazılacağına
                         (enter / enter amount / select / select account) DOM taraması karar verir.
+                        Alt menü bir forma değil bir listeye açılıyorsa, formu açan butondan
+                        önce seçilecek satırı <b>Izgara Satırı</b> alanına yazın.
                         Her ekranın butonuna basıldıktan sonra bir sonraki ekran da taranır.
                         Hiç ekran eklemezseniz yalnızca giriş ekranı taranır, hiçbir şey
                         doldurulmaz. <code>success_message</code> elle eklenmeli.
@@ -144,7 +198,57 @@
                 <textarea id="discoverOutput" class="search discover-output" spellcheck="false"
                           readonly rows="14" placeholder="Keşif tamamlanınca taslak YAML burada görünecek."></textarea>
             </div>
-
+            <div id="side-agent" class="side-panel">
+                <div class="suggest-form">
+                    <label class="suggest-label" for="agentUrl">Adres</label>
+                    <input id="agentUrl" class="search" type="text" autocomplete="off"
+                           value="https://ifctest.yapikredi.com.tr/ngc/indexNgc.do">
+                    <label class="suggest-label" for="agentCif">Firma / Müşteri Kodu</label>
+                    <input id="agentCif" class="search" type="text" autocomplete="off">
+                    <label class="suggest-label" for="agentUserid">Kullanıcı Kodu</label>
+                    <input id="agentUserid" class="search" type="text" autocomplete="off">
+                    <label class="suggest-label" for="agentPassword">Şifre</label>
+                    <input id="agentPassword" class="search" type="password" autocomplete="off">
+                    <label class="suggest-label" for="agentSms">Akıllı SMS kodu <span class="suggest-optional">(opsiyonel)</span></label>
+                    <input id="agentSms" class="search" type="text" autocomplete="off"
+                           placeholder="SMS ekranı gelmiyorsa boş bırakın">
+                    <label class="suggest-label" for="agentMainMenu">Ana menü <span class="suggest-optional">(opsiyonel)</span></label>
+                    <input id="agentMainMenu" class="search" type="text" autocomplete="off"
+                           placeholder="Örn: NAKİT YÖNETİMİ">
+                    <label class="suggest-label" for="agentInstruction">Ne yapsın?</label>
+                    <textarea id="agentInstruction" class="search suggest-intent" rows="10"
+                              placeholder="Girişi yukarıdaki alanlar hallediyor — buraya sadece giriş SONRASINI yazın.&#10;Örn: Online DBS İşlemleri'ne git, FORD DBS ODEMELERI satırını seç, Fatura Oluştur'a tıkla ve formdaki alanları incele. Devam/Onay'a basma."></textarea>
+                    <div class="agent-actions">
+                        <button id="btnAgentExplore" class="btn btn-ghost" type="button">Gez ve Anlat</button>
+                        <button id="btnAgentCatalog" class="btn btn-primary" type="button">Katalog Üret</button>
+                    </div>
+                    <p class="suggest-hint">
+                        Ajan gerçek bir tarayıcı sürer ve her adımdan önce sayfayı okur.
+                        <b>Gez ve Anlat</b> düzyazı gözlem verir; <b>Katalog Üret</b> aynı
+                        gezintinin sonunda <code>SCHEMA.md</code> biçiminde YAML döndürür.
+                        Taslak, emin olmadığı satırları <code># emin degil</code> ile
+                        işaretler — özellikle <code>type</code> alanını ölçülmüş bir
+                        taramayla karşılaştırın. Onay/Devam gibi kayıt oluşturan
+                        düğmelere basmamasını açıkça yazın.
+                    </p>
+                </div>
+                <div id="agentStatus" class="suggest-status"></div>
+                <textarea id="agentOutput" class="search discover-output" spellcheck="false"
+                          rows="14" placeholder="Ajanın cevabı burada görünecek."></textarea>
+                <!-- Hidden until a catalog exists: there is nothing to name or
+                     save after a "Gez ve Anlat" run, which answers in prose. -->
+                <div id="agentSaveRow" class="agent-save" hidden>
+                    <div class="agent-save-names">
+                        <input id="agentSaveApp" class="search" type="text" autocomplete="off"
+                               placeholder="ngc" aria-label="Uygulama">
+                        <span class="agent-save-sep">/</span>
+                        <input id="agentSaveFlow" class="search" type="text" autocomplete="off"
+                               placeholder="banko-odeme-talebi" aria-label="Akış">
+                        <span class="agent-save-sep">.yaml</span>
+                    </div>
+                    <button id="btnAgentSave" class="btn btn-primary" type="button">Kataloğu Kaydet</button>
+                </div>
+            </div>
             <div id="side-timeline" class="side-panel">
                 <div id="runHeader" class="run-header run-header-empty">
                     Henüz çalıştırılmadı.
@@ -154,7 +258,6 @@
             </div>
         </aside>
     </section>
-
     <!-- ======================= HISTORY ======================= -->
     <section id="view-history" class="view">
         <div class="pane pane-history">
@@ -174,9 +277,7 @@
         </div>
     </section>
 </main>
-
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
-
 <script src="app.js"></script>
 </body>
 </html>

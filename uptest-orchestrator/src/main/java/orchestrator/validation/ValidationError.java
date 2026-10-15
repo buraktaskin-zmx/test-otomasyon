@@ -38,6 +38,61 @@ public record ValidationError(
                 List.of(expected));
     }
 
+    /**
+     * An assertion on a value the scenario never typed and the analyst never
+     * supplied — so the model made it up.
+     */
+    public static ValidationError unearnedAssertion(long line, String step, String label, String value) {
+        return new ValidationError(line, step,
+                "\"" + label + "\" bu senaryoda doldurulmadi ve beklenen deger \"" + value
+                        + "\" istekte de yok — uygulamanin turettigi bir degeri tahmin etmeyin. "
+                        + "Ya alani doldurun, ya bu dogrulamayi silin, ya da beklenen degeri isteğe yazin.",
+                List.of());
+    }
+
+    /** A confirmation message rewritten instead of copied. */
+    public static ValidationError paraphrasedMessage(long line, String step, String expected) {
+        return new ValidationError(line, step,
+                "Onay mesaji test verisi degildir, katalogtan birebir kopyalanir",
+                List.of("verify \"" + expected + "\" text is displayed"));
+    }
+
+    /** A message asserted on a screen whose text nobody recorded. */
+    public static ValidationError uncataloguedMessage(long line, String step) {
+        return new ValidationError(line, step,
+                "Katalogda success_message yok, istekte de bu metin gecmiyor — ekranin yazdigi "
+                        + "metni tahmin etmeyin. Ya kataloga gercek metni ekleyin, ya bu satiri silin.",
+                List.of());
+    }
+
+    /** A Scenario Outline whose Examples table nothing reads. */
+
+    /**
+     * A `click` aimed at the result-grid row the flow enters through.
+     *
+     * Both steps are valid patterns and the value is a real catalogued one, so
+     * nothing else here objects — the model emitted `click "FORD DBS
+     * ODEMELERI"` on the line ABOVE its own `select row "FORD DBS ODEMELERI"`.
+     * `click` resolves getByRole(BUTTON|LINK) and a grid cell is neither, so the
+     * step spends its whole timeout and the run dies on a line that only
+     * repeated the next one.
+     */
+    public static ValidationError rowNotClickable(long line, String step, String entryRow) {
+        return new ValidationError(
+                line, step,
+                "\"" + entryRow + "\" bir IZGARA SATIRI, buton ya da link degil; `click` onu "
+                        + "bulamaz ve 30 saniye bekleyip duser. Satir zaten `select row` ile "
+                        + "seciliyor — bu satiri silin.",
+                List.of("select row \"" + entryRow + "\""));
+    }
+
+    public static ValidationError unusedOutline(long line) {
+        return new ValidationError(line, null,
+                "Scenario Outline kullanilmis ama hicbir adimda <yer tutucu> yok; "
+                        + "Examples tablosu suslemeden ibaret. Duz 'Scenario:' yazin.",
+                List.of());
+    }
+
     /** A value the field does not offer, answered with the values it does. */
     public static ValidationError unknownOption(long line, String step, String label, String value,
                                                 List<String> allowed) {

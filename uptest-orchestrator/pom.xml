@@ -42,6 +42,52 @@
             <artifactId>spring-ai-starter-model-openai</artifactId>
         </dependency>
 
+        <!--
+          MCP client. ExploreController injects a ToolCallbackProvider, and
+          THAT BEAN COMES FROM HERE — not from the openai starter above.
+
+          The distinction is the whole trap: the TYPE
+          org.springframework.ai.tool.ToolCallbackProvider ships in
+          spring-ai-model, which the openai starter already drags in, so
+          ExploreController COMPILES without this dependency. It only fails at
+          startup, as
+
+            Parameter 1 of constructor in orchestrator.explore.ExploreController
+            required a bean of type 'org.springframework.ai.tool.
+            ToolCallbackProvider' that could not be found.
+
+          and that message names the type, never the missing starter.
+
+          Paired with spring.ai.mcp.client.* in application.properties and
+          .mcp.json at the repo root. If the agent is not wanted, the cheaper
+          switch is uptest.explore.enabled=false — ExploreController is
+          @ConditionalOnProperty on it, so the bean is never created and this
+          dependency is not consulted.
+        -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-mcp-client</artifactId>
+        </dependency>
+
+        <!--
+          DevTools. optional=true so it never leaks into anything that depends
+          on this module, and spring-boot-maven-plugin excludes it from the
+          repackaged jar, so it is a development-only convenience.
+
+          One interaction worth knowing now that there is a database: DevTools
+          publishes its own property defaults, and one of them is
+          spring.h2.console.enabled=true. It does NOT win here — those defaults
+          are added to the environment with the LOWEST precedence, so the
+          explicit spring.h2.console.enabled=false in application.properties
+          stands. Keep that line; deleting it would hand DevTools an
+          unauthenticated SQL shell on :8035.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-devtools</artifactId>
+            <optional>true</optional>
+        </dependency>
+
         <!-- The real Gherkin parser, so validation reports the same line
              numbers and syntax errors Cucumber itself would. -->
         <dependency>
@@ -66,9 +112,95 @@
             <artifactId>snakeyaml</artifactId>
         </dependency>
 
+        <!--
+          Spring Data JPA — the run history. Version from
+          spring-boot-starter-parent:4.0.7, which brings Hibernate 7.2 and
+          Jakarta Persistence 3.2.
+
+          The orchestrator is the ONLY module that gets this. The executor must
+          stay disposable: restarting it is the documented remedy for a hung
+          Playwright call, and a process that may be killed at any moment must
+          not hold state anyone needs later. See
+          uptest-executor/src/main/java/server/CLAUDE.md, "State — what is
+          remembered, and where a database would go".
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+
+        <!--
+          H2 in file mode. runtime scope on purpose: no orchestrator code
+          references org.h2.* and none should — every H2-specific operation
+          (BACKUP TO, SCRIPT TO) is plain SQL, not an API call. runtime keeps
+          the H2 classes off the compile classpath so `import
+          org.h2.tools.Server` cannot be written by accident, and
+          spring-boot-maven-plugin still packages runtime scope into the jar.
+
+          Version pinned in the parent's <properties>; see the comment there.
+        -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!--
+          The H2 web console, served at /h2-console. Boot 4 moved this out of
+          spring-boot-autoconfigure into its own module, so
+          spring.h2.console.enabled=true DOES NOTHING on its own — the property
+          is read by auto-configuration that is not on the classpath without
+          this dependency, and the symptom is a plain 404 with no hint that a
+          jar is missing.
+
+          runtime scope: no code here references it, it is pure tooling.
+
+          Read the security note above spring.h2.console.* in
+          application.properties before deploying this anywhere reachable. In
+          short: the console is an unauthenticated SQL shell, H2 offers
+          CREATE ALIAS ... AS '<java source>', so console access IS code
+          execution inside the orchestrator. It is acceptable here only because
+          this runs on a developer VDI, nothing publishes :8035 off the machine,
+          and web-allow-others stays false.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-h2console</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!--
+          @DataJpaTest and @AutoConfigureTestDatabase. Boot 4 split the test
+          slices out of spring-boot-test-autoconfigure into per-module jars:
+          that artifact is now a handful of files holding only the core slice
+          machinery and the json slice, so spring-boot-starter-test ALONE does
+          not put @DataJpaTest on the classpath. Under Boot 3 it did. This
+          dependency is the whole difference.
+
+          THE PACKAGES MOVED TOO, which the artifact split does not advertise
+          and which is the part that actually costs an hour:
+
+            @DataJpaTest                org.springframework.boot.data.jpa.test.autoconfigure
+            TestEntityManager           org.springframework.boot.jpa.test.autoconfigure
+            @AutoConfigureTestDatabase  org.springframework.boot.jdbc.test.autoconfigure
+
+          The Boot 3 package (org.springframework.boot.test.autoconfigure.orm
+          .jpa) no longer exists at all, so a test class copied from any Boot 3
+          example fails on its IMPORT line, not on anything it asserts.
+
+          TestEntityManager arrives transitively (spring-boot-data-jpa-test ->
+          spring-boot-jpa-test); this starter does not name it directly, so do
+          not "tidy up" by depending on spring-boot-data-jpa-test instead.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa-test</artifactId>
             <scope>test</scope>
         </dependency>
 

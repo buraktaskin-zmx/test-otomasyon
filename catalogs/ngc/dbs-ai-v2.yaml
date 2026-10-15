@@ -1,0 +1,149 @@
+app: NGC
+flow: Fatura Oluştur
+
+# DÜZELTİLDİ: entry_row ve entry_button eksikti. "Online DBS İşlemleri" alt
+# menüsü bir FORMA değil bir IZGARAYA açılıyor — kurum satırı seçilmeden
+# "Fatura Oluştur" bağlantısı formu açmıyor. Bu iki satır olmadan üretilen
+# senaryo menüye gidiyor, sonra listede olmayan alanları doldurmaya çalışıyor
+# ve ilk alanda 30 saniye bekleyip düşüyor. İkisi de gerçek bir keşiften
+# ölçüldü (dbs-fatura-olustur.yaml ile aynı akış).
+navigation:
+  main_menu: "NAKİT YÖNETİMİ"
+  sub_menu: "Online DBS İşlemleri"
+  entry_row: "FORD DBS ODEMELERI"
+  entry_button: "Fatura Oluştur"
+  # "Fatura Oluştur" formu DEĞİL, bir yol ayrımı açıyor: "Oluşturma Tipi" =
+  # Bilgi Girişi / Dosya Yükleme. Aşağıdaki 16 alan yalnızca "Bilgi Girişi"
+  # formunun alanları; "Dosya Yükleme" bambaşka bir ekran ve kendi kataloğunu
+  # ister. Bu yüzden burada bir ALAN değil, navigasyon adımı.
+  entry_choice: "Bilgi Girişi"
+
+fields:
+  # DÜZELTİLDİ: options yoktu. Seçeneksiz bir dropdown'u VariationPlanner
+  # ATLIYOR — hiçbir senaryoda doldurulmuyordu. Üstelik bu alan zincirin başı:
+  # seçilince uygulama "Bayi Ünvanı"nı dolduruyor ve "Döviz Cinsi"nin
+  # seçeneklerini yüklüyor. Doldurulmazsa sonraki iki alan da boş kalıyor.
+  # "93002" ölçülmüş tek seçenek; ekranda başka bayi varsa "Ekranı Keşfet" ile
+  # yeniden tarayıp listeyi genişletin.
+  - label: "Bayi Kodu"
+    type: dropdown
+    options: ["93002"]
+    verifiable: true
+  - label: "Bayi Ünvanı"
+    type: text
+    readonly: true          # Bayi Kodu seçilince uygulama kendisi dolduruyor
+    verifiable: true
+  - label: "Başlangıç Vadesi"
+    type: date
+    verifiable: true
+  - label: "Fatura No"
+    type: text
+    verifiable: true
+  - label: "Orijinal Fatura Numarası"
+    type: text
+    verifiable: true
+  - label: "Döviz Cinsi"
+    type: dropdown
+    verifiable: true
+    options:
+      - "TL"
+  - label: "Taksit Adedi"
+    type: text
+    verifiable: true
+  - label: "Toplam Tutar"
+    type: amount
+    verifiable: true
+  - label: "Orijinal Fatura Tutarı"
+    type: amount
+    verifiable: true
+  - label: "Taksit Periyot Birimi"
+    type: dropdown
+    verifiable: true
+    options:
+      - "Ay"
+      - "Hafta"
+      - "Gün"
+  - label: "Taksit Periyodu"
+    type: text
+    verifiable: true
+  - label: "Fatura Dönemi"
+    type: text
+    verifiable: true
+  - label: "Fatura Tarihi"
+    type: date
+    verifiable: true
+  - label: "Fatura Tipi"
+    type: dropdown
+    verifiable: true
+    options:
+      - "Normal"
+      - "E-Fatura"
+      - "E-Arşiv Fatura"
+  # EKLENDİ: ekranda sürekli durmuyor. "Fatura Tipi" = "E-Fatura" seçilince JS
+  # bunu yerinde gösteriyor ve zorunlu hâle geliyor. "Normal" seçen bir senaryo
+  # bu alana dokunmamalı — dokunursa görünmeyen bir alanı arar ve zaman aşımına
+  # uğrar.
+  #
+  # YERİ KRİTİK: "Fatura Tipi"nden SONRA gelmeli. VariationPlanner alanları tek
+  # geçişte katalog sırasıyla geziyor; ebeveyn henüz atanmamışsa koşulu
+  # değerlendiremiyor ve alan HİÇBİR senaryoda doldurulmuyor.
+  #
+  # CEVAPLANDI (analist, ekranda): "E-Arşiv Fatura" bu alanı AÇMIYOR. Üç tipin
+  # her biri kendi alanını açıyor:
+  #   Normal          → ek alan yok
+  #   E-Fatura        → E-Fatura Hash Kodu
+  #   E-Arşiv Fatura  → Vergisiz Tutar   (hemen aşağıda)
+  # Yani her koşullu alanın TEK bir tetikleyicisi var ve shown_when'in tek
+  # değer alması burada bir kısıt değil.
+  - label: "E-Fatura Hash Kodu"
+    type: text
+    shown_when:
+      field: "Fatura Tipi"
+      value: "E-Fatura"
+    verifiable: true
+  # EKLENDİ: "Fatura Tipi" = "E-Arşiv Fatura" seçilince çıkıyor ve zorunlu
+  # oluyor. Hash kodu ile aynı mantık, farklı tetikleyici — ve aynı sebeple
+  # "Fatura Tipi"nden SONRA duruyor (VariationPlanner alanları tek geçişte
+  # katalog sırasıyla geziyor).
+  #
+  # type: amount, çünkü ekranda yan yana lira/kuruş kutuları ve "TL" var —
+  # "Toplam Tutar" ile aynı şekil. Bu, senaryonun `enter amount` kullanması
+  # demek; `enter` olsaydı tek kutuya yazıp formu boş bırakırdı.
+  #
+  # ÖLÇÜLMEDİ: verifiable. Bugüne kadarki hiçbir ajan yürüyüşü "E-Fatura" ya da
+  # "E-Arşiv Fatura" seçmedi, hepsi "Normal" ile geçti — yani bu iki alanın
+  # onay ekranında görünüp görünmediği note_confirmation ile hiç doğrulanmadı.
+  # Kardeşleriyle tutarlı olsun diye true; E-Arşiv seçen ilk koşu bunu
+  # kesinleştirecek.
+  - label: "Vergisiz Tutar"
+    type: amount
+    shown_when:
+      field: "Fatura Tipi"
+      value: "E-Arşiv Fatura"
+    verifiable: true
+  - label: "Kurum"
+    type: text
+    readonly: true
+    verifiable: true
+
+buttons:
+  - "Devam"
+  - "Onay"
+
+success_message: "Fatura Oluşturma işleminiz başarıyla gerçekleşmiştir."
+
+# EKSİK KALAN — elle uyduramazdım, ölçülmesi gerekiyor:
+#
+#   max_length / min / max / numeric
+#
+# Bu anahtarları yalnızca "Ekranı Keşfet" DOM taraması üretebiliyor (DOM
+# attribute'ları; MCP ajanı erişilebilirlik ağacından göremiyor). Onlar olmadan
+# VariationPlanner metin alanlarına varsayılan merdiveni veriyor — bu yüzden
+# "Taksit Adedi" bir SAYI alanı olduğu hâlde "TESTVERISI4" alıyor ve tarayıcıda
+# reddediliyor.
+#
+# Ekranı bir kez tarayıp çıkanı buraya ekleyin; beklenen şekil:
+#   - label: "Taksit Adedi"
+#     type: text
+#     max_length: 3
+#     numeric: true

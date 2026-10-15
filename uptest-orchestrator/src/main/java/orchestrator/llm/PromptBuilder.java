@@ -61,11 +61,28 @@ public class PromptBuilder {
                    and takes cif AND userid, NGI is the individual app and takes a
                    customer code only. They are different applications, so the NGI
                    step on an NGC catalog logs into the wrong place entirely.
-                   If "navigation" has an "entry_row", the sub-menu lands on a
-                   result grid and not on a form: pick that row with
-                   `select row "<entry_row>"` AFTER `navigate to` and BEFORE the
-                   `click "<entry_button>"` that opens the form. Skipping it
-                   leaves the form bound to no record, or never opens it at all.
+                   The "navigation" block is performed in the order it is
+                   written, and every part of it that is present must appear in
+                   the scenario:
+                   - "entry_tab": the sub-menu lands on a list that is already
+                     filtered, and the records this test is about are under a
+                     different filter. Click it with `click "<entry_tab>"`
+                     immediately after `navigate to`. Omitting it is the
+                     quietest mistake there is: the scenario then picks the
+                     right row of the WRONG list, every step passes, and the
+                     run documents a record nobody asked about.
+                   - "entry_row": the sub-menu lands on a result grid and not
+                     on a form. Pick that row with `select row "<entry_row>"`,
+                     AFTER the tab and BEFORE the `click "<entry_button>"` that
+                     opens the form. Skipping it leaves the form bound to no
+                     record, or never opens it at all.
+                   - "entry_choice": the form is gated behind a radio
+                     choice that decides WHICH form you get. Pick it with
+                     `choose "<entry_choice>"`, AFTER the entry_button and
+                     BEFORE the first field. It is not a field of the form and
+                     must never be varied: the other option opens a different
+                     screen entirely, where none of the catalogued fields
+                     exist and every one of them times out.
                 8. FILL EVERY FIELD the catalog lists, in the order it lists them,
                    unless the intent explicitly says to leave one empty. A banking
                    form rejects a half-filled submission with a modal error and the
@@ -89,10 +106,30 @@ public class PromptBuilder {
                    because `enter "Bayi Kodu" "93002"` is a perfectly valid
                    pattern and only fails in the browser, hunting for a text box
                    that is really a dropdown:
-                     text, date      -> enter
+                     text            -> enter
+                     date            -> enter date
                      amount          -> enter amount
                      dropdown        -> select ... from
                      account_picker  -> select account ... from
+                   A DATE IS WRITTEN AS AN OFFSET, NOT AS A DAY. `enter date`
+                   takes "bugün", "yarın", "dün", or a shift like "+3 gün",
+                   "-1 hafta", "2 ay", "1 yıl", and resolves it when the browser
+                   runs. Write the offset you were given and do NOT convert it
+                   to a calendar date: a literal date freezes the day this
+                   scenario was written, and a maturity date behind today is
+                   refused by the form. An absolute gg/aa/yyyy is accepted when
+                   one is explicitly asked for, and only then.
+                   COPY THE OFFSET EXACTLY AS GIVEN. "bugün" is not to be
+                   rewritten as "+0 gün", "yarın" not as "+1 gün". They resolve
+                   to the same day, but the scenario is read by a person and the
+                   word they were given is the one that says what the test
+                   means.
+                   AND A DATE IS VERIFIED WITH ITS OWN STEP:
+                     verify the "<label>" has date "<the same offset>"
+                   NEVER `verify the {} field equals {}` for a date. That step
+                   compares text exactly and the screen shows 11/10/2026, not
+                   "+3 gün" — so a field you set correctly fails its own
+                   assertion. Use the same offset you entered.
                    A value that looks like a number ("93002") is still a
                    dropdown option when the catalog says "type: dropdown".
                 10. ONLY verify a value the scenario itself entered. A field you
@@ -159,6 +196,20 @@ public class PromptBuilder {
      *                  rather than guess an application and a userid
      */
     public String user(String catalogYaml, String intent, String loginStep) {
+        return user(catalogYaml, intent, loginStep, null);
+    }
+
+    /**
+     * @param variation one of N data combinations, or null for a single
+     *                  scenario. When present it is NOT a hint: the values were
+     *                  chosen from the catalog by {@link VariationPlanner} and
+     *                  are already known to be valid, so the model's only job
+     *                  here is to write the steps around them. Asking a model at
+     *                  temperature 0.3 to "make this one different" instead
+     *                  returns the same scenario five times.
+     */
+    public String user(String catalogYaml, String intent, String loginStep,
+                       VariationPlanner.Variation variation) {
         String login = (loginStep == null)
                 ? ""
                 : """
@@ -174,9 +225,73 @@ public class PromptBuilder {
 
                 WHAT TO TEST:
                 %s
-                %s
+                %s%s
                 Write the .feature file now. Output nothing but the file contents.
-                """.formatted(catalogYaml, intent, login);
+                """.formatted(catalogYaml, intent, login, variationBlock(variation));
+    }
+
+    /**
+     * The one part of the prompt that differs between the N scenarios of a
+     * batch.
+     *
+     * It goes in the USER turn, not the system one: the rules are identical for
+     * every scenario and belong where the model weighs them most heavily, while
+     * this changes on every call. Mixing them would mean rebuilding the long
+     * prompt N times for one varying paragraph.
+     *
+     * Phrased as a closed list on purpose. "Vary the values" is a request and
+     * produced five identical files; "use exactly these" is an instruction whose
+     * compliance the validator can see, because every value here came out of the
+     * catalog's own option lists.
+     */
+    private static String variationBlock(VariationPlanner.Variation variation) {
+        if (variation == null) {
+            return "";
+        }
+        // Rule 5 of the system prompt permits a Scenario Outline "when the
+        // intent asks for several input rows". That is right for ONE scenario
+        // and wrong here, and the model read it as permission: a draft whose
+        // combination was "Fatura Tipi = E-Fatura" came back as an Outline with
+        // `select "<Fatura Tipi>" from "Fatura Tipi"` and a one-row Examples
+        // table saying "Normal" — a placeholder AND the wrong value. It was
+        // obeying rule 5. So the contradiction is cancelled here, in the user
+        // turn, which is the only place that knows this is a batch.
+        //
+        // Said once, and backed by code: OutlineFlattener resolves the
+        // placeholders from the plan and deletes the table, because a prompt
+        // rule that contradicts another prompt rule is not settled by adding a
+        // third.
+        StringBuilder sb = new StringBuilder("\nBU BİR ÇOKLU ÜRETİM. Düz bir \"Scenario:\" yaz — "
+                + "\"Scenario Outline:\" ve \"Examples:\" tablosu KULLANMA, <yer tutucu> yazma. "
+                + "Kombinasyon zaten seçildi ve aşağıda duruyor; tablo o kararı yeniden açar.\n"
+                + "\nBU SENARYONUN VERİ KOMBİNASYONU — bunlar seçildi, "
+                + "değiştirme ve kendin başka değer uydurma:\n");
+
+        variation.values().forEach((label, value) ->
+                sb.append("  \"").append(label).append("\" = \"").append(value).append("\"\n"));
+        if (variation.values().isEmpty()) {
+            sb.append("  (bu ekranda doldurulacak alan yok)\n");
+        }
+
+        if (!variation.ticked().isEmpty()) {
+            sb.append("İŞARETLENECEK KUTULAR — her biri için `check \"<etiket>\"` yaz, bir kez:\n");
+            for (String box : variation.ticked()) {
+                sb.append("  \"").append(box).append("\"\n");
+            }
+        }
+
+        if (!variation.excluded().isEmpty()) {
+            // The hard half. A shown_when field that is not on the screen costs
+            // a 30 s timeout, and a checkbox ticked twice is UNticked — both are
+            // failures the validator cannot see, so the exclusion has to be
+            // spelled out rather than left implied by its absence above.
+            sb.append("BU SENARYODA DOKUNULMAYACAK ALANLAR — hiçbir adımda adını bile geçirme, "
+                    + "ne doldur ne doğrula:\n");
+            for (String label : variation.excluded()) {
+                sb.append("  \"").append(label).append("\"\n");
+            }
+        }
+        return sb.toString();
     }
 
     /**
@@ -187,9 +302,9 @@ public class PromptBuilder {
     public String repair(String draft, ValidationResult result) {
         StringBuilder sb = new StringBuilder();
         sb.append("The scenario you produced was rejected by the validator.\n\n")
-          .append("YOUR DRAFT:\n")
-          .append(draft)
-          .append("\n\nERRORS:\n");
+                .append("YOUR DRAFT:\n")
+                .append(draft)
+                .append("\n\nERRORS:\n");
 
         for (ValidationError error : result.errors()) {
             sb.append("  line ").append(error.line()).append(": ").append(error.message());

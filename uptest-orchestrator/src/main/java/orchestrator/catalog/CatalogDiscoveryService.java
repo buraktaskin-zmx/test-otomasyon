@@ -56,7 +56,8 @@ public class CatalogDiscoveryService {
      *               the read-only case — scan the entry screen and stop.
      */
     public record DiscoverRequest(
-            String app, String cif, String userid, String mainMenu, String subMenu, String entryButton,
+            String app, String cif, String userid, String mainMenu, String subMenu,
+            String entryRow, String entryButton,
             List<Stage> stages) {
     }
 
@@ -144,6 +145,11 @@ public class CatalogDiscoveryService {
         sb.append("navigation:\n");
         sb.append("  main_menu: \"").append(r.mainMenu().trim()).append("\"\n");
         sb.append("  sub_menu: \"").append(r.subMenu().trim()).append("\"\n");
+        // Ordered as the flow runs them, which is also the order SCHEMA.md
+        // documents: the row is picked, then the button opens the form.
+        if (r.entryRow() != null && !r.entryRow().isBlank()) {
+            sb.append("  entry_row: \"").append(r.entryRow().trim()).append("\"\n");
+        }
         if (r.entryButton() != null && !r.entryButton().isBlank()) {
             sb.append("  entry_button: \"").append(r.entryButton().trim()).append("\"\n");
         }
@@ -202,6 +208,13 @@ public class CatalogDiscoveryService {
 
         sb.append("    And navigate to \"").append(quoted(r.mainMenu()))
                 .append("\" \"").append(quoted(r.subMenu())).append("\"\n");
+
+        // Before the button, never after: on Online DBS İşlemleri the sub-menu
+        // opens a list of institutions and "Fatura Oluştur" builds the form for
+        // whichever row is selected.
+        if (r.entryRow() != null && !r.entryRow().isBlank()) {
+            sb.append("    And select row \"").append(quoted(r.entryRow())).append("\"\n");
+        }
 
         if (r.entryButton() != null && !r.entryButton().isBlank()) {
             sb.append("    And click \"").append(quoted(r.entryButton())).append("\"\n");

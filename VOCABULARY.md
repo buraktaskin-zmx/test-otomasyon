@@ -14,7 +14,13 @@ scenarios MUST treat this as a closed grammar.
 > annotations at build time and serves it at `GET /cucumber/vocabulary`; the
 > orchestrator's validator and the LLM prompt both read that. If the two ever
 > disagree, the generated JSON is right and this file is stale — check with
-> `GET /api/v1/vocabulary` (currently 16 steps).
+> `GET /api/v1/vocabulary` (currently 20 steps).
+>
+> Counting the annotations in the source gives **22**, and that is not a
+> discrepancy: `discover screen catalog` and `fill discovered fields:` belong to
+> screen discovery, which reads a screen instead of describing a test.
+> `VocabularyExtractor` excludes that package on purpose, so those two steps are
+> not part of this grammar and must never appear in a generated scenario.
 
 ---
 
@@ -46,7 +52,7 @@ scenarios MUST treat this as a closed grammar.
 | Kind | Format                                                                                                         | Example |
 |------|----------------------------------------------------------------------------------------------------------------|---------|
 | Amount (enter & verify) | Turkish: `.` = thousands, `,` = decimal (kuruş). Thousands separators optional on input; decimals recommended. | `"1250,55"`, `"54.999.999,50"` |
-| Date | `dd/MM/yyyy`                                                                                                   | `"27/08/2026"` |
+| Date | An offset (`"bugün"`, `"+3 gün"`, `"+1 hafta"`) resolved at run time, or an absolute `dd/MM/yyyy` | `"+3 gün"`, `"27/08/2026"` |
 | Account number | Full number; internal spacing is ignored on match                                                              | `"0006 7010 0000 0003 4322"` |
 | CIF | id string for test data                                                                                        | `"DI00002018"` |
 | User id | Numeric string                                                                                                 | `"3014"` |
@@ -101,11 +107,29 @@ And click {string}
 
 ```
 And enter {string} {string}
+And enter date {string} {string}
 And enter amount {string} {string}
 ```
 
-- `enter {string} {string}` — type a value into a **text/date input** identified
-  by its field label. Example: `And enter "Vade Tarihi" "27/08/2026"`
+- `enter {string} {string}` — type a value into a **text input** identified by
+  its field label. Example: `And enter "Fatura No" "FTR-2026-0001"`
+- `enter date {string} {string}` — set a **date field**, written as what it
+  MEANS rather than as one particular day. The value is resolved **when the
+  browser runs**, not when the scenario was written.
+  Example: `And enter date "Vade Tarihi" "+3 gün"`
+
+  | Value | Means |
+  |---|---|
+  | `"bugün"` | the day the test runs |
+  | `"yarın"` / `"dün"` | ±1 day |
+  | `"+3 gün"` / `"-1 gün"` | a day shift (the `+` is optional: `"3 gün"` works) |
+  | `"+1 hafta"` / `"+2 ay"` / `"+1 yıl"` | week, month, year shifts |
+  | `"27/08/2026"` | an absolute day, passed through untouched |
+
+  **Prefer the relative form.** A literal date freezes the day the scenario was
+  written: one drafted today reads `"09/10/2026"` for ever and is in the past a
+  fortnight later, which a maturity field refuses outright. Use an absolute date
+  only when the test is genuinely about that specific day.
 - `enter amount {string} {string}` — type into a **masked money field**
   (kuruş-aware). Use this for any monetary amount, never plain `enter`.
   Example: `And enter amount "Ödeme Tutarı" "1250,55"`
@@ -135,6 +159,47 @@ And select account at index {int} from {string}
 
 ---
 
+
+---
+
+## Steps — Radio choices (outside a grid)
+
+```
+And choose {string}
+```
+
+Picks a radio option by the text beside it, anywhere on the page. Use it for the
+fork a screen puts in front of its form:
+`And choose "Bilgi Girişi"`
+
+> **Not the same as `select row`.** That one finds a radio by its table cell and
+> row, so it only works inside a result grid. A radio in a plain form section
+> matches nothing there. And not `select ... from`, which drives a dropdown
+> widget.
+
+On DBS Fatura Oluştur, pressing "Fatura Oluştur" does not open the form — it
+opens "Oluşturma Tipi": **Bilgi Girişi** or **Dosya Yükleme**. The catalog
+records the branch it describes as `navigation.entry_choice`, and the scenario
+picks it after the entry button and before the first field.
+
+## Steps — Checkboxes
+
+```
+And check {string}
+```
+
+Ticks the box captioned with that text. On these screens the caption is a whole
+sentence: `And check "Garanti tutarı girmek istiyorum."`
+
+- The box is **not** a text field. `enter` on one waits for an input that will
+  never accept text.
+- Already ticked? The step does nothing. Clicking a ticked box would UNtick it,
+  which is the opposite of what the line says.
+- Ticking usually changes what the transaction is, or reveals a further field,
+  so tick a box only when the test actually calls for it.
+
+---
+
 ## Steps — Result grids (row selection)
 
 ```
@@ -157,13 +222,18 @@ field label bound to it, so no `select … from` step can reach it.
 
 ```
 Then verify the {string} field equals {string}
+Then verify the {string} has date {string}
 Then verify the {string} has amount {string}
 Then verify {string} text is displayed
 ```
 
-- `verify the {string} field equals {string}` — assert a **text or date** field
-  equals the expected value, **EXACT match**. Example:
-  `Then verify the "Vade Tarihi" field equals "27/08/2026"`
+- `verify the {string} field equals {string}` — assert a **text** field equals
+  the expected value, **EXACT match**. Example:
+  `Then verify the "Fatura No" field equals "FTR-2026-0001"`
+- `verify the {string} has date {string}` — assert a **date** field, using the
+  SAME offset that was entered. The offset is resolved at run time and then
+  compared exactly. Example:
+  `Then verify the "Vade Tarihi" has date "+3 gün"`
 - `verify the {string} has amount {string}` — assert a **money** field equals
   the expected amount (normalized). Example:
   `Then verify the "Toplam Fatura Tutarı" has amount "54.999.999,50"`
@@ -171,9 +241,12 @@ Then verify {string} text is displayed
   success banner) is present on the page. Example:
   `Then verify "Ödeme talebiniz karşı tarafa iletilmiştir." text is displayed`
 
-> Use `field equals` for text/dates and `has amount` for money. They are not
-> interchangeable — `field equals` does an exact string compare and will fail on
-> a formatted amount.
+> Three verbs, three kinds of value, and they are NOT interchangeable.
+> `field equals` does an exact string compare: it fails on a formatted amount,
+> and it fails on a date written as an offset — the screen shows `11/10/2026`
+> while the scenario says `"+3 gün"`, so a field set perfectly fails its own
+> assertion. Enter a date with `enter date` and verify it with `has date`,
+> passing the same offset to both.
 
 ---
 
@@ -215,7 +288,7 @@ Feature: Banko Request Payment Happy Path
     And enter "TCKN / VKN" "21203030786"
     And enter "Ad Soyad / Unvan" "Test"
     And enter amount "Ödeme Tutarı" "1250,55"
-    And enter "Vade Tarihi" "27/08/2026"
+    And enter date "Vade Tarihi" "+3 gün"
     And enter "Açıklama" "Test"
     And select account "0006 7010 0000 0003 4322" from "Alıcı Hesabı"
 
@@ -224,7 +297,7 @@ Feature: Banko Request Payment Happy Path
     Then verify the "TCKN / VKN" field equals "21203030786"
     Then verify the "Ad Soyad / Unvan" field equals "Test"
     Then verify the "Ödeme Tutarı" has amount "1250,55"
-    Then verify the "Vade Tarihi" field equals "27/08/2026"
+    Then verify the "Vade Tarihi" has date "+3 gün"
     Then verify the "Açıklama" field equals "Test"
 
     And click "Onay"

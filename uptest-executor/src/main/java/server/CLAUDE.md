@@ -55,10 +55,37 @@ browser calling an executor, that is a design error.
 ### Outbound dependencies
 
 - orchestrator → vLLM endpoint (Qwen), for scenario suggestion
+- orchestrator → a Playwright MCP server it starts itself (stdio, `.mcp.json`),
+  which drives a real browser → NGC / NGI test environment
 - executor → NGC / NGI test environment, via Playwright
 
-Both cross the server boundary. Firewall/proxy access for both must exist
-before anything works.
+All three cross the server boundary. Firewall/proxy access must exist before
+anything works.
+
+### The MCP agent bends the split — knowingly
+
+"The orchestrator never opens a browser" is why the two applications exist at
+all, and the exploration agent is an exception to it. The letter holds: the
+orchestrator carries no Playwright Java driver, it spawns a Node process. The
+spirit does not, and it is worth being clear about the cost:
+
+- a long-lived browser now hangs off the ANALYST-FACING service, which is the
+  exact failure the split was built to avoid
+- there is one MCP browser for the whole application, so two explorations
+  collide — `ExploreController.closeBrowser()` runs in a `finally`, and a
+  second exploration started while the first is running can have its page
+  closed underneath it
+- **catalog production is split across both sides, by producer.** The MCP agent
+  ("Ajan") never touches `ExecutorPool` — it drives its own browser from the
+  orchestrator. The deterministic DOM scan ("Ekranı Keşfet") does the opposite:
+  `CatalogDiscoveryService` builds a synthetic "login, navigate, discover"
+  feature and dispatches it through `ExecutorPool` exactly like a normal run, so
+  it consumes an executor slot and shows up in run history like any other run.
+  Two producers, two paths, one output shape (`catalogs/SCHEMA.md`)
+
+Acceptable while exploration is a manual, one-at-a-time activity. If it becomes
+routine the agent belongs on the executor side, where browsers already live and
+where restarting one process is the documented remedy.
 
 ## Current state — read this before assuming structure
 
@@ -79,20 +106,33 @@ cucumber-uplift-test/
 ├── uptest-executor/       runs tests; Cucumber + Playwright + Spring Web
 │   └── src/main/java/
 │       ├── com/ykb/uplift/uptest/playwright/   step definitions + page objects
+│       │       common/ components/ ngc/ ngi/
+│       │       discovery/  CatalogDiscovery, DiscoverySteps — the DOM-scan
+│       │                   catalog producer, run as a synthetic feature
 │       └── server/        THIS side
 │           ├── controller/  CucumberController, CucumberStartRequest,
-│           │                ErrorResponse, GlobalExceptionHandler
+│           │                ArtifactController, ErrorResponse,
+│           │                GlobalExceptionHandler
 │           ├── exception/   ErrorCodes, StatusCodeException
 │           ├── service/     CucumberService, CucumberRunner, CucumberInput,
-│           │                CucumberRunnerResult, ErrorDetail, ResultStatus
+│           │                CucumberRunnerResult, ArtifactService,
+│           │                ErrorDetail, ResultStatus
+│           ├── timeline/    StepTimelinePlugin, RunTimeline, TimelineRegistry,
+│           │                StepState
 │           ├── vocabulary/  VocabularyExtractor (build-time)
 │           └── SpringBootApplication.java
 │
 └── uptest-orchestrator/   validates + dispatches; NEVER runs a test
     └── src/main/java/orchestrator/
-        ├── api/          ScenarioController, RunController, VocabularyController
+        ├── api/          ScenarioController, RunController,
+        │                 VocabularyController, DiscoveryController
+        ├── catalog/      CatalogService, CatalogModel, CatalogDiscoveryService
         ├── executor/     ExecutorClient, ExecutorPool
-        ├── run/          RunService, RunRecord
+        ├── explore/      ExploreController, CatalogSink, BudgetedTool, DateTool
+        │                 — the MCP agent, the second catalog producer
+        ├── llm/          SuggestService, PromptBuilder, LlmClient,
+        │                 LlmController, LlmOutputCleaner, LoginStep
+        ├── run/          RunService, RunStore, Redactor, RunReconciler
         ├── validation/   ScenarioValidator, ValidationResult, ValidationError
         └── vocabulary/   Vocabulary, VocabularyStep, VocabularyService
 ```
@@ -100,8 +140,6 @@ cucumber-uplift-test/
 The orchestrator does **not** depend on uptest-executor as a Maven artifact —
 that would drag the Playwright driver into an app that never opens a browser.
 They talk over HTTP only.
-
-Not yet written: the vLLM `/suggest` endpoint and the analyst UI.
 
 The glue is `com.ykb.uplift.uptest.playwright` — the **package** the step
 classes declare, which is what lands on the classpath. It is NOT the source
@@ -114,16 +152,48 @@ Do not assume module boundaries that are not there.
 
 | Method | Path | Purpose |
 |---|---|---|
+| POST | `/api/v1/scenarios/suggest` | LLM drafts Gherkin from catalog + intent, validates, repairs once |
+| POST | `/api/v1/scenarios/suggest-many` | N drafts for one screen, each a different data combination; sequential, minutes — walked end to end in [`docs/COKLU-SENARYO-AKISI.md`](../../../../../docs/COKLU-SENARYO-AKISI.md) |
 | POST | `/api/v1/scenarios/validate` | 200 always; body says valid + per-line errors |
+| GET | `/api/v1/scenarios/catalogs` | which screens the model can be asked about |
+| POST | `/api/v1/scenarios/catalogs` | store a catalog under `catalogs/<app>/<flow>.yaml` |
 | POST | `/api/v1/runs` | 202 + runId; **422** invalid scenario; **503** all busy |
 | GET | `/api/v1/runs` | history, newest first |
 | GET | `/api/v1/runs/{id}` | merged orchestrator + executor status |
 | PUT | `/api/v1/runs/{id}/stop` | cooperative cancel |
-| GET | `/api/v1/vocabulary` | step catalog (for UI help + LLM prompt) |
-| POST | `/api/v1/vocabulary/refresh` | re-read after an executor redeploy |
 | GET | `/api/v1/runs/{id}/artifacts` | list: report, log, scenario, traces |
 | GET | `/api/v1/runs/{id}/artifacts/**` | one file, proxied from its executor |
+| GET | `/api/v1/vocabulary` | step catalog (for UI help + LLM prompt) |
+| POST | `/api/v1/vocabulary/refresh` | re-read after an executor redeploy |
 | GET | `/api/v1/executors` | which nodes are answering |
+| POST | `/api/v1/discovery` | DOM scan: dispatches a synthetic feature, returns its runId |
+| GET | `/api/v1/discovery/{id}` | the draft YAML once that run finished |
+| GET | `/api/v1/llm/hello` | vLLM reachability check, no catalog, no validation |
+
+`/api/v1/discovery` is the one catalog path that **consumes an executor slot**,
+because it is a real run. It can therefore answer 503 for the same reason a
+scenario can, and it shows up in run history.
+
+The MCP agent adds three more, and they are **conditional**:
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/api/v1/explore` | walk a flow, answer in prose |
+| POST | `/api/v1/explore/catalog` | the same walk, answered as a catalog + `problems` |
+| GET | `/api/v1/explore/tools` | what the MCP server offered, with argument schemas |
+
+`ExploreController` is `@ConditionalOnProperty("uptest.explore.enabled")`.
+Without `uptest.explore.enabled=true` these three are **not registered** and
+every call answers a bare 404 — which looks like a wrong path or a broken model
+and is neither. It cost a round of debugging once; check the property first.
+
+**There is no stop endpoint, and no stop button.** A walk ends by finishing:
+`closeBrowser()` runs in a `finally` on both POST endpoints, so the browser is
+shut whichever way the request ends. A runaway walk is bounded from outside
+instead — `uptest.explore.tool-budget` (250 calls) and `BudgetedTool`'s refusals
+(a second navigation, an unmentioned field, a closed sink, a result over 12 000
+characters). Cancelling one mid-flight is not possible today; the HTTP request
+has to come back on its own.
 
 ### Run artifacts
 
@@ -153,6 +223,28 @@ interactive but runs in an opaque origin where it cannot reach the application.
 called `/validate` — the UI is not the only possible caller, and this is what
 stops a typo from costing four minutes of browser time.
 
+**It used to re-validate WEAKER, which quietly defeated the point.** The
+catalog-aware checks — an unknown label, a verb that does not fit the field's
+type, an option the screen never offered, an assertion of a value nobody
+supplied — ran only inside `SuggestService`, at generation time, because only
+it had the catalog. `/validate` and `/runs` were handed the vocabulary alone,
+so a draft the generator had already flagged started anyway on grammar: a
+model invented `Bayi Ünvanı` = "Ford Otomobil Sanayi ve Ticaret A.Ş." for a
+`readonly` field the scenario never fills, and it cost fifteen seconds of
+browser and a "Locator expected to have value". Editing a draft laundered its
+mistakes.
+
+Both now accept optional `app`, `flow` and `intent` and run the same checks the
+generator runs. All three are optional, so an older caller still gets exactly
+the grammar check it always got. **The intent is load-bearing, not
+decoration**: asserting a `readonly` field IS legitimate when the analyst
+supplied the expected value, and without the intent the server cannot tell an
+earned assertion from an invented one — it would reject the good one.
+
+The rule this leaves behind: **a re-check must be at least as strict as the
+check it repeats.** A weaker one is worse than none, because it reads as a gate
+and works as a rubber stamp.
+
 ### Step vocabulary — one generated source
 
 `VocabularyExtractor` runs at `process-classes` in the executor and writes
@@ -168,8 +260,17 @@ Validation uses the real `io.cucumber:gherkin` parser and
 `io.cucumber:cucumber-expressions`, not hand-rolled regex, so line numbers and
 the accept/reject decision are the ones Cucumber itself would produce.
 
-The generator also settles counting arguments: there are **16** steps, not the
-17 a hand count produced.
+The generator also settles counting arguments, and keeps settling them: the
+count moves whenever a step is added — **17** today, 16 before `check {string}`
+arrived. Never trust a number typed into a document over `GET
+/api/v1/vocabulary`.
+
+**A hand count will say 19, and both numbers are right.** `VocabularyExtractor`
+skips `com.ykb.uplift.uptest.playwright.discovery`, so `discover screen catalog`
+and `fill discovered fields:` are Cucumber steps that the published vocabulary
+deliberately omits: they read a screen rather than describe a test, and the
+generator must never be able to emit one. Cucumber sees 19, the validator and
+the LLM prompt see 17.
 
 ## Executor API — the contract with the orchestrator
 
@@ -270,6 +371,96 @@ After ~50 runs an executor should report `RECYCLING` so the orchestrator stops
 assigning work and restarts it when idle. Cheap insurance against slow leaks
 in a long-lived JVM.
 
+### Capacity — what happens when ten scenarios are submitted at once
+
+**Capacity is the number of executor replicas**, because each one takes exactly
+one run (`simultaneouslyRun=1`). Three replicas = three concurrent runs. Running
+the orchestrator locally against a single executor = one.
+
+**There is no queue.** Submit ten scenarios to a three-executor stack and three
+start; the other seven are rejected immediately with **503**, and the analyst is
+told everything is busy. Nothing is held for later.
+
+| submitted at once | 3 executors | 1 executor (local) |
+|---|---|---|
+| 1st | runs | runs |
+| 2nd, 3rd | run | 503 |
+| 4th … 10th | 503 | 503 |
+
+The chain, end to end:
+
+```
+POST /api/v1/runs
+  → RunService.start           validates, mints the runId
+  → ExecutorPool.dispatch      tries each executor in round-robin order
+      → executor busy?         CucumberService answers 409
+  → every node refused         Rejection.NO_FREE_EXECUTOR
+  → 503
+```
+
+`ExecutorPool.dispatch` is deliberately **try-until-accepted**, not "ask
+`/nodeStatus` for a free node, then start it": those two calls are a race, and a
+busy executor answers 409 anyway, so losing the race just means trying the next
+node.
+
+Why no queue: a silently queued run cannot tell the analyst when it will start,
+and a UI that says "accepted" for something that has not begun is worse than one
+that says "try again". If queuing is ever wanted it belongs in the
+**orchestrator** — the executor must keep refusing, because a queue inside a
+process that gets restarted as a backstop would lose whatever it held.
+
+### "Why not one service on one port?" — the four answers
+
+This question keeps coming back, and it hides four different questions.
+
+**1. One EXTERNAL port — you already have it.** Analysts reach 8035 and nothing
+else; the 9035s are `expose`d inside the Docker network and refused even from
+the host. That is the same shape as a Selenium Grid hub with nodes behind it,
+and **the orchestrator IS the hub**: it dispatches a run, records which node
+took it (`TEST_RUN.executor`), and routes every later status and artifact
+request back to that node with `pool.byName`. The ports in the config are
+hub-to-node wiring, not exposure.
+
+**2. One process with N threads — no, and the industry agrees.** Playwright's
+own test runner executes parallel work as separate OS PROCESSES, not threads,
+for the same reason found here: a hung run must be killable without taking the
+healthy ones with it. A hung Playwright call blocks in native code, so the only
+unit of recovery is the process. With N threads in one JVM, each hang
+permanently consumes a worker and the only fix is a restart that kills every
+run in flight. There is also the Cucumber static state and the shared
+`Browser`, which corrupt concurrent runs in one JVM into flaky tests.
+
+**3. One INTERNAL address with N replicas — still blocked, but by a different
+thing now.** `deploy.replicas: 3` behind one service name would let DNS spread
+the load, but the orchestrator could then no longer reach a SPECIFIC replica —
+and it has to, because a run's live step timeline sits in that process's memory
+(`TimelineRegistry`). Move run state into shared storage and the question
+disappears: any replica can answer for any run, and artifacts are already on a
+shared volume.
+
+This used to be gated on the `TEST_RUN` table existing. It exists now — so the
+gate moved: **it is gated on `TEST_RUN` not being a single-writer H2 file.** H2
+in file mode takes an exclusive lock, so a second orchestrator process fails to
+start rather than corrupting anything (the good failure), and `AUTO_SERVER=TRUE`
+is deliberately absent because it exists precisely to allow the thing that must
+never happen. Scaling the orchestrator horizontally means moving to Postgres
+first; the column types were kept portable for exactly that move.
+
+**4. One service, N runs, REMOTE browsers — the real answer if scale demands
+it.** Every objection above traces to one fact: a local Playwright call cannot
+be killed from Java. Connect to a browser running elsewhere instead
+(`BrowserType.connect`) and that changes — kill the remote browser, the
+websocket drops, the Java thread comes back with an exception. The kill switch
+that does not exist today appears, and one service on one port can then hold
+many runs. The cost is a browser grid to operate, plus reworking whatever in
+`Hooks`/`TestContext` assumes one run per JVM.
+
+At today's scale (three parallel runs) the replica model is cheaper than any of
+these. The JVM is not what costs: a container is budgeted 2 GB of which Chromium
+peaks around 1.5 GB, and three parallel runs need three browsers under every one
+of these designs. If the target ever becomes twenty parallel runs, the order is
+4 after 3 — persistence first, then remote browsers.
+
 ## Isolation rules
 
 - New `BrowserContext` per run, closed in `finally`. A leaked context carries
@@ -279,6 +470,70 @@ in a long-lived JVM.
 - Feature file, logs, HTML report, screenshots and traces all live in that run
   directory, on a volume the orchestrator can also read, so results need no
   extra transfer hop.
+
+## State — what is remembered, and where the database is
+
+The orchestrator has a database as of 2026-10-06: **H2 in file mode**, driven by
+Spring Data JPA, holding `TEST_RUN` and `TEST_RUN_STEP`. The executor has none
+and never will. What survives a restart is now the run history plus what is on
+disk.
+
+| where | what it holds | after a restart |
+|---|---|---|
+| orchestrator **database** | `TEST_RUN`, `TEST_RUN_STEP` — the history the UI lists, with each run's step timeline | **kept** |
+| orchestrator memory | `CatalogDiscoveryService.runs`, `VocabularyService.cached` | **gone** |
+| executor memory | recent run results, pruned at `MAX_RETAINED_RUNS` | **gone** |
+| executor disk | `{featuresFolder}/{runId}/` — feature, log, report, traces | kept |
+
+The gap that closed: the files used to outlive the record that pointed at them.
+A `TEST_RUN` row now outlives the process, so a report from last month is still
+reachable from the history page.
+
+The gap still open: **discovery runs are not persisted yet**, so a catalog
+discovery that finishes after an orchestrator restart is still unrecoverable —
+`GET /api/v1/discovery/{id}` misses the map and answers 404. `SCENARIO_DRAFT`
+(what the model generated, in how many attempts) is likewise still discarded.
+Both are designed and neither is written.
+
+**The database belongs to the orchestrator. The executor never gets one.**
+
+- The executor has to stay **disposable**. The documented remedy for a hung
+  Playwright call is restarting the executor process; a process that may be
+  killed at any moment must not be the one holding state anyone needs later.
+  Its in-memory pool and `MAX_RETAINED_RUNS` pruning already say this out loud.
+- The orchestrator already **owns the record**: it mints the `runId`
+  (`RunService.start` → `UUID.randomUUID()`) and hands it to the executor.
+- Only the orchestrator knows the analyst-facing facts — the scenario text, who
+  submitted it, when, against which catalog. The executor only ever knows "a
+  feature file ran, here is the outcome".
+- Two databases would mean two rows for one run, and two rows can disagree.
+
+**One database, one owner.** Do not give the executors a shared database: that
+makes them stateful and destroys the property the whole replica design rests on
+— that any executor can be restarted at any time without consequence.
+
+Artifacts stay on disk. A table row holds the run's identity, status and a
+reference; the report and traces do not go into the database, because traces
+run to tens of megabytes each and are already served correctly through the
+artifact proxy. For the same reason `TEST_RUN.last_status_json` stores the
+executor's status payload with `output` nulled: the executor inlines the entire
+run.log there once a run finishes, and that log is already an artifact.
+
+**Credentials do not go in either.** `LoginStep.forApp` writes a real cif and
+userid into the Gherkin, so they ride inside the feature text AND inside
+`steps[].text` in the status payload. `Redactor` blanks the quoted arguments of
+any step beginning with `login` on all three paths in — `TEST_RUN.feature`,
+`last_status_json`, `TEST_RUN_STEP.step_text`. The consequence is deliberate: a
+stored scenario cannot be re-run as-is, because re-running against a bank should
+require re-entering who you are logging in as.
+
+**What the schema is, and what it is not.** `ddl-auto=update` is the whole
+strategy — no Flyway, no Liquibase, no SQL files. The entity classes ARE the
+schema, so a `git diff` on one is the only migration review that will ever
+happen. Know its limit before relying on it: `update` ADDS tables, columns and
+indexes and NEVER drops, renames, widens or retypes. A column that materialises
+at the wrong width stays wrong, and on a live database the only fix is an
+export/import.
 
 ## Scenario lifecycle (orchestrator side, for context)
 
@@ -454,6 +709,9 @@ Also: if an image pull is interrupted by a full disk, layers can be left
   which is copied onto the finished result afterwards — so the UI polls one
   endpoint and one shape throughout. See "Step timeline" below.
 - Multi-module split before or after orchestrator work starts?
-- Run history persistence — an in-memory map loses everything on restart. A
-  `TEST_RUN` table is likely needed before analysts rely on the platform.
+- Discovery and draft persistence — `TEST_RUN`/`TEST_RUN_STEP` landed, but
+  `CatalogDiscoveryService.runs` is still a map, so a catalog discovery that
+  finishes after a restart is unrecoverable and its four minutes of browser time
+  must be spent again. `SCENARIO_DRAFT` is likewise unwritten. Both are designed;
+  see "State, and where the database is".
 - Artifact retention policy; traces and screenshots grow fast.

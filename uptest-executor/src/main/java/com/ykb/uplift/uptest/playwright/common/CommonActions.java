@@ -5,6 +5,7 @@ import com.microsoft.playwright.Page;
 import com.microsoft.playwright.assertions.LocatorAssertions;
 import com.microsoft.playwright.options.AriaRole;
 import com.microsoft.playwright.options.SelectOption;
+import com.microsoft.playwright.options.WaitForSelectorState;
 
 import java.util.List;
 import java.util.Optional;
@@ -14,15 +15,15 @@ import java.util.regex.Pattern;
 import static com.microsoft.playwright.assertions.PlaywrightAssertions.assertThat;
 
 /**
-  Application-independent Playwright logic shared by NGC and NGI.
+ Application-independent Playwright logic shared by NGC and NGI.
 
-  Everything here derives locators from labels/attributes/roles/text, no
-  specific element ids or login flows. The page-object classes (NGC, NGI)
-  reuse this for their internal generic actions (click, navigate); the
-  generic step definitions live in {@link CommonSteps}.
+ Everything here derives locators from labels/attributes/roles/text, no
+ specific element ids or login flows. The page-object classes (NGC, NGI)
+ reuse this for their internal generic actions (click, navigate); the
+ generic step definitions live in {@link CommonSteps}.
 
-  NOTE: findValueElement is currently the NGC structure
-  (fieldcontainer / elem-span-infos)
+ NOTE: findValueElement is currently the NGC structure
+ (fieldcontainer / elem-span-infos)
  */
 public class CommonActions {
 
@@ -59,6 +60,7 @@ public class CommonActions {
 
     // ======================= GENERIC ACTIONS ===============================
 
+
     public CommonActions click(String label) {
         // While a modal is up, its overlay swallows every click on the page
         // behind it — Playwright then retries for 30 s and reports a timeout on
@@ -93,7 +95,19 @@ public class CommonActions {
                     + String.join(" | ", target.allInnerTexts()));
         }
 
-        target.first().click();
+        try {
+            target.first().click();
+        } catch (RuntimeException failed) {
+            // Only an ABSENT target earns a candidate list. A click that found
+            // its element and was then blocked - an overlay intercepting the
+            // pointer, a disabled button - is a different failure, and listing
+            // the other buttons on the page there would be noise on top of a
+            // message that was already correct.
+            if (target.count() == 0) {
+                throw missingClickTarget(label, failed);
+            }
+            throw failed;
+        }
         return this;
     }
 
@@ -121,7 +135,7 @@ public class CommonActions {
      * can drive, so the caller can still try typing; a wrong guess here must
      * not cost the step.
      */
-    private boolean pickFromCalendar(Locator field, String value) {
+    private boolean pickFromCalendar(String label, Locator field, String value) {
         Matcher parts = DATE_VALUE.matcher(value.trim());
         if (!parts.matches()) return false;
 
@@ -145,7 +159,21 @@ public class CommonActions {
         if (cell.count() == 0) {
             cell = picker.locator("td:not(.ui-datepicker-unselectable) a:text-is(\"" + day + "\")");
         }
-        if (cell.count() == 0) return false;
+        if (cell.count() == 0) {
+            // THROW, do not fall through. The two returns above mean "this is
+            // not a calendar I can drive" and falling back to typing is right
+            // for them. This one is different in kind: the calendar OPENED and
+            // does not offer that day, which is the application telling us the
+            // date is not allowed.
+            //
+            // Treating it as the other two is how a real run went green on a
+            // date that was never entered. "Başlangıç Vadesi" may not be today
+            // — the bank requires a future maturity — so the grid greys today
+            // out; we fell through, typed the digits with real keystrokes, the
+            // mask accepted them, valueTook() agreed, and the step reported
+            // success for a date the screen had just refused.
+            throw new AssertionError(datePickerRefused(label, value, picker, day));
+        }
         cell.first().click();
 
         closeDatePicker();
@@ -154,6 +182,39 @@ public class CommonActions {
                     + field.inputValue() + "' yaziyor");
         }
         return true;
+    }
+
+    /**
+     * Why the calendar would not take this day, in a form that separates the
+     * two possible causes.
+     *
+     * Without the list of days the grid DID offer, the two are
+     * indistinguishable and they call for opposite fixes:
+     *
+     *   the grid offers 10..31 and we asked for 9  -> the APPLICATION refuses
+     *       the date (a maturity date may not be today). The scenario is
+     *       asking for a day this field does not accept, and an analyst fixes
+     *       it by writing a different offset.
+     *   the grid offers 1..31 and we still matched nothing -> OUR locator is
+     *       wrong, and no scenario change will help.
+     *
+     * The selectable days are read from the same two locators the picker tried,
+     * so what is printed is exactly the set that was searched.
+     */
+    private String datePickerRefused(String label, String value, Locator picker, String day) {
+        List<String> selectable = picker.locator("td[data-handler='selectDay'] a").allInnerTexts();
+        if (selectable.isEmpty()) {
+            selectable = picker.locator("td:not(.ui-datepicker-unselectable) a").allInnerTexts();
+        }
+        return "'" + label + "' alaninda '" + value + "' tarihi SECILEMEDI: takvim acildi ama "
+                + day + " gunu tiklanabilir degil."
+                + (selectable.isEmpty()
+                        ? " Takvimde hic secilebilir gun yok — ay/yil dogru acilmamis olabilir."
+                        : " Takvimin sundugu gunler: " + String.join(", ", selectable) + ".")
+                + " | Bu gunler istediginizi icermiyorsa tarihi UYGULAMA reddediyor (orn. vade "
+                + "bugunden ileri olmak zorunda) — senaryoda farkli bir tarih yazin, orn. "
+                + "enter date \"" + label + "\" \"+1 gun\". Iceriyorsa sorun bizim takvim "
+                + "kodumuzda.";
     }
 
     /**
@@ -224,12 +285,25 @@ public class CommonActions {
         // events, and the calendar is what a user actually uses. Same reasoning
         // as the Select2 lesson. Falls through to typing when the value is not
         // a date, or when the calendar does not appear.
-        if (isDatePicker(field) && pickFromCalendar(field, value)) {
-            failFastOnErrorDialog("enter (sonrasi)");
-            return this;
+        //
+        // Both calls below resolve the locator, so an absent label surfaces
+        // here as Playwright's 30 s "element(s) not found" - which names
+        // neither the cause nor the fix. AssertionError passes through
+        // untouched: pickFromCalendar throws one when the calendar DID open
+        // and the value still did not stick, and that message is already the
+        // right one.
+        try {
+            if (isDatePicker(field) && pickFromCalendar(label, field, value)) {
+                failFastOnErrorDialog("enter (sonrasi)");
+                return this;
+            }
+            field.fill(value);
+        } catch (RuntimeException failed) {
+            if (field.count() == 0) {
+                throw missingField(label, failed);
+            }
+            throw failed;
         }
-
-        field.fill(value);
 
         // fill() writes the whole value in one `input` event. An input wearing a
         // jQuery mask ("__/__/____") listens for key events and rebuilds the
@@ -359,7 +433,33 @@ public class CommonActions {
         // blur() is exactly what triggers server-side validation here, so the
         // dialog it raises belongs to this step, not the next one.
         failFastOnErrorDialog("enter amount (sonrasi)");
+
+        // Read BOTH boxes back. These are masked inputs and a mask that refuses
+        // what was typed leaves the box empty while every call reports success
+        // — the same shape as the date field, and this screen has already
+        // answered a submit with "Toplam tutar giriniz" on a form that looked
+        // filled. Checked after the blur so the mask has done its reformatting.
+        assertAmountBox(label, wholeField, wholePart, "lira");
+        assertAmountBox(label, fractionField, fractionPart, "kurus");
         return this;
+    }
+
+    /**
+     * One half of an amount, compared on digits.
+     *
+     * Digits only, because a mask reformats as it goes: typing "1250" into the
+     * lira box leaves "1.250" behind, which is the same number and a different
+     * string. The empty mask strips to nothing, which is exactly the failure
+     * this is here to catch.
+     */
+    private static void assertAmountBox(String label, Locator box, String expected, String half) {
+        String actual = box.inputValue();
+        if (!actual.replaceAll("\\D", "").equals(expected.replaceAll("\\D", ""))) {
+            throw new AssertionError("'" + label + "' alaninin " + half + " kutusuna '" + expected
+                    + "' yazilamadi; kutuda '" + actual + "' var. Maskeli bir alan, yazilani "
+                    + "reddetmis olabilir — bu adim yesil gecseydi form bos tutarla gonderilir "
+                    + "ve ekran 'Toplam tutar giriniz' derdi.");
+        }
     }
 
     /**
@@ -385,8 +485,19 @@ public class CommonActions {
             return this;
         }
 
-        container.locator("select").selectOption(new SelectOption().setLabel(optionText),
+        Locator select = container.locator("select");
+        select.selectOption(new SelectOption().setLabel(optionText),
                 new Locator.SelectOptionOptions().setForce(true));
+
+        // Read it back. setForce(true) means "write the value even if the
+        // element looks undriveable", which is sometimes necessary here and is
+        // also exactly how a selection goes green without the application ever
+        // noticing — the Select2 branch above already learned that and checks;
+        // this branch never did. Forcing is a decision about HOW to write; not
+        // looking afterwards is the bug.
+        assertThat(select.locator("option:checked"))
+                .hasText(optionText.trim(),
+                        new LocatorAssertions.HasTextOptions().setTimeout(SELECT_CONFIRM_MS));
         return this;
     }
 
@@ -450,11 +561,40 @@ public class CommonActions {
         for (Locator option : options) {
             if (option.innerText().replaceAll("\\D", "").contains(want)) {
                 option.click();
+                // Same read-back as `select` next door, on digits rather than
+                // text because that is what identifies an account. Clicking an
+                // option and never asking whether it landed is how three
+                // separate debugging rounds on this app started.
+                assertThat(findValueElement(label).locator(".select2-selection"))
+                        .containsText(spacedDigits(want),
+                                new LocatorAssertions.ContainsTextOptions()
+                                        .setTimeout(SELECT_CONFIRM_MS));
                 return this;
             }
         }
         throw new AssertionError("No account option matching '" + accountNumber
                 + "' (" + options.size() + " options listed)");
+    }
+
+    /**
+     * The account's digits, allowed to be spaced out however the widget prints
+     * them: "1234 5678" still matches 12345678.
+     *
+     * A plain string would not do. The search above deliberately strips
+     * non-digits from BOTH sides before comparing, because this application
+     * groups account numbers for display — so the rendered text almost never
+     * equals the number as the scenario wrote it.
+     *
+     * Built by hand rather than with Pattern.quote: Playwright hands the
+     * pattern to the BROWSER, and Java's \Q...\E means nothing to JavaScript —
+     * a trap this file has already paid for once in navigateTo.
+     */
+    private static Pattern spacedDigits(String digits) {
+        StringBuilder out = new StringBuilder();
+        for (char digit : digits.toCharArray()) {
+            out.append(digit).append("\\s*");
+        }
+        return Pattern.compile(out.toString());
     }
 
     // Same picker, but choose by 0-based index over the listed options.
@@ -482,7 +622,7 @@ public class CommonActions {
     // own cell first, then the whole row, so a value in any column still matches).
     public CommonActions selectRow(String rowLabel) {
         failFastOnErrorDialog("select row");
-        page.waitForSelector("input[type='radio']");
+        awaitRadios();
         String want = rowLabel.trim();
         List<Locator> radios = page.locator("input[type='radio']").all();
 
@@ -505,12 +645,239 @@ public class CommonActions {
                 + "' (" + radios.size() + " rows listed): " + seen);
     }
 
+    /**
+     * Picks a radio option by the text beside it, anywhere on the page.
+     *
+     * {@code selectRow} already drives radios but only inside a RESULT GRID: it
+     * matches on {@code ancestor::td} then {@code ancestor::tr}, so a radio in a
+     * plain form section matches nothing. That is the gap this fills — on DBS
+     * Fatura Oluştur the form is gated behind "Oluşturma Tipi" (Bilgi Girişi /
+     * Dosya Yükleme) and nothing in the vocabulary could reach it.
+     *
+     * The first version of this used {@code getByRole(RADIO)} and failed on the
+     * real screen with "0 options on the page", intermittently enough to look
+     * like a race. It was two bugs, and both are the ones this file already has
+     * lessons about:
+     *
+     *   - NO WAIT. {@code Locator.count()} does not auto-wait; it answers about
+     *     the DOM as it stands this instant. Called while the screen was still
+     *     arriving it said zero and the step threw immediately. {@code selectRow}
+     *     has always called {@link #awaitRadios} first, and so must this.
+     *   - THE ACCESSIBILITY TREE DOES NOT CONTAIN A HIDDEN INPUT. These radios
+     *     are custom-styled: the drawn circle is the label and the input itself
+     *     is visually hidden, which is exactly why {@code clickRadio} clicks the
+     *     label. A hidden element is excluded from the AX tree, so
+     *     {@code getByRole} could never have seen them however long it waited.
+     *     Matching the raw {@code input[type='radio']} is what works, and is
+     *     what the grid picker next door has been doing all along.
+     */
+    public CommonActions chooseOption(String optionLabel) {
+        failFastOnErrorDialog("choose");
+        String want = optionLabel.trim();
+
+        // Wait for THE OPTION, not for any radio. awaitRadios() only promises
+        // that SOME radio is attached somewhere, and on this flow the button
+        // before this step REPLACES the page: the first radio to arrive need
+        // not be one of the fork's, and one whose label has not rendered yet
+        // reads back as ''. A real run reported exactly that — "1 secenek
+        // bulundu: ''" on a screen that has two — and it looked like a locator
+        // bug rather than a page that had not finished arriving.
+        //
+        // Same shape as the selectRow lesson, one step further on: there the
+        // wait was on the wrong STATE (visible, of a hidden element); here it
+        // was on the wrong ELEMENT. The thing to wait for is the thing the step
+        // is about.
+        //
+        // The caption is the right thing to wait on because the caption is what
+        // a user sees: this application draws its own radios, so the input is
+        // hidden and the visible text IS the control.
+        boolean captionArrived = awaitOptionText(want);
+
+        // Re-read AFTER the wait, never before: a list taken while the screen
+        // was still arriving is a list of what used to be there.
+        List<Locator> radios = page.locator("input[type='radio']").all();
+        StringBuilder seen = new StringBuilder();
+        for (Locator radio : radios) {
+            String text = optionText(radio);
+            seen.append("'").append(text.replace("\n", " ")).append("' ");
+            if (text.contains(want)) {
+                clickOption(radio, text);
+                return this;
+            }
+        }
+
+        // The caption is on the page but no radio claims it — the markup puts
+        // the text somewhere none of optionText's four strategies reach. Click
+        // what the user clicks, then prove a radio actually took it rather than
+        // reporting a success this class has no evidence for.
+        if (captionArrived && clickedCaption(want)) {
+            return this;
+        }
+
+        throw new AssertionError("'" + optionLabel + "' secilemedi. "
+                + (captionArrived
+                        ? "Metin ekranda VAR ama hicbir radyo dugmesine baglanamadi: "
+                        : "Metin ekranda hic BULUNAMADI (" + CHOICE_MS / 1000
+                                + " sn beklendi) — ekran henuz gelmemis ya da baska bir ekrandayiz. ")
+                + radios.size() + " radyo bulundu: " + seen
+                + "| Bu adim IZGARA SATIRI icin degil; satir seciyorsaniz "
+                + "`select row` kullanin.");
+    }
+
+    /** How long the fork's caption gets to appear after the previous click. */
+    private static final double CHOICE_MS = 10000;
+
+    /**
+     * Waits for the option's own text to become visible, and says whether it
+     * did.
+     *
+     * Returns a boolean rather than throwing because the answer is the single
+     * most useful thing the failure message can carry: text present means the
+     * screen is right and the locator is wrong, text absent means we are early
+     * or somewhere else entirely. Those call for opposite fixes and used to be
+     * indistinguishable.
+     */
+    private boolean awaitOptionText(String want) {
+        try {
+            page.getByText(want, new Page.GetByTextOptions().setExact(false)).first()
+                    .waitFor(new Locator.WaitForOptions().setTimeout(CHOICE_MS));
+            return true;
+        } catch (RuntimeException neverAppeared) {
+            return false;
+        }
+    }
+
+    /**
+     * Clicks the caption itself, and checks a radio ended up selected.
+     *
+     * Verified rather than assumed, for the reason this file keeps relearning:
+     * a step that reports success while the page ignored it costs more than a
+     * failure. If nothing became checked, this reports false and the caller
+     * raises the proper error.
+     */
+    private boolean clickedCaption(String want) {
+        try {
+            page.getByText(want, new Page.GetByTextOptions().setExact(false)).first().click();
+        } catch (RuntimeException notClickable) {
+            return false;
+        }
+        for (Locator radio : page.locator("input[type='radio']").all()) {
+            if (radio.isChecked()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * The caption a radio belongs to, outside a table.
+     *
+     * Four places to look because the markup is not ours to choose, in order of
+     * how directly each one binds: the input's own accessible label, a label
+     * wrapped around it, a label pointing at it by id, then the parent element's
+     * text as a last resort. The first non-empty answer wins — a wider scope
+     * would start swallowing a neighbouring option's caption.
+     */
+    private String optionText(Locator radio) {
+        String aria = radio.getAttribute("aria-label");
+        if (aria != null && !aria.isBlank()) {
+            return aria.trim();
+        }
+        String wrapped = textOf(radio.locator("xpath=ancestor::label[1]"));
+        if (!wrapped.isEmpty()) {
+            return wrapped;
+        }
+        String id = radio.getAttribute("id");
+        if (id != null && !id.isBlank()) {
+            String forLabel = textOf(page.locator("label[for='" + id + "']"));
+            if (!forLabel.isEmpty()) {
+                return forLabel;
+            }
+        }
+        return textOf(radio.locator("xpath=parent::*"));
+    }
+
+    private String textOf(Locator locator) {
+        try {
+            return locator.count() == 0 ? "" : locator.first().innerText().trim();
+        } catch (RuntimeException unreadable) {
+            return "";
+        }
+    }
+
+    /**
+     * Same two-step dance as {@link #clickRadio}, minus its table assumption.
+     *
+     * A visible input is checked directly. A hidden one is clicked through the
+     * text that stands in for it, which is the element a person actually
+     * presses.
+     */
+    private void clickOption(Locator radio, String caption) {
+        if (radio.isVisible()) {
+            radio.check();
+            assertRadioTook(radio, caption);
+            return;
+        }
+        Locator wrapped = radio.locator("xpath=ancestor::label[1]");
+        if (wrapped.count() > 0) {
+            wrapped.first().click();
+            assertRadioTook(radio, caption);
+            return;
+        }
+        String id = radio.getAttribute("id");
+        if (id != null && !id.isBlank() && page.locator("label[for='" + id + "']").count() > 0) {
+            page.locator("label[for='" + id + "']").first().click();
+            assertRadioTook(radio, caption);
+            return;
+        }
+        page.getByText(caption, new Page.GetByTextOptions().setExact(true)).first().click();
+        assertRadioTook(radio, caption);
+    }
+
+    /**
+     * Did the radio actually end up selected?
+     *
+     * Four different ways of pressing it and, until now, not one of them asked.
+     * {@link #check} has always asked — "clicking the label" is a stand-in for
+     * clicking the input, and a stand-in can miss: the label can belong to a
+     * neighbouring option, or be covered, or the application can refuse the
+     * choice outright. A `choose` that goes green on an unselected radio sends
+     * the run on to a form that never opened.
+     */
+    private static void assertRadioTook(Locator radio, String caption) {
+        if (!radio.isChecked()) {
+            throw new AssertionError("'" + caption + "' secenegine tiklandi ama radyo dugmesi "
+                    + "secili degil. Tiklama baska bir elemana gitmis ya da uygulama secimi "
+                    + "kabul etmemis olabilir.");
+        }
+    }
+
     // Same picker, but choose by 0-based index over the radio buttons on the page.
     public CommonActions selectRow(int index) {
         failFastOnErrorDialog("select row at index");
-        page.waitForSelector("input[type='radio']");
+        awaitRadios();
         clickRadio(page.locator("input[type='radio']").nth(index));
         return this;
+    }
+
+    /**
+     * Waits for the page's radios to exist — ATTACHED, not visible.
+     *
+     * The default state is "visible", and it applies to the FIRST match. On
+     * Banko Alacak İşlemleri that first match is a radio inside the collapsed
+     * "Detaylı Arama" panel (name=selectedSearchType), which never becomes
+     * visible: the step spent its whole 30 s waiting on an element it had no
+     * interest in and never looked at the grid at all. Same shape as the
+     * navigateTo lesson — the locator was right, the first match was hidden.
+     *
+     * Deliberately NOT narrowed to ":visible": on this app a custom-styled
+     * radio is visually hidden behind its label, and clickRadio already
+     * handles that by clicking the label. Requiring visibility here would
+     * break exactly those screens.
+     */
+    private void awaitRadios() {
+        page.waitForSelector("input[type='radio']",
+                new Page.WaitForSelectorOptions().setState(WaitForSelectorState.ATTACHED));
     }
 
     // Text belonging to a radio: its own cell (scope "td") or its row (scope "tr").
@@ -522,12 +889,66 @@ public class CommonActions {
     // A plain radio can be checked directly. A custom-styled one is visually
     // hidden behind its <label> (the drawn circle IS the label), and Playwright
     // refuses to click a hidden input — so click the label, like a user does.
+    /**
+     * Ticks a checkbox, by the caption printed next to it.
+     *
+     * Same shape as {@link #clickRadio}, and for the same reason: this
+     * application draws its own boxes, so the input is visually hidden and
+     * Playwright refuses to click a hidden element. When it cannot be clicked,
+     * its label can — that is the thing a user actually presses.
+     *
+     * Idempotent. Clicking an already-ticked box would UNtick it, and a step
+     * that quietly does the opposite of its name is the worst kind. Asking
+     * first costs nothing.
+     *
+     * Verified afterwards rather than assumed. Every expensive bug in this
+     * project has been a step that reported success while the page ignored it
+     * — the masked date, the Select2 write, the collapsed text compare — so
+     * this one ends by reading the state back and failing loudly if the box
+     * did not take.
+     */
+    public CommonActions check(String label) {
+        failFastOnErrorDialog("check");
+
+        Locator box = page.getByLabel(label);
+        if (box.count() == 0) {
+            throw new AssertionError("'" + label + "' adinda bir onay kutusu bulunamadi. "
+                    + "Etiket ekranda yazdigi gibi mi?");
+        }
+        Locator first = box.first();
+
+        if (first.isChecked()) {
+            return this;
+        }
+
+        if (first.isVisible()) {
+            first.check();
+        } else {
+            page.getByText(label, new Page.GetByTextOptions().setExact(true)).first().click();
+        }
+
+        if (!first.isChecked()) {
+            throw new AssertionError("'" + label + "' isaretlenemedi: tiklama gecti ama kutu "
+                    + "hala isaretli degil.");
+        }
+
+        // These forms validate on change, and a box that reveals a new field
+        // does it here — so the dialog this step provoked is reported against
+        // this step rather than against whatever comes next.
+        failFastOnErrorDialog("check (sonrasi)");
+        return this;
+    }
+
     private void clickRadio(Locator radio) {
         if (radio.isVisible()) {
             radio.check();
         } else {
             radio.locator("xpath=ancestor::td[1]").locator("label").first().click();
         }
+        // A grid row picked but not selected sends the rest of the scenario to
+        // the wrong record — every later step passes and the run documents a
+        // transaction nobody asked for. Worth one read.
+        assertRadioTook(radio, "izgara satiri");
     }
 
     /**
@@ -557,8 +978,12 @@ public class CommonActions {
         // Confirm screen: read-only span filled by JS. Auto-wait until non-empty.
         Locator valueSpan = valueHolder(container);
         // TL is appended last, so this waits until the value is fully rendered.
-        assertThat(valueSpan).containsText("TL",
-                new LocatorAssertions.ContainsTextOptions().setTimeout(VERIFY_TIMEOUT_MS));
+        try {
+            assertThat(valueSpan).containsText("TL",
+                    new LocatorAssertions.ContainsTextOptions().setTimeout(VERIFY_TIMEOUT_MS));
+        } catch (AssertionError miss) {
+            throw explainVerify(label, container, miss);
+        }
         // Same shared-container case as verifyFieldEquals: the text can arrive
         // as "Toplam Tutar200,00 TL". Harmless today because the label has no
         // digits, but a label that did would corrupt the comparison silently.
@@ -574,19 +999,23 @@ public class CommonActions {
         Locator container = findValueElement(label);
         Locator inputFields = container.locator("input");
 
-        if (inputFields.count() > 0) {
-            // Entry screen: input field. Auto-wait until non-empty, then read.
-            assertThat(inputFields.first()).hasValue(expectedText.trim(),
-                    new LocatorAssertions.HasValueOptions().setTimeout(VERIFY_TIMEOUT_MS));
-        } else {
-            // Confirm screen: read-only value. Three shapes seen on this app —
-            // a value span, a plain table cell, and (DBS Fatura Oluştur "Onay")
-            // one container holding the label AND the value, which reads back
-            // as "Bayi Kodu93002". Rather than guessing which element is the
-            // value, accept the text with the label optionally in front of it.
-            assertThat(valueHolder(container))
-                    .hasText(labelThenValue(label, expectedText.trim()),
-                            new LocatorAssertions.HasTextOptions().setTimeout(VERIFY_TIMEOUT_MS));
+        try {
+            if (inputFields.count() > 0) {
+                // Entry screen: input field. Auto-wait until non-empty, then read.
+                assertThat(inputFields.first()).hasValue(expectedText.trim(),
+                        new LocatorAssertions.HasValueOptions().setTimeout(VERIFY_TIMEOUT_MS));
+            } else {
+                // Confirm screen: read-only value. Three shapes seen on this app —
+                // a value span, a plain table cell, and (DBS Fatura Oluştur "Onay")
+                // one container holding the label AND the value, which reads back
+                // as "Bayi Kodu93002". Rather than guessing which element is the
+                // value, accept the text with the label optionally in front of it.
+                assertThat(valueHolder(container))
+                        .hasText(labelThenValue(label, expectedText.trim()),
+                                new LocatorAssertions.HasTextOptions().setTimeout(VERIFY_TIMEOUT_MS));
+            }
+        } catch (AssertionError miss) {
+            throw explainVerify(label, container, miss);
         }
 
         return this;
@@ -695,6 +1124,88 @@ public class CommonActions {
                     "Expected value did not match the screen. Expected: '" + expected
                             + "' (normalized: " + e + "), On screen: '" + actual + "' (normalized: " + a + ")");
         }
+    }
+
+    // ================== WHAT THE SCREEN ACTUALLY OFFERED ==================
+
+    /**
+     * Built on first use, because only a FAILING step ever asks: enumerating
+     * the screen costs a snapshot and a container walk, and a passing run must
+     * not pay for it.
+     */
+    private ScreenLabels screen;
+
+    private ScreenLabels screen() {
+        if (screen == null) {
+            screen = new ScreenLabels(page);
+        }
+        return screen;
+    }
+
+    /**
+     * "'X' bulunamadi" plus the nearest things that ARE on the screen.
+     *
+     * Playwright's own answer to a locator that matches nothing is 30 s of
+     * waiting and then "element(s) not found", which names neither the cause
+     * nor the fix. In practice the cause is almost always one of three, and
+     * the candidate list separates them at a glance: the label is misspelled
+     * (a near match appears), the catalog has gone stale (a renamed field
+     * appears), or the previous step never opened the screen (nothing
+     * appears).
+     *
+     * Note this does NOT shorten the wait - the timeout still elapses first.
+     * It only makes the sentence at the end of it worth reading.
+     */
+    private AssertionError missingClickTarget(String label, Throwable cause) {
+        return new AssertionError("'" + label + "' adinda tiklanabilir bir buton veya link yok."
+                + ScreenLabels.report(label, screen().clickableNames(), "buton/link")
+                + " | Playwright: " + firstLine(cause), cause);
+    }
+
+    private AssertionError missingField(String label, Throwable cause) {
+        return new AssertionError("'" + label + "' adinda bir alan yok."
+                + ScreenLabels.report(label, screen().fieldLabels(), "alan")
+                + " | Playwright: " + firstLine(cause), cause);
+    }
+
+    /**
+     * Tells the three verify failures apart. They read almost alike today and
+     * call for opposite fixes:
+     *
+     *   value wrong      -> the application is misbehaving, or the expectation is
+     *   label absent     -> the scenario or the catalog is wrong
+     *   label present but
+     *   unresolvable     -> the SCREEN's structure is not one of the three
+     *                       shapes findValueElement knows
+     *
+     * The third is not hypothetical: it is the open issue on the DBS Firma
+     * Fatura summary, where label and value share a span class. Naming it
+     * stops that failure from being read as a value mismatch.
+     */
+    private AssertionError explainVerify(String label, Locator container, AssertionError miss) {
+        if (container.count() > 0) {
+            return miss;
+        }
+        Locator labelOnScreen = page.getByText(label, new Page.GetByTextOptions().setExact(true));
+        if (labelOnScreen.count() > 0) {
+            return new AssertionError("'" + label + "' etiketi ekranda var, ama degerini tutan alan"
+                    + " cozulemedi: ne fieldcontainer, ne yan hucre, ne modularFormTable."
+                    + " Bu ekranin yapisi findValueElement'in bildigi uc sekilden hicbiri degil."
+                    + " | Orijinal hata: " + firstLine(miss), miss);
+        }
+        return missingField(label, miss);
+    }
+
+    /**
+     * Playwright failures run to dozens of lines of call log. The first line
+     * is the fact; the rest would bury the candidate list we just added.
+     */
+    private static String firstLine(Throwable cause) {
+        String message = cause.getMessage();
+        if (message == null || message.isBlank()) {
+            return cause.getClass().getSimpleName();
+        }
+        return message.lines().findFirst().orElse(message).trim();
     }
 
     // ===================== ERROR DIALOG GUARD ============================

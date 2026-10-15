@@ -28,8 +28,13 @@ public class DiscoveryController {
     public record StageBody(Map<String, String> values, String button) {
     }
 
+    /**
+     * @param entryRow optional: a result-grid row to pick before entryButton,
+     *                 for sub-menus that land on a list rather than a form
+     */
     public record DiscoverRequestBody(
-            String app, String cif, String userid, String mainMenu, String subMenu, String entryButton,
+            String app, String cif, String userid, String mainMenu, String subMenu,
+            String entryRow, String entryButton,
             List<StageBody> stages) {
     }
 
@@ -65,7 +70,8 @@ public class DiscoveryController {
 
         try {
             CatalogDiscoveryService.StartOutcome outcome = discovery.start(new CatalogDiscoveryService.DiscoverRequest(
-                    body.app(), body.cif(), body.userid(), body.mainMenu(), body.subMenu(), body.entryButton(),
+                    body.app(), body.cif(), body.userid(), body.mainMenu(), body.subMenu(),
+                    body.entryRow(), body.entryButton(),
                     stages));
 
             if (!outcome.accepted()) {

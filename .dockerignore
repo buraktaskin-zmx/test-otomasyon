@@ -25,6 +25,14 @@ DO_NOT_COMMIT/
 runs/
 /var/qa/runs/
 
+# Local H2 database from an IDE run. Nothing COPYs it, but a secret in the
+# build context is one careless COPY away from shipping — and this one holds
+# run history and analyst text.
+data/
+**/*.mv.db
+**/*.trace.db
+**/*.lock.db
+
 # Tooling and VCS
 .git/
 .gitignore

@@ -3,6 +3,22 @@
 How to make an LLM generate one `.feature` file. Same inputs, same prompt,
 every time — so runs are repeatable and reviewable.
 
+> **This describes the recipe by hand. The pipeline is now code.**
+> `POST /api/v1/scenarios/suggest` does all of it: `PromptBuilder` assembles the
+> system and user prompts, `SuggestService` calls the model, `ScenarioValidator`
+> checks the draft and feeds its errors back for one repair turn. Read this file
+> to understand WHY the prompt is shaped this way, or to reproduce a generation
+> outside the platform — but **`PromptBuilder` is the authority on the actual
+> prompt text**, and the two will drift. When they disagree, the code is right.
+
+> **For MANY scenarios from one catalog**, read
+> [`docs/COKLU-SENARYO-AKISI.md`](../docs/COKLU-SENARYO-AKISI.md) instead.
+> `POST /api/v1/scenarios/suggest-many` does not call the model once with "write
+> five" — `VariationPlanner` computes N data combinations in Java from this
+> catalog's own option lists and constraint keys, and each one becomes its own
+> single-scenario generation. That document also explains where a catalog comes
+> from in the first place (the MCP agent and the DOM scan) and why both are kept.
+
 ## Inputs (three, always)
 
 1. **`VOCABULARY.md`** — the closed step grammar. Goes in the system prompt.
@@ -22,15 +38,24 @@ catalog.yaml ──┼─▶  LLM  ─▶  scenario.feature  ─▶  dry-run gat
 login + intent ┘                                    validates step mapping     real result
 ```
 
-The **dry-run gate is local and browser-free** — run it on every generated
-file before it ever reaches the VDI:
+The gate is browser-free, and today it is an HTTP call rather than Maven:
 
 ```
-mvn test -Dcucumber.execution.dry-run=true
+POST /api/v1/scenarios/validate      # ~50 ms, no browser, always 200
 ```
 
-It fails if any line doesn't map to a real step definition (i.e. the LLM
-invented a step). Only after it passes do you take the file to the VDI.
+It reports every line that does not map to a deployed step (the LLM invented
+one), plus the catalog-aware errors: an unknown label, a verb that does not fit
+the field's type, an option the screen never offered, an invented expected
+value, a re-worded success message. `POST /api/v1/runs` repeats the same check
+server-side, so a typo cannot reach a browser even if the UI is bypassed.
+
+**The Maven dry-run does not work in this repository.** `mvn test
+-Dcucumber.execution.dry-run=true` finds no features at all: they live in a
+directory literally named `com.ykb.uplift.uptest` (dots) while
+`RunCucumberTest` selects the classpath resource `com/ykb/uplift/uptest`
+(slashes). Passing a filesystem path explicitly
+(`-Dcucumber.features=<path>`) bypasses the selector and does work.
 
 ---
 

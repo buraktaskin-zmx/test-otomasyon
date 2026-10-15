@@ -1,0 +1,5 @@
+# Installed from the public registry, which the VDI can reach through
+# gmproxy.kfs.local:8080 (measured 2026-10-07, see docs/E2E-CERCEVE-DEGERLENDIRME.md).
+# The BUILD OUTPUT is not ignored: ../resources/static/ui is what Spring serves,
+# and the VDI is expected to be able to run the jar without building the UI first.
+node_modules/

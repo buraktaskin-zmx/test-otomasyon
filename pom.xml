@@ -38,6 +38,25 @@
              resolves but dies at startup here: its OpenAiAudioApi calls
              HttpHeaders.addAll(MultiValueMap), removed in Spring 7. -->
         <spring-ai.version>2.0.0</spring-ai.version>
+
+        <!--
+          H2, the orchestrator's run-history database. Pinned here rather than
+          inherited silently from spring-boot-dependencies, and the reason is
+          the file on disk:
+
+          H2's on-disk format is NOT guaranteed stable across its own minor
+          versions — the 1.4 -> 2.0 jump required an explicit export/import,
+          and 2.x has moved the format before. Inheriting the version means a
+          routine Boot patch upgrade can carry a new H2 whose first contact
+          with the existing file is "General error: ... unsupported database
+          format", and the run history is unreadable until someone finds the
+          old jar.
+
+          So this is a decision the project makes deliberately, not a side
+          effect of a Boot bump. Overriding the BOM's property is the idiomatic
+          mechanism; the orchestrator's <dependency> carries no <version>.
+        -->
+        <h2.version>2.4.240</h2.version>
     </properties>
 
     <dependencyManagement>

@@ -11,6 +11,13 @@ them here:
 - **Server side** (orchestrator + executor API, Docker, deployment):
   [`uptest-executor/src/main/java/server/CLAUDE.md`](uptest-executor/src/main/java/server/CLAUDE.md)
 - **Goals, deliverables, roadmap:** [`PROJECT.md`](PROJECT.md)
+- **End-to-end flow, beginner level (Turkish):**
+  [`docs/COKLU-SENARYO-AKISI.md`](docs/COKLU-SENARYO-AKISI.md) — what actually
+  happens from "test invoice creation on this screen" to a running test: every
+  HTTP call, every model call, what the model is given, which calls take
+  minutes, and the three separate "AI" paths that are easy to confuse (MCP
+  agent / DOM scan / scenario generator). Read it before asking how any of this
+  fits together.
 
 ## Repository shape
 
@@ -23,6 +30,18 @@ them.
 uptest-executor/      runs tests: Cucumber + Playwright + Spring Web
 uptest-orchestrator/  UI, validation, dispatch. NEVER runs a test.
 ```
+
+One repository and one parent pom, but **two separate running applications**:
+built together, started apart, on their own ports. The orchestrator (`:8035`)
+is the only one analysts reach; executors (`:9035`) answer it alone, inside the
+Docker network. Each executor takes exactly one run at a time, so concurrency
+comes from adding replicas — and there is no queue: when they are all busy the
+next request is refused outright.
+
+Ports, the dispatch chain, what happens when several scenarios are submitted at
+once, and where the run history is stored are all in the server-side document
+([`uptest-executor/src/main/java/server/CLAUDE.md`](uptest-executor/src/main/java/server/CLAUDE.md)).
+Do not restate them here.
 
 ## Architecture (layers, top to bottom)
 
@@ -56,7 +75,7 @@ All test-side code lives in `uptest-executor/src/main/java/` under the package
 - NGC page object: `PW/ngc/steps/util/NGC.java`
 - NGI steps: `PW/ngi/steps/NGISteps.java` — one step (`login to ngi`)
 - NGI page object: `PW/ngi/steps/util/NGI.java`
-- Common: `PW/common/` — CommonSteps (14 shared steps), CommonActions (all the
+- Common: `PW/common/` — CommonSteps (18 shared steps), CommonActions (all the
   Playwright logic), Hooks, TestContext, RunContext
 - Components: `PW/components/` — grid/Grid+GridElement, selectbox/account,
   end/EndPage
@@ -66,6 +85,23 @@ Elsewhere:
 - Scenarios (working copies analysts and the LLM look at): `scenarios/*.feature`
 - Screen catalogs for LLM prompting: `catalogs/<app>/<flow>.yaml`; schema in
   `catalogs/SCHEMA.md`
+- Screen discovery (executor): `PW/discovery/` — `CatalogDiscovery` walks a flow
+  and writes `catalog-draft.yaml` into the run directory. Driven by two steps
+  (`discover screen catalog`, `fill discovered fields:`) that `VocabularyExtractor`
+  deliberately keeps OUT of the published vocabulary: they read a screen, they do
+  not describe a test, and the generator must never emit them. That exclusion is
+  why a hand count of `@Given/@When/@Then` (22) disagrees with
+  `GET /api/v1/vocabulary` (20).
+- Run history (orchestrator): `orchestrator/persistence/` holds the entities and
+  repositories, `orchestrator/run/RunStore` is the ONLY bean in the run path
+  that touches JPA, and `orchestrator/run/Redactor` strips the cif and userid
+  out of every path that writes scenario text down. H2 file mode, schema by
+  `ddl-auto=update`, orchestrator only — the executor never gets a database.
+  Details in the server-side document.
+- MCP exploration agent (orchestrator): `orchestrator/explore/` + `.mcp.json`
+- Discovery dispatch (orchestrator): `orchestrator/catalog/CatalogDiscoveryService`
+  builds the synthetic feature and sends it through `ExecutorPool` like any other
+  run; `orchestrator/api/DiscoveryController` is its endpoint.
 - Human-facing vocabulary contract: `VOCABULARY.md`
 - `mvn test` feature classpath: `uptest-executor/src/test/resources/` +
   `uptest-executor/src/test/java/.../RunCucumberTest.java`
@@ -118,7 +154,7 @@ overrides all three (see `Hooks.launchOptions`):
   (`{runDir}/traces/<scenario>.zip`), falling back to `target/traces/` when
   Cucumber was started outside the server (`mvn test`).
 
-## Current vocabulary (16 steps)
+## Current vocabulary (20 steps)
 
 **The machine-readable source of truth is generated**, not this list:
 `VocabularyExtractor` reads the `@Given/@When/@Then` annotations at build time
@@ -138,7 +174,13 @@ Shared (CommonSteps, work on both apps):
 - `go to {string}` (absolute URL; prefer `navigate to`)
 - `navigate to {string} {string}` (main menu, then sub-menu)
 - `click {string}` (matches button OR link)
-- `enter {string} {string}` (text/date input, by label)
+- `enter {string} {string}` (text/date input, by label — a literal date still
+  works here, and that is the only way to write one specific day)
+- `enter date {string} {string}` (a date written as what it MEANS, resolved by
+  `RelativeDate` AT RUN TIME: `"bugün"`, `"yarın"`, `"dün"`, `"+3 gün"`,
+  `"-1 hafta"`, `"2 ay"`, `"1 yıl"`, or an absolute `gg/aa/yyyy` passed through
+  untouched. The generated verb for `type: date` — see the lesson below on why a
+  literal date rots)
 - `enter amount {string} {string}` (masked amount field, kuruş-aware: the whole
   and decimal parts are SEPARATE inputs, `-integer` / `-decimal`)
 - `select {string} from {string}` (a plain `<select>` inside the label's
@@ -151,13 +193,93 @@ Shared (CommonSteps, work on both apps):
   which is aria-hidden, so the generic `select` step can't drive it.)
 - `select account at index {int} from {string}` (same picker, 0-based over the
   listed `li.select2-results__option` items)
+- `check {string}` (ticks the checkbox with that caption — a whole sentence on
+  these screens. Idempotent: a box already ticked is left alone, because
+  clicking it again would UNtick it. Same hidden-input problem as the radios,
+  so it falls back to clicking the label, and reads the state back afterwards)
 - `select row {string}` (result grid radio button: matches the radio's own `td`
   first, then the whole `tr`, so a value in any column works)
 - `select row at index {int}` (0-based over the radios on the page)
+- `choose {string}` (a radio OUTSIDE a grid, by the text beside it. `select row`
+  matches on `ancestor::td` then `ancestor::tr` and so cannot see one in a plain
+  form section — on DBS Fatura Oluştur the form is gated behind "Oluşturma
+  Tipi". Found by ROLE so the name is the one a person reads, then falls back to
+  clicking the label when the input is custom-styled and hidden)
 - `verify the {string} field equals {string}` (text/date, EXACT match, NO normalize)
 - `verify the {string} has amount {string}` (amount, normalized)
 - `verify {string} text is displayed`
 - `wait {string} seconds` (avoid — prefer auto-wait)
+
+## Where catalogs come from
+
+A catalog is the screen's **dictionary**, not a scenario and not a template:
+labels, types, options, how to reach the screen. It carries no test data — a
+scenario is catalog (nouns) + intent (verbs and values) + vocabulary (grammar),
+so ONE catalog serves many scenarios and an analyst varies data without
+touching it. It is also what `ScenarioValidator` checks a generated scenario
+against, which a template could not be.
+
+**Two producers, with different blind spots.** They were built in that order and
+both are still here, because each has caught the other being wrong:
+
+- **DOM scan** (`PW/discovery/CatalogDiscovery`, UI "Ekranı Keşfet"). No model,
+  no tokens, repeatable. It runs on the EXECUTOR: `CatalogDiscoveryService`
+  builds a synthetic "login, navigate, discover" feature and dispatches it
+  through `ExecutorPool` like any ordinary run. Reading types off the DOM is
+  what only it can do — Select2 v4 (drivable) versus v3 (no step exists, so it
+  is flagged `UNSUPPORTED_V3`), an amount that is two inputs, and dependencies
+  measured by diffing screen state, which is where `readonly` comes from. It is
+  also the ONLY producer of the constraint keys (`max_length`, `min`, `max`,
+  `numeric`) the batch generator needs: those are DOM attributes, and an
+  accessibility snapshot carries none. Blind
+  to anything outside a `fieldcontainer` (it missed "Ek Bilgi") and it cannot
+  reach a `success_message`, because it never presses the final button.
+- **MCP agent** (`orchestrator/explore`, UI "Ajan"). An LLM driving a real
+  browser through Playwright MCP. Good at what needs acting and watching:
+  finding the path to a screen, the confirmation screen, the success banner,
+  fields the scan's selector never sees. It guesses types from an accessibility
+  snapshot, so v3-versus-v4 is invisible to it, and it is not repeatable — the
+  same screen gave "Ay" once and "Ay, Hafta, Gün" the next run.
+
+Either draft is saved from the UI into `catalogs/<app>/<flow>.yaml`, where the
+generator picks it up.
+
+**A draft is not a catalog until a human has read it.** Run both on a new screen
+and read the difference: that is how "Ek Bilgi" and a missed `verifiable` were
+both found. `ExploreController.problems()` reports mechanically what is checkable
+before anyone looks: a type no step can drive, a dropdown with no options, a
+`success_message` with no `verifiable` field behind it.
+
+**Only part of a catalog is enforced.** `CatalogModel` parses `fields`
+(`label`, `type`, `options`/`accounts`, `readonly`, plus `shown_when` and the
+constraint keys `max_length`/`min`/`max`/`numeric`) and `success_message`.
+Of those, only the first group is ENFORCED: `navigation` and `verifiable` are
+not parsed at all, and `shown_when` and the constraint keys are parsed for
+`VariationPlanner` but checked by nobody. `CatalogService` hands the YAML to the
+model **verbatim**, so everything unenforced steers the generator without the
+validator having an opinion. A wrong `entry_tab` surfaces as a 30-second timeout
+in a browser, not as a validation error.
+
+**One catalog, many scenarios — and the variation is computed, not requested.**
+`POST /api/v1/scenarios/suggest-many` (UI: "Çoklu Üret") produces N drafts for
+one screen. `VariationPlanner` decides in Java what makes each one different —
+`options[i % k]` for every dropdown, a boundary ladder for amounts and dates, a
+length ladder for text bounded by `max_length` — and the prompt carries those
+values literally. Asking the model to "vary the values" cannot work here:
+`temperature` is 0.3 precisely so the same request gives the same scenario, and
+raising it buys diversity by also buying invented labels. The planner also
+resolves `shown_when` correctly (a revealed field is filled ONLY in the
+variations that chose its trigger) and reports its own ceiling — the DBS form has
+three single-option dropdowns, so past the second scenario only data differs, and
+that is said out loud rather than padded over.
+
+**N separate documents, not one file with N scenarios.** `collectFromFeature`
+gathers every scenario's steps into ONE list and `checkAssertionsAreEarned` walks
+it with ONE set of written labels, so in a five-scenario file the fifth
+scenario's `verify` is "earned" by the first's `enter` — the same hole that let
+an invented "Bayi Ünvanı" reach a browser run. Separate documents keep each check
+as strict as it is for a single scenario, give each draft its own repair turn,
+and leave each independently runnable.
 
 ## Hard-won lessons (DO NOT regress these)
 
@@ -167,8 +289,47 @@ Shared (CommonSteps, work on both apps):
 - **Amount fields: read the value SPAN, not hidden inputs.** Confirm-screen
   amount containers have a hidden input holding the kuruş-less value (1.250);
   reading it gives wrong results. Wait for "TL" (containsText) then read the span.
+  **Writing has the mirror-image trap**, and the MCP agent walked into it:
+  typing a formatted "1.250,50" into what looks like one box leaves the form
+  reading nothing, because the value it validates is computed from the two
+  separate lira/kuruş inputs. The boxes look filled, the submit is refused with
+  "Toplam tutar giriniz", and the screen is right. `enter amount` splits them;
+  `ExploreController.SYSTEM` now tells the agent to do the same.
+- **A helper that returns `false` for several different reasons makes the
+  caller decide wrongly.** `pickFromCalendar` returned false in three cases:
+  the value is not a date, the calendar never opened, and THE CALENDAR OPENED
+  AND DOES NOT OFFER THAT DAY. The first two mean "this is not mine to drive"
+  and falling back to typing is right for them. The third is the application
+  saying the date is not allowed — "Başlangıç Vadesi" may not be today,
+  because a maturity date must be in the future, so the grid greys today out.
+  All three landed in one bucket, so the caller typed the digits with real
+  keystrokes, the mask accepted them, `valueTook()` agreed, and the step went
+  GREEN on a date the screen had just refused. The run then walked on with a
+  field the bank would reject. Fix: the refusal throws, and the message prints
+  the days the grid DID offer — because "the grid offers 10..31 and we wanted
+  9" (the application's rule, an analyst writes `+1 gün`) and "the grid offers
+  1..31 and we matched nothing" (our locator) need opposite fixes and were
+  indistinguishable. The general shape: when a helper cannot tell "I could not"
+  from "it must not", the second one belongs in an exception, not a boolean.
+- **Verifying the effect is part of a step's definition, not a courtesy.**
+  Walking `CommonActions` end to end after the calendar bug: `enter`, `select`'s
+  Select2 branch and `check` read their effect back; `select`'s NATIVE branch
+  (which also passes `setForce(true)`), `selectAccount`, `enterAmount`,
+  `clickOption` and `clickRadio` did not. Each of those can press the right
+  thing and change nothing — a masked amount box that refuses what was typed, a
+  forced `<select>` the application never notices, a label click that lands on a
+  neighbouring option. All five now read back and fail loudly. Note which half
+  of the file had the checks: exactly the parts where a silent pass had already
+  cost a debugging round. The lesson is not "add checks when burned" — it is
+  that an action step without a read-back is unfinished.
 - **Use auto-wait assertions** (hasText/hasValue/containsText), not
   `wait "N" seconds`. Both branches (input and span) need auto-wait.
+  `CommonActions` holds **no** deliberate pause between steps today: the only
+  timing knobs in this checkout are `UPTEST_SLOWMO` (per Playwright action, set
+  in `Hooks`) and the per-locator timeouts (`PICKER_MS`, `MENU_OPEN_MS`,
+  `SELECT_CONFIRM_MS`, `VERIFY_TIMEOUT_MS`). If pacing is ever added, add it as
+  a debt paid by the NEXT step so the last step of a scenario never waits for
+  nothing — and treat it as hiding a race, not fixing one.
 - **Label matching:** use `getByText(label, setExact(true))` so "Ad Soyad /
   Unvan" doesn't also match "Alıcı Ad Soyad / Unvan".
 - **findValueElement:** getByText exact → `ancestor::div[fieldcontainer]`, then
@@ -197,6 +358,14 @@ Shared (CommonSteps, work on both apps):
   `CommonActions.select` checks for `.select2-selection` and, when present,
   drives the widget the way a user does: open it, click the matching option.
   Same shape as `selectAccount`, which matches by digits instead of text.
+  **The MCP agent hit the same wall**, from the other side: it called the MCP
+  tool that picks an option out of a select and got back "Element is not a
+  `<select>` element … locator resolved to `<span role="combobox"
+  class="select2-selection …">`". It had no rule for filling a dropdown at
+  all — only for deciding the TYPE of one — so `ExploreController.SYSTEM` now
+  tells it to open the control and click the option, and to copy the option
+  text rather than retype it (it produced "Taksitli Ödnsin", which matches
+  nothing and looks like an application fault).
 - **`fill()` does not work on a masked input.** It writes the value in a single
   `input` event; a jQuery-masked field listens for key events and rebuilds the
   value character by character, so it ignores that event and paints the empty
@@ -208,10 +377,400 @@ Shared (CommonSteps, work on both apps):
   else falls back to `fill()`, then to `pressSequentially` (real key events) if
   the value did not take, and fails loudly if it still did not. Same family as
   the Select2 lesson above: a silent pass is worse than a failure.
+  **The MCP agent hits the same wall**, and typing turned out not to be worth
+  rescuing there either. Typed slowly it worked on "Başlangıç Vadesi" and
+  failed on "Fatura Tarihi" — same mask, same method, same run — producing a
+  date beginning with a digit nobody typed. The asymmetry points at the second
+  box not being EMPTY when typing starts: a mask interleaves new digits with
+  old ones. So the agent now drives the calendar FIRST, exactly as
+  `pickFromCalendar` does, and types only where no calendar opens. The calendar
+  replaces whatever the box held, which makes "was it empty?" stop mattering —
+  the same reason `select` drives the Select2 widget instead of its hidden
+  `<select>`. Order is load-bearing (year → month → day): changing year or
+  month redraws the day grid.
+- **`waitForSelector` waits for the FIRST match to be VISIBLE.** On Banko
+  Alacak İşlemleri the first `input[type=radio]` on the page belongs to the
+  collapsed "Detaylı Arama" panel, so `select row` spent its full 30 s waiting
+  on a radio it had no interest in and never reached the grid — 21 radios were
+  present the whole time. `selectRow` now waits for `ATTACHED` instead.
+  Narrowing the wait to `:visible` would have been wrong for the reason
+  immediately below. Same shape as the `navigateTo` lesson: the locator was
+  right, the first match was hidden.
 - **Custom-styled radios are invisible to Playwright.** The drawn circle IS the
   `<label>`; the input is visually hidden and Playwright refuses to click a
   hidden element. `clickRadio` checks visibility and clicks the label instead —
   the way a user does.
+- **An agent loop has no natural end, so bound it from outside.** Given
+  `browser_run_code_unsafe` and `browser_evaluate` the model stopped clicking
+  and started writing JavaScript, then looped on its own syntax errors; both
+  are now withheld in `ExploreController.WITHHELD`. Told to explore, it
+  finished the flow, closed the browser and started again — `BudgetedTool`
+  now refuses a second navigation to a page already visited, and caps total
+  tool calls as a last resort. Asked for "YAML and nothing else" it wrote
+  pages of prose first; the catalog is now a TOOL CALL (`CatalogSink`), so
+  the shape is enforced by a schema and the YAML is rendered by our code.
+  Even then, `submit_catalog` only *told* the model the task was over
+  ("do not call any more tools") and it kept browsing — so the run never
+  returned, and because the UI re-enables its button when the response
+  arrives, the analyst's "Katalog Üret" stayed disabled forever. Two
+  symptoms, one cause. `@Tool(returnDirect = true)` ends the loop for real:
+  the result goes straight back to the caller instead of to the model, so
+  there is no next turn to continue in. `BudgetedTool` refuses every call
+  once `CatalogSink.isClosed()`, as the backstop. Each of these started as a
+  prompt rule and only stopped when it became code.
+- **Fields are noted as the agent goes, not all at the end.** `note_field`
+  per field, `submit_catalog` once to close. One nested call asks too much of
+  a smaller model, everything seen early has to survive forty turns of
+  snapshots, and a run that dies leaves nothing. Noting keeps each call flat,
+  each observation fresh, and a partial catalog recoverable.
+- **Ask each question where its answer exists.** `verifiable` was an argument
+  of `note_field` and came back empty every single run. Not carelessness: a
+  field is noted while the FORM is being filled, and whether the application
+  echoes its value back is knowable only after the submit, on a screen the
+  agent has not opened yet — so the honest answer is always "no". The prompt
+  explained the flag at length and could not help; no wording makes an
+  unanswerable question answerable. It became its own tool,
+  `note_confirmation`, called once on the confirmation screen with the labels
+  printed there, and it reports back any label that was never noted — which is
+  also how the missed confirmation-table rows surface. `ExploreController
+  .problems()` now flags the one combination that proves the omission: a
+  `success_message` (only readable past that screen) with no `verifiable`
+  field anywhere.
+- **A confirmation screen prints the label WITH its value, so match on the
+  prefix.** Asked for the labels "exactly as printed there", the agent sent
+  `"Bayi Kodu 93002"`, `"Toplam Tutar 222,00 TL"` — because that is genuinely
+  one run of text on the page. `CatalogSink.keyOf` demanded equality, so all
+  fifteen labels of a correctly walked flow matched nothing: no field became
+  `verifiable`, and the draft then looked exactly like a run that had skipped
+  the confirmation screen. The agent was right and the matcher was wrong.
+  `longestPrefix` now accepts a reported text that BEGINS with a noted label,
+  with two guards that are not hypothetical on this form: the next character
+  may not be a letter (or `Fatura No` swallows `Fatura Numarası 955231`), and
+  the longest match wins (or `Taksit Periyodu 2` lands on `Taksit Periyot
+  Birimi`). Loose matching is safe here because it only sets a flag — being
+  wrong costs one extra assertion, never a wrong value.
+- **A tool's RETURN VALUE reaches where the prompt cannot.** The agent kept
+  producing catalogs whose dropdowns had no options — four of them on the DBS
+  form — and the system prompt already covered it at length, in capitals, with
+  the reason AND the consequence spelled out ("TO LEARN THE OPTIONS YOU HAVE TO
+  OPEN IT… a dropdown recorded with no options is a field a scenario cannot
+  use"). Adding a firmer sentence was never going to work: the prompt is read
+  ONCE, at the start of a forty-turn walk, and by field eleven it is far away.
+  `note_field` now answers back — it records the field (never refuses, or a
+  model that reads the complaint and moves on loses it entirely) and returns
+  what to do about it, at the moment the mistake is made and on the screen where
+  it can still be fixed. `note_confirmation` had already proved the shape by
+  reporting unmatched labels back. The ordering to remember: **tool return value
+  first, required argument second, prompt last** — and "add a line to the
+  prompt" is almost never the answer to a rule the model is already ignoring.
+- **An empty list means two things, so make the agent say which.** A dropdown
+  noted with no options might never have been opened, or might have been opened
+  and found genuinely empty — "Döviz Cinsi" has no options until "Bayi Kodu" is
+  chosen. Written down, those were identical, so the draft could not tell an
+  incomplete walk from a true fact about the screen. An empty list is now
+  accepted only WITH a reason in `uncertain`, which already renders into the
+  YAML as a `# emin degil:` comment. One consequence worth knowing: that comment
+  cannot be read back: `problems()` re-parses the draft through `CatalogModel`
+  and SnakeYAML drops comments, so the reason is reported from `CatalogSink`
+  (`emptyChoiceReasons()`) exactly as `missedOnConfirmation()` already is.
+  Anything a YAML comment carries is invisible to every later reader of that
+  YAML.
+- **An optional tool argument is an unanswered one.** `submit_catalog` took
+  `entryRow`, `entryButton`, `entryTab` and `successMessage` as
+  `required = false`, and they came back null run after run — including a run
+  whose instruction listed the values literally, argument by argument
+  ("entryRow = FORD DBS ODEMELERI"). The split in one such call is the whole
+  story: **every required argument arrived** (app, flow, mainMenu, subMenu, and
+  confirmedLabels with all fifteen labels), almost no optional one did. A model
+  fills what the schema demands and skips what it merely permits, so the fix is
+  not a firmer sentence in the prompt — it is deleting `required = false` and
+  documenting `""` as the way to say "there was none". `confirmedLabels` had
+  already been made required for exactly this reason and it holds. The damage
+  was silent, which is why it took three runs to see: `CatalogSink.toYaml`
+  writes a navigation key only when it is `present()`, so a dropped argument
+  looks identical to a screen that never had one.
+- **A new argument gets filled with the NEAREST observation, not the right
+  one.** `shown_when` had no tool argument, so the agent could not report a
+  conditional field at all. The first draft after it got one put
+  `shown_when: {Bayi Kodu, 93002}` on "Döviz Cinsi" — whose options merely LOAD
+  once a dealer is picked. The field is on the screen the whole time. Two
+  different events look identical from the agent's seat (the page changes after
+  a choice) and the prompt I wrote said "a box that was not on the screen",
+  which an empty dropdown satisfies if you read it as "not usable". The
+  discriminator has to be written down, and it is one question: **was the LABEL
+  missing from the page, or was the label there with nothing inside it?**
+  What makes this worth a lesson rather than a tweak is that the cost is
+  ONE-SIDED. `VariationPlanner` excludes a conditional field from every
+  variation that does not pick the trigger value, so a wrong `shown_when` left
+  a REQUIRED field untouched in four scenarios out of five — while a missing
+  one costs nothing for a field that is always present. Before this argument
+  existed the agent said nothing about Döviz Cinsi; afterwards it said something
+  harmful. So when a new argument's failure modes are asymmetric, ship the
+  mechanical question WITH it: `problems()` now asks about any choice field
+  carrying both a condition and a filled option list, which is that mistake's
+  exact shape and does not fire on the real case (a genuinely revealed field is
+  a plain box).
+- **A tool that accepts an argument must also render it.** `submit_catalog` took
+  `entryTab`, threaded it through `toYaml` — and the navigation block never
+  emitted it. That is why the Banko catalog said nothing about the "Ödenecekler"
+  tab the agent demonstrably clicked, and it read as "the agent forgot the tab"
+  for a whole round of debugging. When a key is added to `SCHEMA.md`, follow it
+  all the way to the emitted YAML; an argument that is accepted and discarded is
+  worse than one that was never offered.
+  **It then happened twice more, and the second time was worse than "accepted
+  and discarded": `entry_choice` and `shown_when` were documented in SCHEMA.md
+  with NO ARGUMENT AT ALL.** SCHEMA.md is pasted into the agent's system prompt
+  verbatim, so the model read about both keys and had nowhere to put the answer
+  — it very likely saw the DBS radio fork and the observation simply evaporated.
+  That reads as "the AI forgot", which is the wrong lesson entirely. All three
+  failures are invisible in the draft: a catalog with no `entry_choice` looks
+  exactly like a screen that has no fork, and `problems()` cannot check what
+  leaves no trace. Three repeats of one mistake is where a comment stops being
+  enough, so `CatalogContractTest` now parses SCHEMA.md's own navigation block,
+  calls `submit_catalog` with every argument filled by reflection, and fails
+  naming any documented key that does not come out the other end. It is
+  signature-agnostic on purpose: a contract test you must edit when the contract
+  changes is one more thing to forget.
+- **Two prompt rules that contradict each other are not settled by a third.**
+  Batch drafts intermittently came back as a `Scenario Outline` with
+  `select "<Fatura Tipi>" from "Fatura Tipi"` and a one-row `Examples` table —
+  and the row said "Normal" on a scenario whose plan said "E-Fatura". It looked
+  like the model ignoring the variation block. It was not: the system prompt's
+  rule 5 says to use an Outline "when the intent asks for several input rows",
+  which is RIGHT for one scenario and wrong for a batch, where
+  `VariationPlanner` has already chosen the data and the user turn lists it
+  literally. The model was obeying one half of a prompt that disagreed with
+  itself — which is exactly why it happened sometimes and not others, and why
+  it clustered on the combinations interesting enough to look tabular.
+  Two fixes, and the order matters: **cancel the contradiction where the
+  context is known** (the counter-rule lives in the variation block, the only
+  place that knows this is a batch — rule 5 is in the shared system prompt and
+  cannot be changed for one path), and then **back it with code**, because a
+  rule is not made firmer by repetition. `OutlineFlattener` resolves the
+  placeholders FROM THE PLAN — never from the model's Examples table, which is
+  the invention — deletes the table, and renames the keyword. It is all-or-
+  nothing: a placeholder the plan has no value for leaves the draft untouched,
+  because flattening around it would strip the table that was feeding it. On
+  the single-scenario path the variation is null and the class stands aside,
+  since there rule 5 is simply correct. The shape to remember: before adding a
+  rule, check whether an existing one already says the opposite.
+- **You cannot ask a deterministic model for variety.** `temperature=0.3` is
+  there so the same request gives the same scenario — a deliberate choice, and
+  the right one for drafting Gherkin against a closed vocabulary. It also means
+  "write five different scenarios" returns five near-identical files, and the
+  only prompt-level fix is raising the temperature, which buys diversity by
+  also buying invented labels and reworded steps. So `VariationPlanner` computes
+  the differences in Java and the prompt carries the chosen values LITERALLY
+  ("Fatura Tipi" = "E-Fatura"), which has the side benefit that every value came
+  out of the catalog's own option list and is therefore already known to pass
+  validation. Same shape as every other fix here: a prompt rule only holds once
+  it becomes code. The planner resolves `shown_when` for the same reason — it is
+  a condition with a right answer, not a judgement call.
+- **Credentials are optional for ONE scenario and required for a BATCH.** The
+  asymmetry looks like an oversight and is the opposite. `LoginStep.forApp`
+  returns null for a blank cif, `LoginStep.apply` then leaves whatever login the
+  model wrote, and that is a fair trade for a single draft: there is one login
+  line and the analyst is looking straight at it. A batch is N SEPARATE model
+  calls, so the same blank cif produces N independently invented customer
+  numbers — measured, not feared: five drafts came back with five different
+  cifs, one of them using the NGI step on an NGC screen and one with no login
+  line at all. The analyst asked for one user exercising one screen five ways
+  and would get five users and five hand-edits. `/suggest-many` therefore
+  refuses a blank cif where `/suggest` accepts it. Note which half of the
+  problem was already solved: the values the PLANNER varies are catalog fields,
+  and a catalog carries no credentials by design (SCHEMA.md), so nothing was
+  ever varying the login — the divergence came from NOT forcing it. "Held
+  constant" and "never varied" are different guarantees, and only the first one
+  needs a forced value.
+- **Two valid steps can still be one bug.** A generated scenario carried
+  `click "FORD DBS ODEMELERI"` on the line directly above its own
+  `select row "FORD DBS ODEMELERI"`. Every check passed: both are real patterns,
+  the value is a real catalogued one, the labels and types are right. But
+  `click` resolves `getByRole(BUTTON|LINK)` and a grid cell is neither, so the
+  run would spend the full timeout and die on a line that merely repeated the
+  next one. Nothing could see it because nothing knew which catalogued value is
+  a ROW — `CatalogModel` read `fields` and `success_message` and skipped
+  `navigation` entirely. It now reads `entry_row`. The shape to remember: a
+  check that only looks at one step at a time cannot see a wrong RELATIONSHIP
+  between two correct ones, and the catalog usually knows which relationship was
+  meant.
+  **And the check alone was not the fix**, which is the second half of this
+  lesson. A validator finding reaches the model as a REPAIR PROMPT, and a repair
+  prompt is a request — the date verbs had already priced that: the model wrote
+  the wrong verb, was shown the validator's own complaint, and wrote it again.
+  So `EntryRow` now deletes the spurious `click` when the draft also selects the
+  row properly, and rewrites it to `select row` when it does not; the check stays
+  as the backstop for when the rewriter declines (no parsed catalog, or an
+  executor not publishing `select row`). The test for which of the two a finding
+  deserves: if the right answer is deterministic and readable from the catalog —
+  one argument, same position, nothing to get wrong — write the rewriter. If it
+  needs a human's judgement (a dropdown written with `enter` needs its arguments
+  REVERSED), report it. Reporting a mechanically fixable mistake only moves the
+  work to whoever reads the notes.
+- **`getByRole` cannot see a hidden input, and `count()` does not wait.** The
+  first `choose` implementation found its radio with `getByRole(RADIO)` and
+  guarded with `count() == 0`. On the real screen it threw "0 options on the
+  page", intermittently enough to look like a race, and it was two separate
+  bugs — each one a lesson this file already carried:
+  * `Locator.count()` answers about the DOM as it stands this instant; it is not
+    an auto-waiting assertion. Called while the screen was still arriving it
+    said zero and the step threw at once. `selectRow` has always called
+    `awaitRadios()` first (waiting ATTACHED, not visible, precisely because
+    these radios are hidden) and anything touching a radio must do the same.
+  * A visually hidden element is excluded from the ACCESSIBILITY TREE, which is
+    what `getByRole` queries. These radios are custom-styled — the drawn circle
+    is the label, the input is hidden, which is the whole reason `clickRadio`
+    clicks the label — so `getByRole` could never have found them however long
+    it waited. The raw `input[type='radio']` locator is what works, and is what
+    the grid picker next door had been using all along.
+  The general shape: when a new step touches a control an existing step already
+  drives, copy that step's locator strategy before inventing one. The existing
+  one encodes failures already paid for.
+  **Then it failed a third time, and copying was exactly what was wrong.**
+  `awaitRadios()` was borrowed from `selectRow`, where the grid is already on
+  screen; `choose` runs straight after the click that REPLACES the page. So the
+  wait returned on the first radio to attach — not necessarily one of the
+  fork's two, and one whose label had not rendered yet reads back as `''`. The
+  run reported "1 secenek bulundu: ''" on a screen that has two, which looks
+  like a locator bug and is not one. Waiting for ANY member of a class of
+  elements is not waiting for the ONE the step is about: `choose` now waits for
+  the option's own caption, which is also the thing a user sees, since these
+  radios are drawn as their labels. The borrowed helper was right for the
+  screen it came from and wrong for this one — so copy the STRATEGY, but check
+  the assumption it rests on. And when a wait can fail for two opposite reasons
+  (wrong screen versus wrong locator), make the failure say which: the message
+  now reports whether the caption was on the page at all, because those two
+  need opposite fixes and were indistinguishable.
+- **A radio outside a grid had no step at all, and the gap was documented
+  rather than noticed.** `CatalogDiscovery` has listed loose radios as
+  UNRECOGNISED since it was written — "no vocabulary step drives a radio outside
+  a grid" — and that stayed an abstract limitation until DBS Fatura Oluştur put
+  one in front of its form ("Oluşturma Tipi": Bilgi Girişi / Dosya Yükleme).
+  `select row` cannot reach it: it matches on `ancestor::td` then `ancestor::tr`,
+  so a radio in a plain form section matches nothing and the step fails with "no
+  row matching". `choose {string}` finds it by ROLE — Playwright computes a
+  radio's accessible name from its label — then falls back to clicking the label
+  when the input is custom-styled and hidden, the same two-step dance
+  `clickRadio` already does inside a grid.
+- **A fork between two screens is NAVIGATION, not a field.** The tempting model
+  for "Oluşturma Tipi" was `type: radio` with two options, which would have let
+  `VariationPlanner` vary it across a batch. That would have been a disaster of
+  its own making: the other branch is a file-upload screen where NONE of the
+  sixteen catalogued fields exist, so half the scenarios would have timed out on
+  every field in turn. The catalog describes one screen; a second screen gets a
+  second catalog ("one file per flow"), and the choice that reaches the first one
+  belongs in `navigation.entry_choice` where nothing varies it. The test for
+  which model is right: ask whether the catalogued fields still exist after the
+  other option is chosen.
+- **Never rewrite a draft into a step the deployment does not serve.** `DateVerb`
+  turned `enter` into `enter date` the moment the orchestrator knew that step —
+  but the orchestrator and the executors restart SEPARATELY, and on the run that
+  found this the executor was still serving the old vocabulary. Every rewritten
+  line came back "Tanımsız adım", and because an unknown step suppresses the
+  catalog checks entirely (`everyStepIsKnown`), the draft also lost every OTHER
+  finding it would have reported. A correction that outruns the deployment is
+  strictly worse than no correction: it converts a reported problem into an
+  unrunnable scenario AND hides the rest. `DateVerb.apply` now takes the live
+  `Vocabulary` and rewrites only into patterns `Vocabulary.has` confirms, so an
+  executor that is behind degrades to the previous behaviour instead of
+  breaking. The general shape: anything that EDITS a scenario must ask what the
+  executors actually publish, exactly as the validator already does.
+- **The date verbs had to be applied, not requested.** The prompt was told twice
+  — a type-to-verb table and four lines explaining why — that a `type: date`
+  field takes `enter date` and `verify the {} has date {}`. The model wrote
+  `enter "Başlangıç Vadesi" "+1 ay"` and
+  `verify the "Başlangıç Vadesi" field equals "+1 ay"`, then did it again
+  through a repair turn that quoted the validator's own complaint back at it.
+  `DateVerb.apply` now rewrites both, from the catalog, exactly as
+  `LoginStep.apply` rewrites the login line — and for the same reason: a rule
+  asked for is a rule sometimes followed. Note the failure it prevents is not
+  cosmetic: `field equals` compares exactly (it must, see the normalize lesson),
+  so it reads a screen showing 08/11/2026 and hunts for the literal "+1 ay" —
+  a field set perfectly failing its own assertion, minutes into a browser run.
+  Deliberately narrow: only dates, and only the verb, because both pairs take
+  their arguments in the same order and the rewrite has nothing to get wrong. A
+  dropdown written with `enter` needs its arguments REVERSED, which is a riskier
+  edit the validator reports and a human fixes.
+- **A date decided at generation time rots; decide it at run time.**
+  `VariationPlanner` used `LocalDate.now()` while WRITING the scenario, so a
+  draft produced on 7 October carried "08/10/2026" for ever — correct that week,
+  in the past a fortnight later, and refused by a form whose maturity date may
+  not be behind today. Nothing about the scenario changed; it simply aged out.
+  Tightening the ladder to near dates (the obvious fix) makes it worse: the
+  nearer the date, the faster it expires. The answer is that the text should say
+  what it MEANS — `enter date "Başlangıç Vadesi" "+3 gün"` — and the step
+  resolves it when the browser runs. Note what this is NOT: a tool call for the
+  model to fetch today's date. The date was never the model's to choose; Java
+  already knew it. The question was only WHEN to ask, and the answer is at the
+  run, in a human-written step. A literal `gg/aa/yyyy` still passes through
+  `enter date` untouched, because an analyst who needs one specific day must be
+  able to write it.
+- **"One server, so serialise" is wrong about vLLM.** The scenario batch was
+  sequential on the reasoning that five concurrent requests share one GPU and
+  finish no sooner. Continuous batching is the thing vLLM exists for: concurrent
+  requests are folded into the same forward pass, not queued. The model sharpens
+  it — `Qwen3.6-35B-A3B` is a mixture of experts with 3B active parameters, so a
+  single request is memory-bandwidth bound and leaves the GPU largely idle.
+  Bounded concurrency (`llm.batch-concurrency`) rather than unbounded, because
+  the deployment is shared with other teams and a batch of ten fired at once
+  pushes everyone else behind it. The general shape: a performance claim about
+  someone else's server is a guess until the server's own design is read.
+- **Nothing counted tokens, so every cost answer was an estimate.**
+  `.call().content()` is the short spelling of a Spring AI call and it discards
+  the `ChatResponse` metadata — including the usage figures the server already
+  returns. For as long as that was the only call shape here, "how much does an
+  agent walk cost?" could only be answered by multiplying prompt sizes. 
+  `LlmClient` now takes `.chatResponse()`, logs prompt/completion/total, and
+  keeps a process counter a caller can difference across a batch.
+- **One counter cannot index two different things.** `VariationPlanner` gave every
+  field the scenario number, and that single index was wrong in two opposite
+  ways at once. Choice fields each did `i % size`, which walks the DIAGONAL: two
+  two-option dropdowns produce (A,X), (B,Y), (A,X)… and the combinations (A,Y)
+  and (B,X) are never tested at all — half the coverage, silently. Data fields
+  also used `i`, which made every field of the same type take the SAME value: on
+  the DBS form all six text boxes got "TEST1" in scenario 1, and the two invoice
+  numbers came out identical, which a uniqueness check refuses. Two indexes now:
+  choice fields are digits of one mixed-radix counter, data fields are offset
+  along their ladder by their own position. Dates are deliberately excluded from
+  the offset — making them differ made them differ in ORDER, putting an invoice
+  date six months after its own maturity date, and field relationships are not in
+  the catalog to be read. Found by walking a real catalog by hand, not by a
+  failing run; the table in `docs/COKLU-SENARYO-AKISI.md` is that walk.
+- **A title that cannot tell two rows apart is worse than no title.** The card
+  label was built from the first two catalogued options, and on a screen whose
+  first two dropdowns have one option each that is the same string for every
+  scenario — all five DBS cards read "Bayi Kodu = 93002 · Döviz Cinsi = TL" while
+  the one field that actually differed was trimmed off the end. A label has to be
+  built from what VARIES, which means asking the option list its size before
+  using it.
+- **An absent constraint is not an unbounded one.** `max_length` and friends come
+  back null when the DOM did not say, and that is a different fact from "this box
+  takes anything": the planner has to fall back to a short ladder AND report that
+  it guessed. Writing `max_length: 0` to mean "none" would be read as a
+  zero-character box, and a confident wrong bound is worse than an admitted
+  missing one. Nor is `numeric` guessed from a label — "Fatura No" accepts
+  `FTR-2026-0001` on this application.
+- **Deleting a feature's CSS takes whatever else shared its class name.** The
+  discovery panel was replaced by the batch panel, and its whole CSS block went
+  with it — including `.discover-output`, which `#agentOutput` had also been
+  using. The agent's answer box was then styled by `.search` alone: no gutter,
+  no `min-height`, no monospace, and free to shrink. Nothing errored; CSS has no
+  "undefined class", so a deleted rule is indistinguishable from one that never
+  existed, and the panel simply looked wrong. The class name is what hid it —
+  `discover-output` reads as belonging to the panel being deleted, and it did
+  not. Two things follow: a shared rule should carry both names
+  (`.yaml-output, .discover-output`) so its users are visible at the definition,
+  and removing a feature is a good moment to run the cheap check that found
+  this — every class used in the HTML and in the JS that builds HTML, grepped
+  against the stylesheet. It takes seconds and it named the one live casualty
+  out of 115 classes.
+- **`[hidden]` loses to any author rule that sets `display`.** Author styles beat
+  the user-agent stylesheet before specificity is even consulted, so
+  `.agent-save { display: flex }` silently defeated `#agentSaveRow`'s `hidden`
+  attribute and the "Kataloğu Kaydet" row was on screen from page load, offering
+  to save a catalog that did not exist. `app.css` now declares
+  `[hidden] { display: none !important }` once, so `el.x.hidden = true` means
+  what it says. Worth remembering before adding another panel that toggles.
 - **Hooks must close everything even when tracing fails.** `Playwright.create()`
   starts a node driver process per scenario; a throwing `tracing().stop()` that
   skipped the closes leaked that driver and its browser for the lifetime of the
@@ -219,6 +778,28 @@ Shared (CommonSteps, work on both apps):
 
 ## Open issues
 
+- **The "Seçiniz" placeholder still reaches drafts.** `selectableOptions`
+  drops an option with no value, disabled or hidden; this app gives its
+  placeholder a real value, so `Döviz Cinsi` came back as
+  `options: ["Seçiniz"]` — the one thing a scenario must never choose. Run
+  once with `UPTEST_DISCOVERY_DEBUG=true` and read the
+  `nativeOptions=[value=text]` dump to learn how it IS marked, then write the
+  rule from that. Do not match on the Turkish word.
+- **`shown_when` is only as good as the walk that found it.** The DOM scan
+  still cannot emit it — it reads the form before anything is filled, so a
+  field a choice reveals is not there yet. `note_field` now takes it, but the
+  agent can only report a condition the walk actually TRIGGERED: told to pick
+  "Normal" for "Fatura Tipi", it never sees "E-Fatura Hash Kodu" and cannot
+  know it exists. Making it probe each option was rejected deliberately — that
+  means mutating the form, which breaks "the instruction is the complete list
+  of what you may touch". So this went from "nobody can report it" to "reported
+  when the walk reveals it", and a catalog still wants a human's eye on which
+  fields are conditional.
+- **The agent misses rows in confirmation tables.** It has twice reported
+  "Orijinal Fatura Tutarı" absent from a screen where a screenshot shows it.
+  A `browser_snapshot` depth limit is the untested suspicion. Harmless in this
+  direction — a missing `verifiable` weakens a test, a wrong one fails a run —
+  but it is why agent `verifiable` flags are cross-checked against a scan.
 - Verifying text inside an invoice table.
 - `mvn test` finds no features: they sit in a directory literally named
   `com.ykb.uplift.uptest` (dots), while `RunCucumberTest` selects the classpath
@@ -243,7 +824,7 @@ Shared (CommonSteps, work on both apps):
 Goal: share what is genuinely application-independent; keep
 application-specific logic separate.
 
-- **Truly shared (in `common`, done):** the 14 generic steps listed above and
+- **Truly shared (in `common`, done):** the 15 generic steps listed above and
   their logic in `CommonActions`, including `findValueElement`,
   `normalizeAmount`, `assertAmountEquals` — confirmed to work on both apps.
   `navigateTo` is bound to the `#headerMenuUsername` / `.main-nav` header
@@ -269,3 +850,13 @@ application-specific logic separate.
   use a `static` page (breaks parallel scenarios). Note injection order: step
   class constructors run BEFORE `@Before`, so `ctx.page` may be null in a
   constructor — build the page object lazily (on first use), not in the constructor.
+
+## graphify
+
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+
+Rules:
+- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).

@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -23,7 +24,17 @@ import java.util.UUID;
 @RequestMapping("/api/v1/runs")
 public class RunController {
 
-    public record StartRunRequest(String feature) {
+    /**
+     * {@code app} and {@code flow} name the catalog this scenario was written
+     * against, and {@code intent} is what the analyst asked for. All three are
+     * optional — an older client sending only the feature still works, and
+     * gets the grammar-only check it always got.
+     *
+     * Sending them is what lets the run gate be as strict as the generator.
+     * Without them a draft the generator had already rejected starts anyway,
+     * because the catalog checks cannot run without a catalog.
+     */
+    public record StartRunRequest(String feature, String app, String flow, String intent) {
     }
 
     private final RunService runService;
@@ -45,7 +56,8 @@ public class RunController {
             return ResponseEntity.badRequest().body(Map.of("error", "feature is required"));
         }
 
-        RunService.StartOutcome outcome = runService.start(request.feature());
+        RunService.StartOutcome outcome = runService.start(
+                request.feature(), request.app(), request.flow(), request.intent());
 
         if (outcome.accepted()) {
             return ResponseEntity.accepted().body(Map.of(
@@ -64,9 +76,28 @@ public class RunController {
         };
     }
 
+    /**
+     * A PLAIN JSON ARRAY, still — this is a contract, not a style choice.
+     *
+     * app.js's renderHistory() does `runs.filter(...)` straight on the body.
+     * Returning a Spring Page here would make it {content:[...],pageable:{...}},
+     * `.filter` would be undefined, the history pane would render "Kayıt yok",
+     * and NOTHING WOULD LOG ANYTHING — the UI's failure mode for a changed
+     * contract is a blank panel.
+     *
+     * {@code limit} is new and optional. In memory the history was bounded by
+     * the next restart; persistence removes that accidental bound, and nothing
+     * otherwise stops a year of runs from becoming a huge response. app.js
+     * sends no parameter and gets the configured default, which is more rows
+     * than the pane shows without scrolling.
+     *
+     * The filter chips keep filtering client-side over those rows, so there is
+     * no ?status= here and no index behind one. When someone needs "every
+     * FAILED run in March" that is a separate change with a real requirement.
+     */
     @GetMapping
-    public List<Map<String, Object>> list() {
-        return runService.list();
+    public List<Map<String, Object>> list(@RequestParam(required = false) Integer limit) {
+        return runService.list(limit);
     }
 
     @GetMapping("/{id}")

@@ -48,9 +48,20 @@
         validateTimer: null,
         historyFilter: "ALL",
         lastErrors: [],
-        discoverRunId: null,
-        discoverPollTimer: null,
-        discoverStages: []
+        /* The screen and intent the scenario in the editor was GENERATED
+           from, remembered so that browsing the catalog list afterwards does
+           not silently re-point validation at a different screen. */
+        origin: null,
+        /* A batch of generated drafts, each one its own scenario with its own
+           validation result and its own origin. Empty for the ordinary
+           one-scenario workflow, which must look and behave exactly as before.
+
+           activeDraft is the index the editor currently holds, or null for
+           "showing the list". Those are the only two states: there is no third
+           where the editor shows a draft the list does not know about. */
+        drafts: [],
+        activeDraft: null,
+        multiNotes: [],
     };
 
     var el = {};
@@ -233,7 +244,10 @@
             return Promise.resolve(false);
         }
 
-        return api("POST", "/api/v1/scenarios/validate", { feature: feature })
+        var where = originScreen();
+        return api("POST", "/api/v1/scenarios/validate", {
+            feature: feature, app: where.app, flow: where.flow, intent: where.intent
+        })
             .then(function (result) {
                 if (result.status === 503) {
                     state.lastErrors = [];
@@ -258,6 +272,14 @@
     function renderValidation(result) {
         state.lastErrors = result.errors || [];
         syncGutter();
+
+        /* A draft carries its own verdict, so the card the analyst came from
+           shows what the editor shows. Without this the badge on the list stays
+           at whatever generation produced, and an error the analyst has just
+           fixed still reads as an error. */
+        if (state.activeDraft !== null && state.drafts[state.activeDraft]) {
+            state.drafts[state.activeDraft].validation = result;
+        }
 
         if (result.valid) {
             el.validationBadge.className = "badge badge-ok";
@@ -293,10 +315,48 @@
 
     /* ============================= runs ============================= */
 
+    /* The screen the scenario was written against, and what was asked of it.
+
+       The analyst types nothing new for this: both already exist on screen,
+       chosen and written to generate the scenario. They were simply being
+       dropped — validate and run sent the feature text alone, so the server
+       could apply the grammar checks and not the CATALOG ones. That is how an
+       invented value survived an edit and cost a browser run: "Bayi Ünvanı"
+       is readonly, the scenario never fills it, and the model asserted a
+       company name it made up.
+
+       The intent travels for a reason of its own: asserting a readonly field
+       IS allowed when the analyst supplied the expected value, and without
+       the intent the server cannot tell that apart from invention.
+
+       Generation-time value first, the live dropdown only as a fallback. The
+       list is there to be browsed, and a scenario must not start being
+       checked against whichever screen the analyst last looked at — wrong
+       catalog means invented errors, which teach an analyst to ignore the
+       validator. Falling back keeps the check alive for a scenario typed by
+       hand against a screen picked from the list. */
+    function originScreen() {
+        if (state.origin) {
+            return state.origin;
+        }
+        var choice = (el.suggestCatalog.value || "").split("/");
+        return {
+            app: choice[0] || "",
+            flow: choice[1] || "",
+            intent: el.suggestIntent.value.trim()
+        };
+    }
+
     function run() {
         el.btnRun.disabled = true;
-        api("POST", "/api/v1/runs", { feature: el.editor.value }).then(function (result) {
-            el.btnRun.disabled = false;
+        var where = originScreen();
+        api("POST", "/api/v1/runs", {
+            feature: el.editor.value, app: where.app, flow: where.flow, intent: where.intent
+        }).then(function (result) {
+            /* Not unconditionally false: the analyst may have gone back to the
+               draft list while this was in flight, and there is nothing to run
+               from there. */
+            el.btnRun.disabled = state.activeDraft === null && state.drafts.length > 0;
 
             if (result.status === 422) {
                 renderValidation(result.body);
@@ -490,12 +550,19 @@
     function loadCatalogs() {
         return api("GET", "/api/v1/scenarios/catalogs").then(function (result) {
             var names = (result.ok && result.body && result.body.catalogs) || [];
-            el.suggestCatalog.innerHTML = names.length
+            var options = names.length
                 ? names.map(function (n) {
                     return '<option value="' + esc(n) + '">' + esc(n) + "</option>";
                   }).join("")
                 : '<option value="">(katalog bulunamadı)</option>';
+
+            /* Both generators read the same folder, so both lists are filled
+               from this one response. A second fetch for the second panel would
+               be the same answer twice and could disagree with itself. */
+            el.suggestCatalog.innerHTML = options;
+            el.multiCatalog.innerHTML = options;
             el.btnSuggest.disabled = names.length === 0;
+            el.btnMulti.disabled = names.length === 0;
         });
     }
 
@@ -534,6 +601,14 @@
             }
 
             var data = result.body || {};
+            /* A single generation owns the editor outright: whatever batch was
+               open is gone, and leaving its list half-showing would put two
+               panels in charge of one textarea. */
+            clearBatch();
+            /* Pinned BEFORE validate() runs below, and before the analyst can
+               touch the catalog list: this is the screen the text in the
+               editor actually belongs to. */
+            state.origin = { app: parts[0], flow: parts[1], intent: intent };
             /* Straight into the editor: the analyst reviews and edits there, and
                the existing validation panel already explains what is wrong. */
             el.editor.value = data.feature || "";
@@ -569,154 +644,281 @@
         el.suggestStatus.innerHTML = html;
     }
 
-    /* ========================= catalog discovery ====================== */
+    /* ========================= multi generation ====================== */
 
-    /**
-     * Read-only: opens a real browser, logs in, navigates to the given menu
-     * path, and reads the screen's fieldcontainers — it never fills a field or
-     * clicks anything but "discover screen catalog"'s own Select2 probes.
-     *
-     * Runs through the SAME dispatch/poll/artifact plumbing as a normal run
-     * (POST -> poll GET -> read a file), just against /api/v1/discovery
-     * instead of /api/v1/runs, because "discover screen catalog" is
-     * deliberately absent from vocabulary.json and would fail the normal
-     * run's validation step.
-     */
-    /* Ekran blokları innerHTML ile yeniden çizilir (sayfadaki diğer listelerle
-       aynı desen), bu yüzden her yeniden çizimden ÖNCE kutulardaki yazılanlar
-       state'e geri okunur — yoksa "+ Ekran Ekle" o an yazılan metni siler. */
-    function harvestStages() {
-        state.discoverStages.forEach(function (stage, index) {
-            var values = el.discoverStages.querySelector('[data-stage="' + index + '"][data-field="values"]');
-            var button = el.discoverStages.querySelector('[data-stage="' + index + '"][data-field="button"]');
-            if (values) { stage.values = values.value; }
-            if (button) { stage.button = button.value; }
-        });
-    }
+    /* One request, N drafts. The variation that makes each one different is
+       decided server-side (VariationPlanner) and travels back with the draft, so
+       the card titles say something real — "Fatura Tipi = E-Fatura" rather than
+       "Senaryo 2". Nothing here re-derives it. */
+    /* What the chosen depth means, spelled out for the model.
 
-    function renderStages() {
-        if (!state.discoverStages.length) {
-            el.discoverStages.innerHTML =
-                '<div class="stage-empty">Ekran eklenmedi — yalnızca giriş ekranı taranır.</div>';
+       These sentences are the whole reason the free-text box stopped being
+       mandatory. Every other thing an intent used to carry is already decided
+       elsewhere — the catalog names the fields and the navigation, the planner
+       picks every value, LoginStep writes the login line — so the analyst was
+       being made to type a paragraph that changed nothing. What it DID carry,
+       invisibly, was this: whether to press the final confirm. Nothing in the
+       system prompt says which buttons to press, so that decision was reaching
+       the model as prose or not at all, on a screen where pressing it creates
+       an irreversible record. Now it is a radio button and the wording is
+       identical on every run.
+
+       Deliberately silent about the success banner: rule 3 already tells the
+       model to assert one only when the catalog carries success_message, so the
+       catalog governs it and a sentence here could only contradict it. */
+    var DEPTH = {
+        confirm: "Formu doldur ve Devam'a bas. Onay düğmesine BASMA — bu senaryo " +
+                 "kayıt oluşturmamalı. Devam'dan sonra gelen özet ekranında girdiğin " +
+                 "değerleri doğrula.",
+        submit:  "Formu doldur, Devam'a bas, özet ekranındaki değerleri doğrula, " +
+                 "sonra Onay'a basarak işlemi tamamla."
+    };
+
+    function suggestMany() {
+        var choice = el.multiCatalog.value;
+        var count = Number(el.multiCount.value);
+
+        if (!choice) { toast("Önce bir ekran seçin", true); return; }
+        if (!count || count < 1) { toast("Senaryo sayısı en az 1 olmalı", true); el.multiCount.focus(); return; }
+
+        /* Composed, never empty — so the server's "intent is required" gate is
+           satisfied without the analyst typing anything. The optional note is
+           appended rather than replacing: it adds to the instruction, it does
+           not override which buttons get pressed. */
+        var depth = document.querySelector('input[name="multiDepth"]:checked');
+        var note = el.multiIntent.value.trim();
+        var intent = DEPTH[depth ? depth.value : "confirm"] + (note ? "\n" + note : "");
+
+        var parts = choice.split("/");
+        var cif = el.multiCif.value.trim();
+        var userid = el.multiUserid.value.trim();
+
+        /* Required for a batch, optional for a single scenario. Each scenario
+           of a batch is its own model call, so a blank cif means the model
+           writes its own login line N separate times — N scenarios with N
+           different customer numbers, when the analyst asked for ONE user
+           exercising one screen N ways. The server refuses it too; checking
+           here only saves the round trip. */
+        if (!cif) {
+            toast("Çoklu üretim için CIF zorunlu: boş bırakılırsa her senaryoda "
+                + "farklı müşteri numarası çıkar", true);
+            el.multiCif.focus();
             return;
         }
-
-        el.discoverStages.innerHTML = state.discoverStages.map(function (stage, index) {
-            return '<div class="stage">' +
-                '<div class="stage-head"><span>Ekran ' + (index + 1) + "</span>" +
-                '<button class="stage-remove" type="button" data-remove="' + index + '">Sil</button></div>' +
-                '<textarea class="search stage-values" rows="4" data-stage="' + index + '" data-field="values" ' +
-                'placeholder="Alan Etiketi = Değer">' + esc(stage.values) + "</textarea>" +
-                '<input class="search stage-button" type="text" data-stage="' + index + '" data-field="button" ' +
-                'placeholder="Buton, örn: Devam" value="' + esc(stage.button) + '">' +
-                "</div>";
-        }).join("");
-    }
-
-    /* "Alan = Değer" satırlarını label->value nesnesine çevirir. Değerin kendisi
-       '=' içerebilir (tarih, formül), o yüzden yalnızca İLK '=' ayırıcıdır. */
-    function parseValueLines(text) {
-        var values = {};
-        text.split("\n").forEach(function (raw) {
-            var line = raw.trim();
-            if (!line || line.charAt(0) === "#") { return; }
-            var split = line.indexOf("=");
-            if (split === -1) { return; }
-            var label = line.slice(0, split).trim();
-            if (label) { values[label] = line.slice(split + 1).trim(); }
-        });
-        return values;
-    }
-
-    function discover() {
-        var app = el.discoverApp.value;
-        var cif = el.discoverCif.value.trim();
-        var userid = el.discoverUserid.value.trim();
-        var mainMenu = el.discoverMainMenu.value.trim();
-        var subMenu = el.discoverSubMenu.value.trim();
-        var entryButton = el.discoverEntryButton.value.trim();
-
-        harvestStages();
-        var stages = state.discoverStages.map(function (stage) {
-            return { values: parseValueLines(stage.values), button: stage.button.trim() };
-        });
-
-        if (!cif || !mainMenu || !subMenu) {
-            toast("CIF, ana menü ve alt menü zorunlu", true);
-            return;
-        }
-        if (app === "NGC" && !userid) {
+        if (parts[0].toUpperCase() !== "NGI" && !userid) {
             toast("NGC için kullanıcı ID zorunlu", true);
+            el.multiUserid.focus();
             return;
         }
-        for (var i = 0; i < stages.length; i++) {
-            if (!stages[i].button) {
-                toast("Ekran " + (i + 1) + " için buton yazın", true);
-                return;
-            }
-        }
 
-        clearTimeout(state.discoverPollTimer);
-        el.btnDiscover.disabled = true;
-        el.btnDiscover.textContent = "Taranıyor…";
-        el.discoverOutput.value = "";
-        el.discoverStatus.innerHTML =
-            '<div class="s-line">Tarayıcı açılıyor, giriş yapılıyor, ekran taranıyor — bu 1-2 dakika sürebilir…</div>';
+        el.btnMulti.disabled = true;
+        el.btnMulti.textContent = "Üretiliyor…";
+        /* Concurrent now (llm.batch-concurrency), so the wait is closer to one
+           scenario's than to N. Each one still carries its own
+           generate-validate-repair round, so it is not instant either — saying
+           roughly how long beats a spinner that looks stuck. */
+        el.multiStatus.innerHTML = '<div class="s-line">' + count +
+            " senaryo eşzamanlı üretiliyor, bu 1-3 dakika sürebilir…</div>";
 
-        api("POST", "/api/v1/discovery", {
-            app: app, cif: cif, userid: userid, mainMenu: mainMenu, subMenu: subMenu,
-            entryButton: entryButton, stages: stages
+        api("POST", "/api/v1/scenarios/suggest-many", {
+            app: parts[0], flow: parts[1], intent: intent,
+            cif: cif, userid: userid, count: count
         }).then(function (result) {
-            if (result.status === 503 || !result.ok) {
-                var message = (result.body && result.body.error) || ("HTTP " + result.status);
-                el.discoverStatus.innerHTML = '<div class="s-line">' + esc(message) + "</div>";
-                toast("Keşif başlatılamadı: " + message, true);
-                resetDiscoverButton();
-                return;
-            }
-
-            state.discoverRunId = result.body.runId;
-            toast("Keşif başladı · " + result.body.executor);
-            pollDiscover();
-        });
-    }
-
-    function resetDiscoverButton() {
-        el.btnDiscover.disabled = false;
-        el.btnDiscover.textContent = "Ekranı Keşfet";
-    }
-
-    function pollDiscover() {
-        clearTimeout(state.discoverPollTimer);
-        if (!state.discoverRunId) { return; }
-
-        api("GET", "/api/v1/discovery/" + state.discoverRunId).then(function (result) {
             if (!result.ok) {
-                el.discoverStatus.innerHTML = '<div class="s-line">Koşu durumu alınamadı.</div>';
-                resetDiscoverButton();
+                var message = (result.body && (result.body.error || result.body.detail)) || ("HTTP " + result.status);
+                el.multiStatus.innerHTML = '<div class="s-line">' + esc(message) + "</div>";
+                toast("Üretim başarısız: " + message, true);
                 return;
             }
 
-            var body = result.body || {};
-            var status = body.status || "UNKNOWN";
-            el.discoverStatus.innerHTML =
-                '<div class="s-line">Durum: <span class="mono">' + esc(status) + "</span></div>";
+            var data = result.body || {};
+            var origin = { app: parts[0], flow: parts[1], intent: intent };
 
-            if (status === "RUNNING" || status === "UNKNOWN") {
-                state.discoverPollTimer = setTimeout(pollDiscover, POLL_MS);
+            state.drafts = (data.scenarios || []).map(function (s) {
+                return {
+                    label: s.label || "",
+                    feature: s.feature || "",
+                    validation: s.validation || { valid: !!s.valid, errors: [], stepCount: 0 },
+                    attempts: s.attempts || 1,
+                    values: s.values || {},
+                    ticked: s.ticked || [],
+                    excluded: s.excluded || [],
+                    /* Pinned per draft: each one belongs to this screen and this
+                       intent, and validating or running it must check it against
+                       that catalog rather than whatever the list is showing. */
+                    origin: origin
+                };
+            });
+            state.multiNotes = data.notes || [];
+
+            if (!state.drafts.length) {
+                el.multiStatus.innerHTML = '<div class="s-line">Model hiç senaryo döndürmedi.</div>';
+                toast("Senaryo üretilemedi", true);
                 return;
             }
 
-            resetDiscoverButton();
-            if (body.catalogYaml) {
-                el.discoverOutput.value = body.catalogYaml;
-                toast("Katalog taslağı hazır");
-            } else {
-                el.discoverStatus.innerHTML += '<div class="s-line">' +
-                    esc(body.catalogError || "catalog-draft.yaml bulunamadı.") + "</div>";
-                toast("Taslak üretilemedi", true);
-            }
+            renderMultiList();
+            showListMode();
+
+            var bad = state.drafts.filter(function (d) { return !d.validation.valid; }).length;
+            /* Token cost shown, not hidden: it is the only figure that makes a
+               batch comparable with an agent walk, and both used to be guesses.
+               Omitted when the server reported none rather than printing a
+               confident 0. */
+            var tokens = data.tokens
+                ? '<span class="s-line">· ' + data.tokens.toLocaleString("tr-TR") + " token</span>"
+                : "";
+            el.multiStatus.innerHTML = '<div class="s-head">' +
+                (bad ? '<span class="badge badge-fail">' + bad + " geçersiz</span>"
+                     : '<span class="badge badge-ok">hepsi geçerli</span>') +
+                '<span class="s-line">' + state.drafts.length + " senaryo</span>" +
+                tokens + "</div>";
+            toast(bad
+                ? state.drafts.length + " senaryo üretildi, " + bad + " tanesi geçersiz"
+                : state.drafts.length + " senaryo üretildi ve doğrulandı", bad > 0);
+        }).catch(function (e) {
+            el.multiStatus.innerHTML = '<div class="s-line">' + esc(String(e)) + "</div>";
+            toast("Üretim başarısız", true);
+        }).then(function () {
+            el.btnMulti.disabled = false;
+            el.btnMulti.textContent = "Senaryoları Üret";
         });
+    }
+
+    /* The variation, as something a human can read at a glance. Three kinds of
+       chip because the vocabulary has three shapes and they fail differently: a
+       value is typed, a box is only ticked, and an excluded field must not be
+       named at all (a shown_when field that is not on this screen costs a 30 s
+       timeout, and a box ticked twice is UNticked). */
+    function variationChips(draft) {
+        var chips = "";
+        Object.keys(draft.values || {}).forEach(function (label) {
+            chips += '<span class="multi-chip"><span class="multi-chip-key">' + esc(label) +
+                "</span>" + esc(draft.values[label]) + "</span>";
+        });
+        (draft.ticked || []).forEach(function (label) {
+            chips += '<span class="multi-chip is-ticked">✓ ' + esc(label) + "</span>";
+        });
+        (draft.excluded || []).forEach(function (label) {
+            chips += '<span class="multi-chip is-excluded">' + esc(label) + "</span>";
+        });
+        return chips;
+    }
+
+    function draftBadge(validation) {
+        return validation.valid
+            ? '<span class="badge badge-ok">' + (validation.stepCount || 0) + " adım</span>"
+            : '<span class="badge badge-fail">' + ((validation.errors || []).length) + " hata</span>";
+    }
+
+    /* First lines of the scenario itself: the title plus the opening steps are
+       what tell two drafts apart faster than any summary of them. */
+    function previewOf(feature) {
+        return String(feature || "").split("\n")
+            .filter(function (line) { return line.trim() !== ""; })
+            .slice(0, 4).join("\n");
+    }
+
+    function renderMultiList() {
+        var notes = state.multiNotes.length
+            ? '<div class="multi-notes">' + state.multiNotes.map(function (n) {
+                return '<div class="multi-note">' + esc(n) + "</div>";
+              }).join("") + "</div>"
+            : "";
+
+        var cards = state.drafts.map(function (draft, index) {
+            return '<button class="multi-card" type="button" data-index="' + index + '">' +
+                '<span class="multi-card-head">' +
+                '<span class="multi-num">' + (index + 1) + "</span>" +
+                '<span class="multi-card-title">' + esc(draft.label) + "</span>" +
+                draftBadge(draft.validation) +
+                "</span>" +
+                '<span class="multi-chips">' + variationChips(draft) + "</span>" +
+                '<span class="multi-preview">' + esc(previewOf(draft.feature)) + "</span>" +
+                "</button>";
+        }).join("");
+
+        el.multiList.innerHTML =
+            '<div class="multi-head">' +
+            '<span class="multi-head-title">Üretilen senaryolar</span>' +
+            '<span class="multi-head-count">' + state.drafts.length + " senaryo</span>" +
+            "</div>" + notes +
+            '<div class="multi-cards">' + cards + "</div>";
+    }
+
+    /* The list IS the view while no draft is open: the editor, its validation
+       panel and the position bar all go away, and Doğrula/Çalıştır have nothing
+       to act on. Leaving the buttons live would run whatever text the editor
+       happened to hold from before the batch. */
+    function showListMode() {
+        state.activeDraft = null;
+        /* A debounced validate from the last keystroke would land after this and
+           overwrite the badge below with a verdict on text nobody is looking at. */
+        clearTimeout(state.validateTimer);
+        el.multiList.hidden = false;
+        el.multiBar.hidden = true;
+        el.editorWrap.hidden = true;
+        el.validation.hidden = true;
+        el.btnValidate.disabled = true;
+        el.btnRun.disabled = true;
+        el.validationBadge.className = "badge badge-idle";
+        el.validationBadge.textContent = state.drafts.length + " senaryo";
+    }
+
+    /* Back to one editor over one scenario. Called both when a draft is opened
+       and when a batch is abandoned (a fresh single generation), so it has to
+       undo everything showListMode did. */
+    function showEditorMode(inBatch) {
+        el.multiList.hidden = true;
+        el.multiBar.hidden = !inBatch;
+        el.editorWrap.hidden = false;
+        el.validation.hidden = false;
+        el.btnValidate.disabled = false;
+        el.btnRun.disabled = false;
+    }
+
+    function openDraft(index) {
+        var draft = state.drafts[index];
+        if (!draft) { return; }
+
+        state.activeDraft = index;
+        showEditorMode(true);
+
+        el.editor.value = draft.feature;
+        state.origin = draft.origin;
+        el.multiPosition.textContent = "Senaryo " + (index + 1) + " / " + state.drafts.length;
+        el.multiChips.innerHTML = variationChips(draft);
+
+        /* The verdict is already known — it came back with the draft — so the
+           panel is rendered from it rather than re-validated. A fresh call would
+           cost a round trip to show the same thing, and renderValidation also
+           drives the red line numbers in the gutter. */
+        renderValidation(draft.validation);
+    }
+
+    /* Load-bearing: without it every edit the analyst makes is thrown away the
+       moment they go back to the list, silently, and the card still shows the
+       model's original text. */
+    function saveActiveDraft() {
+        if (state.activeDraft !== null && state.drafts[state.activeDraft]) {
+            state.drafts[state.activeDraft].feature = el.editor.value;
+        }
+    }
+
+    function backToList() {
+        saveActiveDraft();
+        renderMultiList();
+        showListMode();
+    }
+
+    /* A single generation replaces the batch: one editor, one scenario, no list
+       to go back to. Called by suggest() so the two panels cannot end up both
+       claiming the editor. */
+    function clearBatch() {
+        state.drafts = [];
+        state.multiNotes = [];
+        state.activeDraft = null;
+        showEditorMode(false);
     }
 
     /* ============================== views =========================== */
@@ -737,7 +939,145 @@
         $("side-vocab").classList.toggle("is-active", name === "vocab");
         $("side-timeline").classList.toggle("is-active", name === "timeline");
         $("side-suggest").classList.toggle("is-active", name === "suggest");
-        $("side-discover").classList.toggle("is-active", name === "discover");
+        $("side-multi").classList.toggle("is-active", name === "multi");
+        $("side-agent").classList.toggle("is-active", name === "agent");
+    }
+
+    /* The MCP agent drives a real browser and the model re-reads the page
+       between every action, so a run is minutes, not seconds. Both buttons
+       share one request path; they differ only in which endpoint answers and
+       therefore whether the reply is prose or YAML. */
+    function runAgent(endpoint, label) {
+        var instruction = el.agentInstruction.value.trim();
+        if (!instruction) {
+            toast("Ajanın ne yapacağını yazın", true);
+            el.agentInstruction.focus();
+            return;
+        }
+
+        el.btnAgentExplore.disabled = true;
+        el.btnAgentCatalog.disabled = true;
+        el.agentSaveRow.hidden = true;
+        el.agentOutput.value = "";
+        el.agentStatus.innerHTML =
+            '<div class="s-line">' + esc(label) + ' — tarayıcı sürülüyor, bu birkaç dakika sürebilir…</div>';
+
+        /* Credentials travel as their own fields, not pasted into the
+           instruction. The server composes the login preamble from them, so
+           the same wording is used every run and nobody retypes a CIF into
+           free text. */
+        var request = {
+            text: instruction,
+            url: el.agentUrl.value.trim(),
+            cif: el.agentCif.value.trim(),
+            userId: el.agentUserid.value.trim(),
+            password: el.agentPassword.value,
+            smsCode: el.agentSms.value.trim(),
+            mainMenu: el.agentMainMenu.value.trim()
+        };
+
+        api("POST", endpoint, request).then(function (result) {
+            if (!result.ok) {
+                var body = result.body || {};
+                var message = body.detail || body.error || ("HTTP " + result.status);
+                el.agentStatus.innerHTML = '<div class="s-line">' + esc(message) + "</div>";
+                toast("Ajan başarısız: " + message, true);
+                return;
+            }
+            // /explore answers with "answer", /explore/catalog with "catalog".
+            el.agentOutput.value = result.body.catalog || result.body.answer || "";
+
+            /* The draft is checked mechanically before anyone reads it, so a
+               type no step can drive or a missing entry_row is visible here
+               rather than minutes later in a browser. */
+            /* Only a catalog can be saved. A "Gez ve Anlat" answer is prose,
+               and offering to store it as a .yaml would invite exactly that. */
+            if (result.body.catalog) {
+                el.agentSaveRow.hidden = false;
+                suggestCatalogName(result.body.catalog);
+            }
+
+            var problems = result.body.problems || [];
+            el.agentStatus.innerHTML = problems.length
+                ? '<div class="s-line">Taslakta ' + problems.length + ' sorun var:</div>'
+                  + problems.map(function (p) { return '<div class="s-line">• ' + esc(p) + "</div>"; }).join("")
+                : '<div class="s-line">Tamamlandı — mekanik kontrollerden temiz geçti.</div>';
+        }).catch(function (error) {
+            el.agentStatus.innerHTML = '<div class="s-line">' + esc(String(error)) + "</div>";
+        }).then(function () {
+            el.btnAgentExplore.disabled = false;
+            el.btnAgentCatalog.disabled = false;
+        });
+    }
+
+    /* Fills the name boxes from the draft itself, so the usual case is to read
+       the YAML and press save. The analyst can still overwrite either box —
+       the flow name is a file name, and only they know whether this is a new
+       screen or a better walk of one already stored. */
+    function suggestCatalogName(yaml) {
+        var app = /^app:\s*(\S+)/m.exec(yaml);
+        var flow = /^flow:\s*(.+)$/m.exec(yaml);
+        if (app && !el.agentSaveApp.value.trim()) {
+            el.agentSaveApp.value = app[1].toLowerCase();
+        }
+        if (flow && !el.agentSaveFlow.value.trim()) {
+            el.agentSaveFlow.value = slug(flow[1]);
+        }
+    }
+
+    /* Turkish letters folded to ASCII on purpose: this becomes a file name, and
+       CatalogService only builds a path from [A-Za-z0-9._-]. "Fatura Oluştur"
+       would otherwise be refused for a reason nobody could see. */
+    function slug(text) {
+        var from = "çğıöşüÇĞİÖŞÜ";
+        var to = "cgiosucgiosu";
+        var out = text.trim().toLowerCase();
+        for (var i = 0; i < from.length; i++) {
+            out = out.split(from[i]).join(to[i]);
+        }
+        return out.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64);
+    }
+
+    /* Saving is what turns a draft into something the rest of the studio can
+       use: the generator reads its list from the same folder, so the catalog
+       appears in "AI Üret" as soon as the list is reloaded. */
+    function saveCatalog() {
+        var app = el.agentSaveApp.value.trim();
+        var flow = el.agentSaveFlow.value.trim();
+        var yaml = el.agentOutput.value;
+
+        if (!app || !flow) {
+            toast("Uygulama ve akış adı gerekli", true);
+            return;
+        }
+        if (!yaml.trim()) {
+            toast("Kaydedilecek bir katalog yok", true);
+            return;
+        }
+
+        el.btnAgentSave.disabled = true;
+        api("POST", "/api/v1/scenarios/catalogs", { app: app, flow: flow, yaml: yaml })
+            .then(function (result) {
+                if (!result.ok) {
+                    var body = result.body || {};
+                    toast("Kaydedilemedi: " + (body.error || ("HTTP " + result.status)), true);
+                    return;
+                }
+                var name = (result.body && result.body.catalog) || (app + "/" + flow);
+                toast(name + " kaydedildi");
+                /* Reloaded rather than pushed into the list by hand: the folder
+                   is the source of truth, and a name the server normalised
+                   differently would otherwise be wrong here. */
+                loadCatalogs().then(function () {
+                    el.suggestCatalog.value = name;
+                });
+            })
+            .catch(function (error) {
+                toast("Kaydedilemedi: " + error, true);
+            })
+            .then(function () {
+                el.btnAgentSave.disabled = false;
+            });
     }
 
     function applyTheme(theme) {
@@ -754,11 +1094,19 @@
             "themeToggle", "toast",
             "suggestCatalog", "suggestCif", "suggestUserid", "suggestUseridRow",
             "suggestIntent", "btnSuggest", "suggestStatus",
-            "discoverApp", "discoverCif", "discoverUserid", "discoverUseridRow",
-            "discoverMainMenu", "discoverSubMenu", "discoverEntryButton",
-            "discoverStages", "btnAddStage",
-            "btnDiscover", "discoverStatus", "discoverOutput"
+            "multiCatalog", "multiCif", "multiUserid", "multiUseridRow", "multiCount",
+            "multiIntent", "btnMulti", "multiStatus",
+            "multiList", "multiBar", "multiPosition", "multiChips", "btnBackToList",
+            "agentUrl", "agentCif", "agentUserid", "agentPassword",
+            "agentSms", "agentMainMenu",
+            "agentInstruction", "btnAgentExplore", "btnAgentCatalog",
+            "agentStatus", "agentOutput",
+            "agentSaveRow", "agentSaveApp", "agentSaveFlow", "btnAgentSave"
         ].forEach(function (id) { el[id] = $(id); });
+
+        /* The one element here with no id of its own: it is hidden and shown as a
+           whole when the draft list takes over the pane, so it needs a handle. */
+        el.editorWrap = document.querySelector(".editor-wrap");
 
         var savedTheme = null;
         try { savedTheme = localStorage.getItem("uptest.theme"); } catch (e) { /* ignore */ }
@@ -767,7 +1115,14 @@
         el.editor.value = SAMPLE;
         syncGutter();
 
-        el.editor.addEventListener("input", function () { syncGutter(); scheduleValidate(); });
+        /* saveActiveDraft on every keystroke rather than only on the way out: a
+           side-panel switch, a regeneration or a closed tab all leave without
+           pressing "← Tümü", and an edit lost that way is lost invisibly. */
+        el.editor.addEventListener("input", function () {
+            saveActiveDraft();
+            syncGutter();
+            scheduleValidate();
+        });
         el.editor.addEventListener("scroll", function () { el.gutter.scrollTop = el.editor.scrollTop; });
 
         el.btnValidate.addEventListener("click", function () { validate(); });
@@ -794,6 +1149,14 @@
             tab.addEventListener("click", function () { showSide(tab.dataset.side); });
         });
 
+        el.btnAgentExplore.addEventListener("click", function () {
+            runAgent("/api/v1/explore", "Geziliyor");
+        });
+        el.btnAgentCatalog.addEventListener("click", function () {
+            runAgent("/api/v1/explore/catalog", "Katalog çıkarılıyor");
+        });
+        el.btnAgentSave.addEventListener("click", saveCatalog);
+
         $("historyFilters").addEventListener("click", function (event) {
             var chip = event.target.closest(".chip");
             if (!chip) { return; }
@@ -811,31 +1174,25 @@
             var app = (el.suggestCatalog.value.split("/")[0] || "").toUpperCase();
             el.suggestUseridRow.classList.toggle("is-hidden", app === "NGI");
         });
-        el.btnDiscover.addEventListener("click", discover);
-        /* NGI logs in with cif only (password/OTP are hardcoded in the page
-           object, not exposed as a step argument) — see NGISteps. */
-        el.discoverApp.addEventListener("change", function () {
-            el.discoverUseridRow.classList.toggle("is-hidden", el.discoverApp.value === "NGI");
-        });
-
-        el.btnAddStage.addEventListener("click", function () {
-            harvestStages();
-            state.discoverStages.push({ values: "", button: "" });
-            renderStages();
-        });
-        el.discoverStages.addEventListener("click", function (event) {
-            var remove = event.target.closest(".stage-remove");
-            if (!remove) { return; }
-            harvestStages();
-            state.discoverStages.splice(Number(remove.dataset.remove), 1);
-            renderStages();
-        });
-        renderStages();
         /* Ctrl+Enter from the intent box: the same shortcut people expect in
            any "type a prompt, press go" field. */
         el.suggestIntent.addEventListener("keydown", function (event) {
             if ((event.ctrlKey || event.metaKey) && event.key === "Enter") { suggest(); }
         });
+
+        el.btnMulti.addEventListener("click", suggestMany);
+        el.multiCatalog.addEventListener("change", function () {
+            var app = (el.multiCatalog.value.split("/")[0] || "").toUpperCase();
+            el.multiUseridRow.classList.toggle("is-hidden", app === "NGI");
+        });
+        el.multiIntent.addEventListener("keydown", function (event) {
+            if ((event.ctrlKey || event.metaKey) && event.key === "Enter") { suggestMany(); }
+        });
+        el.multiList.addEventListener("click", function (event) {
+            var card = event.target.closest(".multi-card");
+            if (card) { openDraft(Number(card.dataset.index)); }
+        });
+        el.btnBackToList.addEventListener("click", backToList);
 
         el.btnRefreshHistory.addEventListener("click", loadHistory);
         el.executorStatus.addEventListener("click", function () {
