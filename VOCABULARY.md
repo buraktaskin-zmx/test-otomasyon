@@ -14,9 +14,9 @@ scenarios MUST treat this as a closed grammar.
 > annotations at build time and serves it at `GET /cucumber/vocabulary`; the
 > orchestrator's validator and the LLM prompt both read that. If the two ever
 > disagree, the generated JSON is right and this file is stale — check with
-> `GET /api/v1/vocabulary` (currently 20 steps).
+> `GET /api/v1/vocabulary` (currently 21 steps).
 >
-> Counting the annotations in the source gives **22**, and that is not a
+> Counting the annotations in the source gives **23**, and that is not a
 > discrepancy: `discover screen catalog` and `fill discovered fields:` belong to
 > screen discovery, which reads a screen instead of describing a test.
 > `VocabularyExtractor` excludes that package on purpose, so those two steps are
@@ -224,6 +224,7 @@ field label bound to it, so no `select … from` step can reach it.
 Then verify the {string} field equals {string}
 Then verify the {string} has date {string}
 Then verify the {string} has amount {string}
+Then verify the {string} field is masked
 Then verify {string} text is displayed
 ```
 
@@ -237,6 +238,13 @@ Then verify {string} text is displayed
 - `verify the {string} has amount {string}` — assert a **money** field equals
   the expected amount (normalized). Example:
   `Then verify the "Toplam Fatura Tutarı" has amount "54.999.999,50"`
+- `verify the {string} field is masked` — assert the application is still
+  **hiding** a value, e.g. an account number shown as `20****694`. The only
+  verify that takes no expected value, which is what makes it usable on a
+  read-only screen where the scenario filled nothing in and therefore cannot
+  know — or legally assert — any derived value. Also the right choice when the
+  value differs per record: pinning `"20****694"` would tie the test to one row.
+  Example: `Then verify the "Alıcı Hesabı" field is masked`
 - `verify {string} text is displayed` — assert a **free-text message** (e.g. a
   success banner) is present on the page. Example:
   `Then verify "Ödeme talebiniz karşı tarafa iletilmiştir." text is displayed`

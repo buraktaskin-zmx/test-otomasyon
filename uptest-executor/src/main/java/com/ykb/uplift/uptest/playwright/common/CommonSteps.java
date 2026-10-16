@@ -120,6 +120,25 @@ public class CommonSteps {
     @Then("verify {string} text is displayed")
     public void verifyTextIsDisplayed(String expectedText) { actions().verifyTextIsDisplayed(expectedText); }
 
+    /**
+     * The only verify that takes no expected value, and that is the point.
+     *
+     * On a read-only screen the scenario fills nothing in, so every other
+     * verify is unearnable: ScenarioValidator refuses an expected value the
+     * scenario did not type and the analyst did not write down, which is right
+     * — it is what stops the model inventing "Ford Otomobil Ticaret A.Ş." for a
+     * field the application looked up. But it leaves a screen whose whole
+     * purpose is to be read with no legal assertion at all, and the model's
+     * repair turn resolved that by deleting the assertion and calling the
+     * scenario valid.
+     *
+     * A masked account number is also the wrong thing to pin to a value: it
+     * differs per record, so "20****694" would tie the test to one row. The
+     * assertion an analyst actually wants is that the bank is still hiding it.
+     */
+    @Then("verify the {string} field is masked")
+    public void verifyFieldIsMasked(String label) { actions().verifyFieldIsMasked(label); }
+
     @And("wait {string} seconds")
     public void waitStep(String seconds) {
         ctx.page.waitForTimeout(Integer.parseInt(seconds) * 1000);

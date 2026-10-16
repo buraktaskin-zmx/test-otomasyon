@@ -239,7 +239,7 @@ is the container deployment, which is not live — see *Docker: later* above.
   (`{runDir}/traces/<scenario>.zip`), falling back to `target/traces/` when
   Cucumber was started outside the server (`mvn test`).
 
-## Current vocabulary (20 steps)
+## Current vocabulary (21 steps)
 
 **The machine-readable source of truth is generated**, not this list:
 `VocabularyExtractor` reads the `@Given/@When/@Then` annotations at build time
@@ -292,6 +292,12 @@ Shared (CommonSteps, work on both apps):
   clicking the label when the input is custom-styled and hidden)
 - `verify the {string} field equals {string}` (text/date, EXACT match, NO normalize)
 - `verify the {string} has amount {string}` (amount, normalized)
+- `verify the {string} field is masked` (the application is still HIDING the
+  value — `20****694`. The only verify taking no expected value, which is what
+  makes it the one assertion available on a read-only screen: nothing was
+  filled in there, so `checkAssertionsAreEarned` refuses every value-bearing
+  verify, and before this step existed the model's repair turn resolved that by
+  deleting the assertion and calling a scenario that checks nothing "valid")
 - `verify {string} text is displayed`
 - `wait {string} seconds` (avoid — prefer auto-wait)
 

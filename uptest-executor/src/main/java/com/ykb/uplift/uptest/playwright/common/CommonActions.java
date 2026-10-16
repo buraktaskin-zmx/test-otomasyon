@@ -1021,6 +1021,83 @@ public class CommonActions {
         return this;
     }
 
+    /** Any non-whitespace: "the value has arrived", whatever it turns out to be. */
+    private static final Pattern ANY_TEXT = Pattern.compile("\\S");
+
+    /**
+     * What a masked value looks like on these screens: a run of stars inside
+     * the value, as in "20****694".
+     *
+     * Two or more, so that a stray asterisk — a required-field marker, a
+     * footnote — cannot make an unmasked account number pass. Written as a
+     * \\u escape for the bullet because this file is hand-copied between
+     * machines and a copy through the wrong encoding would silently change
+     * what the pattern matches.
+     */
+    private static final Pattern MASKED = Pattern.compile("[*\\u2022]{2,}");
+
+    /**
+     * A field whose value the application deliberately HIDES — "20****694".
+     *
+     * The existing verifies all compare against a value the scenario supplies,
+     * and that is the wrong question here twice over. On a read-only screen the
+     * scenario never typed the value, so it cannot know it; and the account
+     * number differs per record, so writing it down would tie the test to one
+     * row. What the analyst actually wants to assert is not a value but a
+     * PROPERTY: that the bank is still hiding the middle of the number.
+     *
+     * Without this step the model had no way to say that. Asked to "verify the
+     * recipient account is masked" it reached for the nearest value-shaped verb
+     * and invented {@code has amount "*"}; the validator rightly refused the
+     * invented value, and the repair turn then deleted the assertion and called
+     * the scenario valid — a test that walks to the screen and checks nothing.
+     *
+     * Takes no expected value on purpose. That is what makes it earnable on a
+     * screen where nothing is ever filled in.
+     */
+    public CommonActions verifyFieldIsMasked(String label) {
+        Locator container = findValueElement(label);
+        Locator holder = valueHolder(container);
+
+        try {
+            // Auto-wait rather than read-and-hope: a detail screen paints its
+            // table after the request settles, and reading too early finds an
+            // empty cell — which is indistinguishable from an unmasked blank.
+            assertThat(holder).containsText(ANY_TEXT,
+                    new LocatorAssertions.ContainsTextOptions().setTimeout(VERIFY_TIMEOUT_MS));
+        } catch (AssertionError nothingArrived) {
+            throw explainVerify(label, container, nothingArrived);
+        }
+
+        String shown = withoutLabel(label, holder.innerText()).trim();
+        if (MASKED.matcher(shown).find()) {
+            return this;
+        }
+        throw notMasked(label, shown);
+    }
+
+    /**
+     * Two failures that read alike and need opposite fixes.
+     *
+     * "The value is not masked" is the application's answer and a real finding.
+     * "We read the label back" is OUR locator giving up on a screen whose label
+     * and value share one span — the open issue on the DBS Firma Fatura summary,
+     * and the shape this Banko detail screen is in (the agent reported its rows
+     * as "Alıcı Hesabı 20****694", one run of text). Reporting the second as the
+     * first would send someone to the bank to ask why masking had been turned
+     * off.
+     */
+    private AssertionError notMasked(String label, String shown) {
+        if (shown.isEmpty() || shown.equalsIgnoreCase(label.trim())) {
+            return new AssertionError("'" + label + "' degeri okunamadi: ekrandan '" + shown
+                    + "' geldi — yani etiketin kendisi, degeri degil. Bu ekranda etiket ve deger"
+                    + " ayni span'i paylasiyor ve findValueElement ikisini ayiramiyor. Alan"
+                    + " maskeli OLSA DA bu adim bunu goremez; once deger cozumlemesi duzeltilmeli.");
+        }
+        return new AssertionError("'" + label + "' maskeli degil: ekranda '" + shown
+                + "' yaziyor. Maskeli bir deger en az iki ardisik yildiz tasir (ornek: 20****694).");
+    }
+
     // ========================= HELPERS ===================================
 
     /**

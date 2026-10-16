@@ -111,6 +111,10 @@ public class ScenarioValidator {
 
         checkOutlineIsUsed(featureText, errors);
 
+        if (everyStepIsKnown) {
+            checkSomethingIsAsserted(steps, vocabulary, errors);
+        }
+
         if (everyStepIsKnown && catalog != null) {
             for (Step step : steps) {
                 checkAgainstCatalog(step, vocabulary, catalog, errors);
@@ -122,6 +126,66 @@ public class ScenarioValidator {
                 ? ValidationResult.ok(steps.size())
                 : ValidationResult.failed(steps.size(), errors);
     }
+
+    /**
+     * A scenario has to check something, or it is not a test.
+     *
+     * This is the mirror of {@link #checkAssertionsAreEarned} and it exists
+     * because that rule, correct as it is, has a degenerate solution. On a
+     * read-only screen the scenario fills nothing in, so no assertion can ever
+     * be "earned" unless the analyst wrote the expected value down. Shown that
+     * error, the repair turn did the one thing that makes it go away: it
+     * deleted the assertion. What came back was five steps that log in, open a
+     * record and stop — valid, green, and incapable of failing.
+     *
+     * So the two rules are enforced together. One says an assertion must not be
+     * invented; this one says there must BE an assertion. Between them the only
+     * way out is the honest one: assert a value the request names, or use a
+     * check that needs no value.
+     *
+     * Deliberately not gated on the catalog. Whether a scenario tests anything
+     * is a fact about the scenario, and a flow with no catalog is no more
+     * entitled to assert nothing.
+     */
+    private static void checkSomethingIsAsserted(List<Step> steps, Vocabulary vocabulary,
+                                                 List<ValidationError> errors) {
+        long lastLine = 0;
+        for (Step step : steps) {
+            lastLine = step.getLocation().getLine();
+            boolean asserts = vocabulary.matchWithArguments(step.getText().trim())
+                    .map(match -> match.step().pattern().startsWith("verify "))
+                    .orElse(false);
+            if (asserts) {
+                return;
+            }
+        }
+        errors.add(ValidationError.nothingAsserted(lastLine, waysToAssert(vocabulary)));
+    }
+
+    /**
+     * The value-free assertions, filtered to what this executor serves.
+     *
+     * An unfiltered list would be the date-verb mistake again: a correction
+     * that outruns the deployment turns a reported problem into an unrunnable
+     * scenario. The orchestrator and the executors restart separately, so a
+     * step this orchestrator knows about may not exist on the other side yet.
+     */
+    private static List<String> waysToAssert(Vocabulary vocabulary) {
+        return EARNABLE_WITHOUT_FILLING.stream().filter(vocabulary::has).toList();
+    }
+
+    /**
+     * The assertions a scenario can make without having typed anything first,
+     * and therefore the only ones available on a screen that is only read.
+     *
+     * `is masked` takes no expected value at all. `text is displayed` takes
+     * one, but it asserts a MESSAGE rather than a field's value, so it is
+     * routed to {@link #checkMessageIsCatalogued} and never has to be earned
+     * by a fill.
+     */
+    private static final List<String> EARNABLE_WITHOUT_FILLING = List.of(
+            "verify the {string} field is masked",
+            "verify {string} text is displayed");
 
     /* ========================== catalog checks ========================== */
 

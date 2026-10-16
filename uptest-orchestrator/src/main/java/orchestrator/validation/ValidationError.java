@@ -93,6 +93,33 @@ public record ValidationError(
                 List.of());
     }
 
+    /**
+     * A scenario that checks nothing — the quietest possible pass.
+     *
+     * Found on a read-only screen, where every assertion is unearnable by
+     * construction: the scenario fills nothing in, so {@code
+     * checkAssertionsAreEarned} refuses any expected value the analyst did not
+     * write down. The model's repair turn took the only route left to "valid"
+     * and DELETED the assertion, returning a scenario that logs in, opens the
+     * record and stops. It passed validation, it would pass every run, and the
+     * analyst saw a green badge.
+     *
+     * The suggestions name the legal ways out, because an error with no way out
+     * is how the previous repair turn ended up here. They are passed in rather
+     * than written here so the caller can filter them against what the live
+     * executor actually publishes — suggesting a step this deployment does not
+     * serve would send the model straight into "Tanımsız adım".
+     */
+    public static ValidationError nothingAsserted(long line, List<String> suggestions) {
+        return new ValidationError(line, null,
+                "Bu senaryo hicbir sey dogrulamiyor: tek bir `verify` adimi yok. Boyle bir test "
+                        + "her kosuda gecer ve hicbir zaman bir sey yakalamaz. En az bir dogrulama "
+                        + "ekleyin — degerini istekte yazdiginiz bir alani dogrulayin (ornegin "
+                        + "actiginiz kaydin referans numarasi), ya da deger gerektirmeyen bir "
+                        + "kontrol kullanin.",
+                suggestions);
+    }
+
     /** A value the field does not offer, answered with the values it does. */
     public static ValidationError unknownOption(long line, String step, String label, String value,
                                                 List<String> allowed) {
