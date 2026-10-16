@@ -16,6 +16,16 @@ DO_NOT_COMMIT/
 ### Never commit — same reasoning as DO_NOT_COMMIT.
 .mcp-browser-profile/
 
+### Fixtures for the `upload` step (UPTEST_TESTDATA_DIR, default ./testdata).
+### The CONTENTS are ignored, the README is not. Same reasoning as
+### DO_NOT_COMMIT: a file prepared to be uploaded into a real banking flow is
+### test data by definition — an invoice template carries customer numbers,
+### account numbers and amounts. The directory has to exist in the checkout
+### (the step fails loudly when it does not), so the README is what keeps it
+### tracked.
+testdata/*
+!testdata/README.md
+
 ### NOT ignored, on purpose: .mcp.json, which sits right next to the directory
 ### above and looks like the same kind of local-tooling file. It is not. The
 ### ORCHESTRATOR reads it at startup — application.properties points

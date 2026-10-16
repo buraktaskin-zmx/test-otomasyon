@@ -69,6 +69,21 @@ public class CommonSteps {
     @And("check {string}")
     public void check(String label) { actions().check(label); }
 
+    /**
+     * Attaches a file. The second argument is a NAME, not a path.
+     *
+     * Deliberately, and for the same reason every other step takes a label
+     * instead of a selector: a scenario is read and edited by an analyst, and
+     * a machine path in it is both unreadable and wrong on the next machine.
+     * The name is resolved under UPTEST_TESTDATA_DIR (default ./testdata).
+     *
+     * This step is why the DBS "Oluşturma Tipi" fork was only half testable:
+     * `choose` could take the "Dosya Yükleme" branch and then nothing could
+     * drive the screen it opened.
+     */
+    @And("upload {string} {string}")
+    public void upload(String label, String fileName) { actions().upload(label, fileName); }
+
     @And("select row {string}")
     public void selectRow(String rowLabel) { actions().selectRow(rowLabel); }
 

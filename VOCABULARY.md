@@ -14,9 +14,9 @@ scenarios MUST treat this as a closed grammar.
 > annotations at build time and serves it at `GET /cucumber/vocabulary`; the
 > orchestrator's validator and the LLM prompt both read that. If the two ever
 > disagree, the generated JSON is right and this file is stale — check with
-> `GET /api/v1/vocabulary` (currently 21 steps).
+> `GET /api/v1/vocabulary` (currently 22 steps).
 >
-> Counting the annotations in the source gives **23**, and that is not a
+> Counting the annotations in the source gives **24**, and that is not a
 > discrepancy: `discover screen catalog` and `fill discovered fields:` belong to
 > screen discovery, which reads a screen instead of describing a test.
 > `VocabularyExtractor` excludes that package on purpose, so those two steps are
@@ -109,6 +109,7 @@ And click {string}
 And enter {string} {string}
 And enter date {string} {string}
 And enter amount {string} {string}
+And upload {string} {string}
 ```
 
 - `enter {string} {string}` — type a value into a **text input** identified by
@@ -133,6 +134,19 @@ And enter amount {string} {string}
 - `enter amount {string} {string}` — type into a **masked money field**
   (kuruş-aware). Use this for any monetary amount, never plain `enter`.
   Example: `And enter amount "Ödeme Tutarı" "1250,55"`
+- `upload {string} {string}` — attach a file to an upload control.
+  Example: `And upload "Dosya" "fatura-listesi.xlsx"`
+
+  The second argument is a **file NAME, not a path**. It is looked up under
+  `UPTEST_TESTDATA_DIR` (default `./testdata`), so the scenario stays free of
+  machine-specific paths — the same reason every other step takes a label
+  rather than a selector. An absolute path is honoured if you really need one.
+
+  Works on both shapes these forms use: a plain file input, and an application
+  that draws its own "Gözat" button and hides the real input behind it. The
+  step reads the attachment back and fails if nothing was attached — an upload
+  that silently attaches nothing would otherwise submit an empty file with
+  every step green.
 
 ---
 
