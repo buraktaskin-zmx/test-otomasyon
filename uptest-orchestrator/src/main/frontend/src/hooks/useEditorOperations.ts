@@ -44,6 +44,7 @@ export function useEditorOperations(
 ) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const gutterRef = useRef<HTMLDivElement>(null);
+  const highlightRef = useRef<HTMLPreElement>(null);
   const [pending, setPending] = useState<PendingSelection | null>(null);
 
   useEffect(() => {
@@ -61,10 +62,23 @@ export function useEditorOperations(
   }, [feature, pending]);
 
   /** One-directional sync, same as app.js: the editor is the source of
-   *  truth for scroll position, the gutter always mirrors it. */
-  const syncGutterScroll = useCallback(() => {
-    if (textareaRef.current && gutterRef.current) {
-      gutterRef.current.scrollTop = textareaRef.current.scrollTop;
+   *  truth for scroll position, the other layers always mirror it.
+   *
+   *  The highlight layer needs BOTH axes. The gutter only ever needed
+   *  scrollTop, because line numbers do not move sideways -- but the
+   *  highlight is a copy of the text, and a long step line scrolls
+   *  horizontally. Mirroring only the vertical axis would hold the colours
+   *  in register until the first time anyone scrolled right, which is
+   *  exactly the kind of bug that gets found by a user and not by us. */
+  const syncScroll = useCallback(() => {
+    const editor = textareaRef.current;
+    if (!editor) return;
+    if (gutterRef.current) {
+      gutterRef.current.scrollTop = editor.scrollTop;
+    }
+    if (highlightRef.current) {
+      highlightRef.current.scrollTop = editor.scrollTop;
+      highlightRef.current.scrollLeft = editor.scrollLeft;
     }
   }, []);
 
@@ -99,5 +113,5 @@ export function useEditorOperations(
     [feature, setFeature, onEdited],
   );
 
-  return { textareaRef, gutterRef, syncGutterScroll, goToLine, replaceLine, insertAtCursor };
+  return { textareaRef, gutterRef, highlightRef, syncScroll, goToLine, replaceLine, insertAtCursor };
 }

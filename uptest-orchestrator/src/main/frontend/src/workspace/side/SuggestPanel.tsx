@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { PanelHead } from "./PanelHead";
 import { suggestScenario } from "../../api/endpoints";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
 import { Badge } from "../../ui/Badge";
@@ -123,6 +124,7 @@ export function SuggestPanel({
 
   return (
     <div id="side-suggest" className={"side-panel" + (active ? " is-active" : "")}>
+      <PanelHead title="AI Üret" />
       <div className="suggest-form">
         <label className="suggest-label" htmlFor="suggestCatalog">
           Ekran

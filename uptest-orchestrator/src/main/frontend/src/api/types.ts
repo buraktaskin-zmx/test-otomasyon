@@ -101,13 +101,100 @@ export interface ValidationError {
   step: string | null;
   message: string;
   suggestions: string[];
+  /** Appended for the chat, which turns a finding into a question and has to
+   *  know which sort it is without parsing the Turkish prose in `message`.
+   *  Serialised as the enum's name. */
+  kind: ValidationErrorKind;
+  /** The field label this is about, or null when it is not about one. */
+  subject: string | null;
 }
+
+/** ValidationError.Kind — keep in step with the Java enum. */
+export type ValidationErrorKind =
+  | "SYNTAX"
+  | "UNDEFINED_STEP"
+  | "UNKNOWN_LABEL"
+  | "WRONG_VERB"
+  | "UNEARNED_ASSERTION"
+  | "PARAPHRASED_MESSAGE"
+  | "UNCATALOGUED_MESSAGE"
+  | "ROW_NOT_CLICKABLE"
+  | "UNUSED_OUTLINE"
+  | "NOTHING_ASSERTED"
+  | "UNKNOWN_OPTION";
 
 /** ValidationResult.java record. */
 export interface ValidationResult {
   valid: boolean;
   stepCount: number;
   errors: ValidationError[];
+}
+
+/* ========================================================================
+   Chat -- POST /api/v1/chat, POST /{id}/reply, GET /{id}, DELETE /{id}
+
+   Writing a scenario by talking about it: the generator with its repair turn
+   pointed at a person. A validation finding arrives as a QUESTION with the
+   legal answers as buttons, instead of going back to the model to guess at.
+   ======================================================================== */
+
+/** ChatQuestions.ChatOption record. `valuePrompt` is null unless
+ *  `needsValue`, in which case it is the label for the input to show. */
+export interface ChatOption {
+  id: string;
+  label: string;
+  needsValue: boolean;
+  valuePrompt: string | null;
+}
+
+/** ChatQuestions.ChatQuestion record. `options` is never null, but IS empty
+ *  for findings whose legal answers are not known -- there `allowsFreeText`
+ *  carries the whole interaction. */
+export interface ChatQuestion {
+  text: string;
+  options: ChatOption[];
+  allowsFreeText: boolean;
+}
+
+/** ChatSession.Message record. */
+export interface ChatMessage {
+  role: "ai" | "you";
+  text: string;
+}
+
+/** ChatController.ChatTurn record. `feature` and `validation` are null until
+ *  the first generation; `complete` means valid with nothing pending, i.e.
+ *  ready to run or to hand to the editor. */
+export interface ChatTurn {
+  sessionId: string;
+  messages: ChatMessage[];
+  question: ChatQuestion | null;
+  /** The opening text plus every answer. Use this as the Origin's `intent`
+   *  when handing the draft to the editor: re-validation looks for expected
+   *  values in the intent, and a value supplied mid-conversation lives here
+   *  and nowhere else. */
+  request: string;
+  feature: string | null;
+  validation: ValidationResult | null;
+  complete: boolean;
+}
+
+/** ChatController.StartRequest. `userid` is required for NGC, refused
+ *  server-side when a cif is given without it -- same rule as /suggest. */
+export interface ChatStartRequest {
+  app: string;
+  flow: string;
+  cif: string;
+  userid: string;
+  text: string;
+}
+
+/** ChatController.ReplyRequest. Either a button (`optionId`, plus `value`
+ *  when that button asked for one) or something typed (`text`). */
+export interface ChatReplyRequest {
+  optionId?: string;
+  value?: string;
+  text?: string;
 }
 
 /* ========================================================================

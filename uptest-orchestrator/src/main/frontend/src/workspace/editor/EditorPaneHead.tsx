@@ -12,17 +12,22 @@ export function EditorPaneHead({
   onRunClick,
   validateDisabled,
   runDisabled,
+  extra,
 }: {
   badge: ReactNode;
   onValidateClick: () => void;
   onRunClick: () => void;
   validateDisabled: boolean;
   runDisabled: boolean;
+  /** Editor-only controls. Absent in Çoklu Üret's list mode, which shares
+   *  this head but has no editor behind it to control. */
+  extra?: ReactNode;
 }) {
   return (
     <div className="pane-head">
       <h2 className="pane-title">Senaryo</h2>
       <div className="pane-actions">
+        {extra ?? null}
         {badge}
         <button
           id="btnValidate"

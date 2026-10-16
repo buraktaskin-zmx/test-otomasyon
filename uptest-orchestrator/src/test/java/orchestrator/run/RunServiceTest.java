@@ -210,7 +210,7 @@ class RunServiceTest {
         when(catalogs.read(anyString(), anyString())).thenReturn(Optional.empty());
         when(validator.validate(any(), any(), any(), any())).thenReturn(
                 ValidationResult.failed(4, List.of(
-                        new ValidationError(3, "bogus step", "tanımsız adım", List.of()))));
+                        ValidationError.undefinedStep(3, "bogus step", List.of()))));
 
         RunService.StartOutcome outcome = service.start(FEATURE, "ngc", "banko-payment", "intent");
 

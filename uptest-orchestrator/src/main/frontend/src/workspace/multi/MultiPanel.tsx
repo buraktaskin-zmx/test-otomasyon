@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { PanelHead } from "../side/PanelHead";
 import { suggestMany } from "../../api/endpoints";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
 import { buildMultiIntent } from "../../lib/multiDepth";
@@ -106,6 +107,7 @@ export function MultiPanel({
 
   return (
     <div id="side-multi" className={"side-panel" + (active ? " is-active" : "")}>
+      <PanelHead title="Çoklu Üret" />
       <div className="suggest-form">
         <label className="suggest-label" htmlFor="multiCatalog">
           Ekran

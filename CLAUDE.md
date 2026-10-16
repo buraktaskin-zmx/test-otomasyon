@@ -178,6 +178,18 @@ Elsewhere:
   `ddl-auto=update`, orchestrator only — the executor never gets a database.
   Details in the server-side document.
 - MCP exploration agent (orchestrator): `orchestrator/explore/` + `.mcp.json`
+- Scenario chat (orchestrator): `orchestrator/chat/` — writing a scenario by
+  talking about it. **No browser**: it is the generator with the repair turn
+  pointed at a PERSON. `SuggestService.suggestOnce` generates once, and
+  `ChatQuestions` turns the validator's first finding into a QUESTION whose
+  buttons are the routes that finding's own message already names — for an
+  unearned assertion, "give me the expected value" and "drop the check".
+  Three kinds get a tailored question; everything else shows the validator's
+  own words and asks for free text, because inventing options for a finding
+  this class does not understand is the guessing it exists to stop. Sessions
+  are in memory only (`ChatSessionStore`, swept on access, no `@Scheduled`) —
+  a transcript is free text and free text is an uncontrolled channel, the
+  hazard `TestRunEntity` already documents.
 - Discovery dispatch (orchestrator): `orchestrator/catalog/CatalogDiscoveryService`
   builds the synthetic feature and sends it through `ExecutorPool` like any other
   run; `orchestrator/api/DiscoveryController` is its endpoint.
@@ -239,7 +251,7 @@ is the container deployment, which is not live — see *Docker: later* above.
   (`{runDir}/traces/<scenario>.zip`), falling back to `target/traces/` when
   Cucumber was started outside the server (`mvn test`).
 
-## Current vocabulary (21 steps)
+## Current vocabulary (22 steps)
 
 **The machine-readable source of truth is generated**, not this list:
 `VocabularyExtractor` reads the `@Given/@When/@Then` annotations at build time
@@ -278,6 +290,14 @@ Shared (CommonSteps, work on both apps):
   which is aria-hidden, so the generic `select` step can't drive it.)
 - `select account at index {int} from {string}` (same picker, 0-based over the
   listed `li.select2-results__option` items)
+- `upload {string} {string}` (attaches a file. Second argument is a NAME, not
+  a path — resolved under `UPTEST_TESTDATA_DIR`, default `./testdata`, so no
+  machine path reaches a scenario. Two shapes: a real `input[type=file]`
+  driven with `setInputFiles` — which deliberately does NOT need the input
+  visible, because these forms hide it behind their own "Gözat" button — and,
+  when there is no such input, `waitForFileChooser` armed BEFORE the click.
+  Reads the attachment back. Closes the DBS "Oluşturma Tipi" fork's second
+  branch, which `choose` could reach and nothing could then drive)
 - `check {string}` (ticks the checkbox with that caption — a whole sentence on
   these screens. Idempotent: a box already ticked is left alone, because
   clicking it again would UNtick it. Same hidden-input problem as the radios,

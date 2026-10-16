@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { PanelHead } from "./PanelHead";
 import { EmptyState } from "../../ui/EmptyState";
 import { StepPattern } from "../../ui/StepPattern";
 import { filterVocabulary, groupVocabulary } from "../../lib/vocabGroups";
@@ -24,6 +25,7 @@ export function VocabPanel({
 
   return (
     <div id="side-vocab" className={"side-panel" + (active ? " is-active" : "")}>
+      <PanelHead title="Adım Sözlüğü" />
       <div className="search-row">
         <input
           id="vocabSearch"

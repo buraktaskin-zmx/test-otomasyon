@@ -3,6 +3,9 @@ import type { ApiResult } from "./client";
 import type {
   Artifact,
   CatalogsResponse,
+  ChatReplyRequest,
+  ChatStartRequest,
+  ChatTurn,
   DiscoverRequest,
   DiscoverStarted,
   DiscoverStatus,
@@ -27,7 +30,7 @@ import type {
 } from "./types";
 
 /*
-  All 20 orchestrator endpoints, named once, each a thin wrapper around api().
+  All 24 orchestrator endpoints, named once, each a thin wrapper around api().
   Nothing else in this app builds a URL by hand.
 
   A handful of these answer with a DIFFERENT body shape depending on status
@@ -135,6 +138,26 @@ export const suggestScenario = (request: SuggestRequest) =>
  *  duration, not assume this resolves quickly. */
 export const suggestMany = (request: SuggestManyRequest) =>
   api<SuggestManyResponse>("POST", "/api/v1/scenarios/suggest-many", request);
+
+/* --------------------------------- chat ---------------------------------
+
+   One model call per turn, so seconds -- the same cost as a single
+   /suggest, because it IS /suggest with the repair turn pointed at the
+   analyst instead of at the model. Nothing here drives a browser. */
+
+export const startChat = (request: ChatStartRequest) =>
+  api<ChatTurn>("POST", "/api/v1/chat", request);
+
+export const replyToChat = (sessionId: string, request: ChatReplyRequest) =>
+  api<ChatTurn>("POST", `/api/v1/chat/${encodeURIComponent(sessionId)}/reply`, request);
+
+export const getChat = (sessionId: string) =>
+  api<ChatTurn>("GET", `/api/v1/chat/${encodeURIComponent(sessionId)}`);
+
+/** Sessions also expire on their own (uptest.chat.idle-timeout); this is the
+ *  explicit "I am done" so an abandoned transcript does not wait for it. */
+export const endChat = (sessionId: string) =>
+  api<{ closed: string }>("DELETE", `/api/v1/chat/${encodeURIComponent(sessionId)}`);
 
 /* -------------------------------- agent --------------------------------- */
 

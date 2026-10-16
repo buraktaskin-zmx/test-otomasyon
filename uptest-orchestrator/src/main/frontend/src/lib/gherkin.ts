@@ -88,3 +88,76 @@ export function insertPatternAtCursor(
   const caret = lineStart + insertion.length;
   return { text, caret };
 }
+
+/* ------------------------------ highlighting ------------------------------
+
+   Gherkin split into coloured pieces, one line at a time.
+
+   Returns DATA, not markup. The highlight layer renders each piece as a
+   <span>, so React escapes the text and the whole class of bug that comes
+   with building HTML strings out of a scenario -- a label containing "<" or
+   "&" turning into markup -- cannot happen here at all.
+
+   Line-based because Gherkin is: a line is a comment, a tag, a declaration, a
+   step or a table row, and nothing spans two lines. There is no block state to
+   carry, so a line can be coloured without looking at any other.
+*/
+
+export interface GherkinToken {
+  text: string;
+  /** CSS class, or null for text that takes the editor's ordinary colour. */
+  cls: string | null;
+}
+
+/** Feature:, Scenario:, Examples: and friends. */
+const DECLARATION = /^(Feature|Background|Rule|Scenario Outline|Scenario|Examples)(\s*:)/;
+
+/** The step keywords, and the `*` form Cucumber also accepts. */
+const STEP_KEYWORD = /^(Given|When|Then|And|But|\*)(?=\s)/;
+
+/** A quoted argument or an Outline placeholder. */
+const INLINE = /("[^"]*"|<[^>]*>)/g;
+
+export function tokenizeGherkinLine(line: string): GherkinToken[] {
+  const body = line.trimStart();
+  const indent = line.slice(0, line.length - body.length);
+
+  if (body.startsWith("#")) return [{ text: line, cls: "gh-comment" }];
+  if (body.startsWith("@")) return [{ text: line, cls: "gh-tag" }];
+  if (body.startsWith("|")) return [{ text: line, cls: "gh-table" }];
+
+  const declaration = DECLARATION.exec(body);
+  if (declaration) {
+    return [
+      { text: indent, cls: null },
+      { text: declaration[0], cls: "gh-decl" },
+      ...inline(body.slice(declaration[0].length)),
+    ];
+  }
+
+  const keyword = STEP_KEYWORD.exec(body);
+  if (keyword) {
+    return [
+      { text: indent, cls: null },
+      { text: keyword[0], cls: "gh-kw" },
+      ...inline(body.slice(keyword[0].length)),
+    ];
+  }
+
+  return inline(line);
+}
+
+function inline(text: string): GherkinToken[] {
+  const out: GherkinToken[] = [];
+  let last = 0;
+
+  for (const match of text.matchAll(INLINE)) {
+    const at = match.index ?? 0;
+    if (at > last) out.push({ text: text.slice(last, at), cls: null });
+    out.push({ text: match[0], cls: match[0].startsWith('"') ? "gh-str" : "gh-ph" });
+    last = at + match[0].length;
+  }
+  if (last < text.length) out.push({ text: text.slice(last), cls: null });
+
+  return out.filter((token) => token.text.length > 0);
+}

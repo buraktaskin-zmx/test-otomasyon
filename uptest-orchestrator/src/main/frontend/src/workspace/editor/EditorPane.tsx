@@ -1,7 +1,8 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { EditorPaneHead } from "./EditorPaneHead";
 import { GherkinEditor } from "./GherkinEditor";
 import { Gutter } from "./Gutter";
+import { Highlight } from "./Highlight";
 import { ValidationBadge } from "./ValidationBadge";
 import { ValidationPanel } from "./ValidationPanel";
 import type { ReactNode, RefObject } from "react";
@@ -22,6 +23,7 @@ export function EditorPane({
   onChange,
   textareaRef,
   gutterRef,
+  highlightRef,
   onScroll,
   validationState,
   errors,
@@ -36,6 +38,7 @@ export function EditorPane({
   onChange: (value: string) => void;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
   gutterRef: RefObject<HTMLDivElement | null>;
+  highlightRef: RefObject<HTMLPreElement | null>;
   onScroll: () => void;
   validationState: ValidationState;
   errors: ValidationError[];
@@ -46,6 +49,12 @@ export function EditorPane({
   onApplyFix: (line: number, fix: string) => void;
   multiBar?: ReactNode;
 }) {
+  /* On by default, and switchable: colouring is a reading aid, and a reading
+     aid that cannot be turned off is a liability the first time it is wrong
+     about something. Local to the editor -- nothing else in the app has an
+     opinion about it. */
+  const [coloured, setColoured] = useState(true);
+
   const badLines = useMemo(
     () => new Set(errors.filter((e) => e.line > 0).map((e) => e.line)),
     [errors],
@@ -59,11 +68,29 @@ export function EditorPane({
         onRunClick={onRunClick}
         validateDisabled={false}
         runDisabled={runDisabled}
+        extra={
+          <button
+            id="btnColour"
+            className="btn btn-ghost"
+            type="button"
+            aria-pressed={coloured}
+            title={coloured ? "Renklendirmeyi kapat" : "Renklendirmeyi aç"}
+            onClick={() => setColoured((on) => !on)}
+          >
+            Renk
+          </button>
+        }
       />
       {multiBar ?? null}
       <div className="editor-wrap">
         <Gutter ref={gutterRef} text={feature} badLines={badLines} />
-        <GherkinEditor ref={textareaRef} value={feature} onChange={onChange} onScroll={onScroll} />
+        {/* The stack is what holds the two layers in register. Without
+            colouring there is nothing to hold, so the textarea goes back to
+            being an ordinary child of .editor-wrap and paints its own text. */}
+        <div className={"editor-stack" + (coloured ? " is-coloured" : "")}>
+          {coloured ? <Highlight text={feature} ref={highlightRef} /> : null}
+          <GherkinEditor ref={textareaRef} value={feature} onChange={onChange} onScroll={onScroll} />
+        </div>
       </div>
       <ValidationPanel
         state={validationState}

@@ -6,7 +6,8 @@ import { MultiList } from "./multi/MultiList";
 import { MultiPanel } from "./multi/MultiPanel";
 import type { Draft } from "./multi/draft";
 import { AgentPanel } from "./side/AgentPanel";
-import { SideTabs } from "./side/SidePane";
+import { ChatView } from "../chat/ChatView";
+import { SideRail } from "./side/SidePane";
 import type { SideTab } from "./side/SidePane";
 import { SuggestPanel } from "./side/SuggestPanel";
 import { TimelinePanel } from "./side/TimelinePanel";
@@ -59,6 +60,20 @@ export function WorkspaceView({
 }) {
   const [feature, setFeature] = useState(SAMPLE);
   const [sideTab, setSideTab] = useState<SideTab>("vocab");
+  /* The panel can be closed outright to give the editor the full width --
+     a long scenario is 20+ lines of quoted Turkish and the 40% column was
+     costing the half of it that matters. Closing hides the panel, not the
+     rail: the rail is how you get it back. */
+  const [panelOpen, setPanelOpen] = useState(true);
+
+  /* Selecting a panel always shows it. Both forced switches below (the run
+     starting, and a 422 refusal) exist to put something in front of the
+     analyst; with the panel closed they would switch a tab nobody can see
+     and the feedback would be lost. */
+  const showPanel = useCallback((tab: SideTab) => {
+    setSideTab(tab);
+    setPanelOpen(true);
+  }, []);
   const toast = useToast();
   const origin = useOrigin();
   const catalogs = useCatalogs();
@@ -123,7 +138,7 @@ export function WorkspaceView({
     [saveActiveDraftFeature, validation],
   );
 
-  const { textareaRef, gutterRef, syncGutterScroll, goToLine, replaceLine, insertAtCursor } =
+  const { textareaRef, gutterRef, highlightRef, syncScroll, goToLine, replaceLine, insertAtCursor } =
     useEditorOperations(feature, setFeature, handleEdited);
 
   const handleChange = useCallback(
@@ -204,21 +219,52 @@ export function WorkspaceView({
     [clearBatch, origin, validation],
   );
 
-  const handleRunClick = useCallback(async () => {
-    const result = await runPoll.start(feature, resolvedOrigin);
-    if (!result.ok) {
-      if (result.status === 422) {
-        validation.applyResult(result.body as ValidationResult);
-        setSideTab("vocab");
-        toast("Senaryo çalıştırılmadı: tanımsız adım var", true);
+  /* The one run path, taking what to run explicitly so the chat can use it
+     without building a second one. Everything it does on the way -- the 422
+     branch, the forced panel switches, the toasts -- is as true of a
+     chat-written scenario as of a typed one, and a copy of it would be a
+     copy that drifts. */
+  const runWith = useCallback(
+    async (text: string, where: Origin) => {
+      const result = await runPoll.start(text, where);
+      if (!result.ok) {
+        if (result.status === 422) {
+          validation.applyResult(result.body as ValidationResult);
+          showPanel("vocab");
+          toast("Senaryo çalıştırılmadı: tanımsız adım var", true);
+          return;
+        }
+        toast(result.error, true);
         return;
       }
-      toast(result.error, true);
-      return;
-    }
-    setSideTab("timeline");
-    toast("Koşu başladı · " + result.body.executor);
-  }, [runPoll, feature, resolvedOrigin, validation, toast]);
+      showPanel("timeline");
+      toast("Koşu başladı · " + result.body.executor);
+    },
+    [runPoll, validation, toast, showPanel],
+  );
+
+  const handleRunClick = useCallback(
+    () => runWith(feature, resolvedOrigin),
+    [runWith, feature, resolvedOrigin],
+  );
+
+  /* Chat's Çalıştır: the draft goes into the editor FIRST, then runs. The
+     editor is where a scenario lives once it exists -- validated, with the
+     gutter and the error panel around it -- and a run whose scenario is not
+     the one on screen is the stale-panel bug all over again. */
+  const runDraft = useCallback(
+    (text: string, where: Origin) => {
+      handleGenerated(text, where);
+      void runWith(text, where);
+    },
+    [handleGenerated, runWith],
+  );
+
+  /* Chat takes the whole width: a conversation and a growing draft side by
+     side do not fit in the 40% column the other panels live in. The editor
+     is hidden by CSS rather than unmounted -- the caret position, the scroll
+     and the refs behind them all survive the trip. */
+  const chatMode = panelOpen && sideTab === "chat";
 
   const liveRun = runPoll.run?.status === "RUNNING";
   const agentVisible = !tools.loaded || tools.available;
@@ -226,6 +272,14 @@ export function WorkspaceView({
 
   return (
     <section id="view-workspace" className={"view" + (active ? " is-active" : "")}>
+      <SideRail
+        active={sideTab}
+        onChange={showPanel}
+        liveRun={liveRun}
+        agentVisible={agentVisible}
+        collapsed={!panelOpen}
+        onToggleCollapse={() => setPanelOpen((open) => !open)}
+      />
       {listMode ? (
         <div className="pane pane-editor">
           <EditorPaneHead
@@ -243,7 +297,8 @@ export function WorkspaceView({
           onChange={handleChange}
           textareaRef={textareaRef}
           gutterRef={gutterRef}
-          onScroll={syncGutterScroll}
+          highlightRef={highlightRef}
+          onScroll={syncScroll}
           validationState={validation.state}
           errors={validation.errors}
           onValidateClick={() => void validation.validateNow()}
@@ -263,12 +318,22 @@ export function WorkspaceView({
           }
         />
       )}
-      <aside className="pane pane-side">
-        <SideTabs
-          active={sideTab}
-          onChange={setSideTab}
-          liveRun={liveRun}
-          agentVisible={agentVisible}
+      {/* Hidden, never unmounted. The panels hold state the analyst typed
+          -- the agent's credentials and its editable YAML output, both
+          generator forms -- and unmounting would throw it away the moment
+          someone closed the panel to read a long scenario. Same reason
+          App.tsx keeps both views mounted. */}
+      <aside
+        className={
+          "pane pane-side" + (panelOpen ? "" : " is-closed") + (chatMode ? " is-wide" : "")
+        }
+      >
+        <ChatView
+          active={sideTab === "chat"}
+          catalogs={catalogs.catalogs}
+          preselect={lastSavedCatalog}
+          onHandOff={handleGenerated}
+          onRunDraft={runDraft}
         />
         <VocabPanel
           active={sideTab === "vocab"}
@@ -282,6 +347,8 @@ export function WorkspaceView({
           run={runPoll.run}
           artifacts={artifacts}
           onStop={() => void runPoll.stop()}
+          onRun={() => void handleRunClick()}
+          runDisabled={runDisabled}
         />
         <SuggestPanel
           active={sideTab === "suggest"}

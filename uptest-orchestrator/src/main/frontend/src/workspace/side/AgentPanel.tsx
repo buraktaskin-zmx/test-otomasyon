@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { PanelHead } from "./PanelHead";
 import { explore, exploreForCatalog, saveCatalog } from "../../api/endpoints";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
 import { catalogNameFromYaml, slug } from "../../lib/slug";
@@ -110,6 +111,7 @@ export function AgentPanel({
 
   return (
     <div id="side-agent" className={"side-panel" + (active ? " is-active" : "")}>
+      <PanelHead title="Ajan" />
       <div className="suggest-form">
         <label className="suggest-label" htmlFor="agentUrl">
           Adres

@@ -5,21 +5,55 @@ import java.util.List;
 /**
  * One reason a scenario would not run, addressed to an analyst rather than a
  * developer: which line, what was written, and the closest steps that do exist.
+ *
+ * {@code kind} and {@code subject} were added for the chat, which turns a
+ * finding into a QUESTION instead of an error line. To ask the right question
+ * it has to know what kind of finding this is and which field it is about —
+ * and the only other way to get that is to pattern-match the Turkish prose in
+ * {@code message}, which would break the first time anyone improved the
+ * wording. They are appended at the end so the wire shape the UI already reads
+ * (line, step, message, suggestions) is untouched.
  */
 public record ValidationError(
         long line,
         String step,
         String message,
-        List<String> suggestions
+        List<String> suggestions,
+        Kind kind,
+        /** The field label this is about, or null when it is not about one. */
+        String subject
 ) {
+    /**
+     * What sort of finding this is.
+     *
+     * Exists for the chat's benefit, not the validator's — nothing in the
+     * validation path branches on it. Keep it in step with the factories
+     * below: an error created with the wrong kind asks the analyst the wrong
+     * question, which is worse than asking nothing.
+     */
+    public enum Kind {
+        SYNTAX,
+        UNDEFINED_STEP,
+        UNKNOWN_LABEL,
+        WRONG_VERB,
+        UNEARNED_ASSERTION,
+        PARAPHRASED_MESSAGE,
+        UNCATALOGUED_MESSAGE,
+        ROW_NOT_CLICKABLE,
+        UNUSED_OUTLINE,
+        NOTHING_ASSERTED,
+        UNKNOWN_OPTION
+    }
+
     public static ValidationError syntax(long line, String message) {
-        return new ValidationError(line, null, message, List.of());
+        return new ValidationError(line, null, message, List.of(), Kind.SYNTAX, null);
     }
 
     // Analyst-facing text is Turkish, like the rest of the UI. Gherkin's own
     // syntax errors stay in the parser's English — they come from the library.
     public static ValidationError undefinedStep(long line, String step, List<String> suggestions) {
-        return new ValidationError(line, step, "Tanımsız adım", suggestions);
+        return new ValidationError(line, step, "Tanımsız adım", suggestions,
+                Kind.UNDEFINED_STEP, null);
     }
 
     /**
@@ -28,14 +62,15 @@ public record ValidationError(
      */
     public static ValidationError unknownLabel(long line, String step, String label, List<String> nearest) {
         return new ValidationError(line, step,
-                "Katalogda \"" + label + "\" diye bir alan yok", nearest);
+                "Katalogda \"" + label + "\" diye bir alan yok", nearest,
+                Kind.UNKNOWN_LABEL, label);
     }
 
     /** The right pattern for what this field actually is. */
     public static ValidationError wrongVerb(long line, String step, String label, String type, String expected) {
         return new ValidationError(line, step,
                 "\"" + label + "\" alanının tipi " + type + "; bu adım onu süremez",
-                List.of(expected));
+                List.of(expected), Kind.WRONG_VERB, label);
     }
 
     /**
@@ -64,14 +99,15 @@ public record ValidationError(
                         + "Ya alani doldurun, ya beklenen degeri istege yazin, ya da deger "
                         + "gerektirmeyen bir kontrol kullanin. Bu dogrulamayi SILMEYIN: hicbir "
                         + "sey dogrulamayan bir senaryo da gecersizdir.",
-                valueFreeChecks);
+                valueFreeChecks, Kind.UNEARNED_ASSERTION, label);
     }
 
     /** A confirmation message rewritten instead of copied. */
     public static ValidationError paraphrasedMessage(long line, String step, String expected) {
         return new ValidationError(line, step,
                 "Onay mesaji test verisi degildir, katalogtan birebir kopyalanir",
-                List.of("verify \"" + expected + "\" text is displayed"));
+                List.of("verify \"" + expected + "\" text is displayed"),
+                Kind.PARAPHRASED_MESSAGE, null);
     }
 
     /** A message asserted on a screen whose text nobody recorded. */
@@ -79,7 +115,7 @@ public record ValidationError(
         return new ValidationError(line, step,
                 "Katalogda success_message yok, istekte de bu metin gecmiyor — ekranin yazdigi "
                         + "metni tahmin etmeyin. Ya kataloga gercek metni ekleyin, ya bu satiri silin.",
-                List.of());
+                List.of(), Kind.UNCATALOGUED_MESSAGE, null);
     }
 
     /** A Scenario Outline whose Examples table nothing reads. */
@@ -100,14 +136,15 @@ public record ValidationError(
                 "\"" + entryRow + "\" bir IZGARA SATIRI, buton ya da link degil; `click` onu "
                         + "bulamaz ve 30 saniye bekleyip duser. Satir zaten `select row` ile "
                         + "seciliyor — bu satiri silin.",
-                List.of("select row \"" + entryRow + "\""));
+                List.of("select row \"" + entryRow + "\""),
+                Kind.ROW_NOT_CLICKABLE, entryRow);
     }
 
     public static ValidationError unusedOutline(long line) {
         return new ValidationError(line, null,
                 "Scenario Outline kullanilmis ama hicbir adimda <yer tutucu> yok; "
                         + "Examples tablosu suslemeden ibaret. Duz 'Scenario:' yazin.",
-                List.of());
+                List.of(), Kind.UNUSED_OUTLINE, null);
     }
 
     /**
@@ -134,13 +171,14 @@ public record ValidationError(
                         + "ekleyin — degerini istekte yazdiginiz bir alani dogrulayin (ornegin "
                         + "actiginiz kaydin referans numarasi), ya da deger gerektirmeyen bir "
                         + "kontrol kullanin.",
-                suggestions);
+                suggestions, Kind.NOTHING_ASSERTED, null);
     }
 
     /** A value the field does not offer, answered with the values it does. */
     public static ValidationError unknownOption(long line, String step, String label, String value,
                                                 List<String> allowed) {
         return new ValidationError(line, step,
-                "\"" + label + "\" alanı \"" + value + "\" değerini sunmuyor", allowed);
+                "\"" + label + "\" alanı \"" + value + "\" değerini sunmuyor", allowed,
+                Kind.UNKNOWN_OPTION, label);
     }
 }

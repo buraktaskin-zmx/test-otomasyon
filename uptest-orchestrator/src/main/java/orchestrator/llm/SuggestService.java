@@ -100,7 +100,30 @@ public class SuggestService {
         // aside.
         return one(prompts.system(vocabulary),
                 prompts.user(catalogYaml, intent, loginStep),
-                catalog, vocabulary, loginStep, intent, null);
+                catalog, vocabulary, loginStep, intent, null, maxRepairs);
+    }
+
+    /**
+     * One generation, and whatever the validator makes of it — no repair turn.
+     *
+     * For the chat, where a finding is not an error to be fixed behind the
+     * analyst's back but a QUESTION to put to them. The repair turn is the
+     * wrong instinct there, and this session proved how wrong: asked to verify
+     * a read-only field, the model first invented a value and then, shown the
+     * complaint, deleted the assertion — two guesses, both wrong, neither one
+     * the analyst would have made. The honest move is to stop at the first
+     * finding and ask.
+     *
+     * Deliberately the same pipeline otherwise: same prompt, same rewriters in
+     * {@link #settle}, same validator. The chat must not quietly produce a
+     * different class of scenario from the one the generator panel produces.
+     */
+    public Suggestion suggestOnce(String catalogYaml, String intent, Vocabulary vocabulary,
+                                  String loginStep) {
+        CatalogModel catalog = CatalogModel.parse(catalogYaml).orElse(null);
+        return one(prompts.system(vocabulary),
+                prompts.user(catalogYaml, intent, loginStep),
+                catalog, vocabulary, loginStep, intent, null, 0);
     }
 
     /**
@@ -114,7 +137,7 @@ public class SuggestService {
      */
     private Suggestion one(String system, String userMessage, CatalogModel catalog,
                            Vocabulary vocabulary, String loginStep, String intent,
-                           VariationPlanner.Variation variation) {
+                           VariationPlanner.Variation variation, int repairs) {
         List<String> log = new ArrayList<>();
 
         String draft = settle(llm.ask(system, userMessage), loginStep, catalog, vocabulary,
@@ -123,7 +146,7 @@ public class SuggestService {
         int attempts = 1;
         log.add(describe(attempts, result));
 
-        while (!result.valid() && attempts <= maxRepairs) {
+        while (!result.valid() && attempts <= repairs) {
             // The repair turn carries the draft and the verdict, not the
             // original task: the model already knows what it was asked for and
             // repeating it invites a fresh scenario instead of a fix.
@@ -276,7 +299,7 @@ public class SuggestService {
                     Suggestion suggestion = one(
                             system,
                             prompts.user(catalogYaml, intent, loginStep, variation),
-                            catalog, vocabulary, loginStep, intent, variation);
+                            catalog, vocabulary, loginStep, intent, variation, maxRepairs);
                     done[index] = variation == null
                             ? new Scenario(index, "Senaryo " + (index + 1),
                                     Map.of(), List.of(), List.of(), suggestion)
