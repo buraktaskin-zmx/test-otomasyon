@@ -48,15 +48,40 @@ export function useValidation(
   originRef.current = origin;
   onResultRef.current = onResult;
 
-  const validateNow = useCallback(async (): Promise<boolean> => {
-    const currentFeature = featureRef.current;
+  /**
+   * Validates what the editor holds now — or what `just` says, for a caller
+   * holding values React has not committed yet.
+   *
+   * Not a convenience. Both refs are assigned DURING RENDER, so a caller
+   * that updates state and then calls this in the same tick reads the values
+   * from BEFORE the update: React has not re-rendered, so the refs still
+   * point at the previous scenario and the previous screen. That is exactly
+   * what happened on the generate path — the new scenario went into the
+   * editor while the panel rendered the PREVIOUS draft's errors, line
+   * numbers and all. A valid scenario displayed "3 hata" against steps that
+   * were no longer on screen, which is the worst kind of wrong: the tool
+   * disagreeing with itself in front of the analyst.
+   *
+   * BOTH values have to be passed, not just the text. `pinOrigin` is also
+   * plain state (useOrigin.ts:16), so a generation that switches screens
+   * would otherwise check the new scenario against the OLD catalog and
+   * report every label as unknown.
+   *
+   * The debounced path never hit this, because 700 ms is long after the
+   * render. `app.js` never hit it either: it wrote `el.editor.value`
+   * straight to the DOM and read it back, so there was nothing to be stale.
+   * The bug arrived with the port to controlled state — which is why the
+   * fix lives here, where the next caller will see it.
+   */
+  const validateNow = useCallback(async (just?: { feature: string; origin: Origin }): Promise<boolean> => {
+    const currentFeature = just?.feature ?? featureRef.current;
     if (!currentFeature.trim()) {
       setErrors([]);
       setState({ kind: "empty" });
       return false;
     }
 
-    const result = await validateScenario(currentFeature, originRef.current);
+    const result = await validateScenario(currentFeature, just?.origin ?? originRef.current);
     if (!result.ok) {
       if (result.status === 503) {
         setErrors([]);

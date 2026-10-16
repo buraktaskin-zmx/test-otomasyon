@@ -196,7 +196,10 @@ export function WorkspaceView({
       clearBatch();
       origin.pinOrigin(generatedOrigin);
       setFeature(generatedFeature);
-      void validation.validateNow();
+      // Both values passed explicitly: neither setFeature nor pinOrigin has
+      // been committed yet, so validateNow's refs still hold the previous
+      // scenario and the previous screen. See useValidation.validateNow.
+      void validation.validateNow({ feature: generatedFeature, origin: generatedOrigin });
     },
     [clearBatch, origin, validation],
   );

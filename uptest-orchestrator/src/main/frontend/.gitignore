@@ -1,5 +1,10 @@
 # Installed from the public registry, which the VDI can reach through
 # gmproxy.kfs.local:8080 (measured 2026-10-07, see docs/E2E-CERCEVE-DEGERLENDIRME.md).
-# The BUILD OUTPUT is not ignored: ../resources/static/ui is what Spring serves,
-# and the VDI is expected to be able to run the jar without building the UI first.
+#
+# The BUILD OUTPUT used to be committed so the VDI could run the jar without
+# npm. It no longer is — ../resources/static/ui is ignored by the ROOT
+# .gitignore, which carries the reasoning and the one-time `git rm --cached`
+# this needed. Consequence worth repeating here, next to the thing that
+# produces it: `npm run build` must run BEFORE `mvn install`, or the jar ships
+# without a UI.
 node_modules/
