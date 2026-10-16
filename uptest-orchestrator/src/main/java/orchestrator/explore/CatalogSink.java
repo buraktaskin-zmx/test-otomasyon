@@ -185,6 +185,151 @@ public class CatalogSink {
     }
 
     /**
+     * One value the screen SHOWS but nobody types.
+     *
+     * The catalog grew up around data-entry screens — fill the fields, press
+     * Devam, confirm — and {@code note_field} carries that shape in its bones:
+     * it asks for a type to drive and a list to choose from. A read-only screen
+     * (Banko "Detay", any summary) has neither, so an agent walking one had
+     * nowhere to put what it saw and recorded NOTHING. The draft then came back
+     * with an empty {@code fields} block, which {@link
+     * orchestrator.catalog.CatalogModel#parse} treats as unparseable — a
+     * correct walk of a real screen reported as a broken catalog.
+     *
+     * Worth being precise about where the fault was: CATALOG_RULES already told
+     * the agent that a read-only detail screen is a summary screen, and the
+     * agent already obeyed — it called {@code note_confirmation} with all ten
+     * labels. They matched no noted field, so every one of them was reported as
+     * "the walk missed this". The walk missed nothing; the container had no
+     * shelf for it. The rule only became real once it became a tool.
+     *
+     * The value is used and then THROWN AWAY. A catalog carries no test data
+     * (SCHEMA.md) and this must not be the hole in that rule: "15,00 TL" is
+     * this record's amount, not this screen's. What it is kept for is the one
+     * thing the label cannot say — which KIND of value the field holds, and
+     * therefore which verify step a scenario must use. {@code verify ... has
+     * amount} normalises "1.250,50"; {@code verify ... field equals} compares
+     * it letter by letter. Reading that off the value is deterministic, which
+     * is why it happens here rather than being asked of the model.
+     */
+    @Tool(name = "note_display",
+            description = "Record ONE value the screen DISPLAYS but nobody types — a row of a "
+                    + "detail, summary or confirmation screen. Call it as you read each one. On a "
+                    + "screen with nothing to fill in, these ARE the catalog: note_field has "
+                    + "nothing to record there, so without this call the walk produces nothing.")
+    public String noteDisplay(
+            @ToolParam(description = "The label printed beside the value, WITHOUT the value itself "
+                    + "— \"Ödeme Tutarı\", not \"Ödeme Tutarı 15,00 TL\".") String label,
+            @ToolParam(description = "The value printed next to it, exactly as shown, e.g. "
+                    + "\"15,00 TL\" or \"11/09/2026\". It is NOT written into the catalog: it only "
+                    + "says what KIND of value this field holds, which decides how a scenario is "
+                    + "allowed to check it.") String value) {
+
+        if (label == null || label.isBlank()) {
+            return "A displayed value needs a label. Nothing was recorded.";
+        }
+        String key = withoutValue(label.trim(), value);
+
+        // A field already noted while FILLING the form, seen again on the
+        // confirmation screen, is not a new field — it is the old one, now
+        // proven verifiable. Overwriting it would throw away the type that was
+        // read off the live control and the options that cost a click to learn,
+        // and replace them with a guess made from one printed value.
+        String known = knownLabel(key);
+        if (known != null) {
+            markVerifiable(List.of(known));
+            return "\"" + known + "\" was already recorded; marked verifiable. Continue.";
+        }
+
+        String type = displayType(value);
+        noted.put(key, new Field(key, type, List.of(), true, true, null, "", ""));
+        return "Noted \"" + key + "\" as a displayed " + type
+                + " (" + noted.size() + " fields so far). Continue.";
+    }
+
+    /**
+     * The noted field this label names, matching exactly or bar case and
+     * spacing — and deliberately NOT by prefix, which {@link #keyOf} does.
+     *
+     * The prefix rule earns its keep in note_confirmation, where the agent
+     * reports one run of text ("Bayi Kodu 93002") and the label has to be found
+     * inside it. Here the value arrives as its own argument, so {@link
+     * #withoutValue} removes it exactly and there is nothing left to guess at.
+     *
+     * The difference matters because the COST of a wrong match is not the same
+     * in the two places. In note_confirmation a wrong match sets a flag: one
+     * extra assertion, never a wrong value. Here it decides whether a field is
+     * recorded at all, and a prefix rule would quietly fold a real "Durum Kodu"
+     * into an already-noted "Durum" — a field lost with nothing in the draft to
+     * show for it. A duplicate under a slightly wrong label is the better
+     * failure: it is visible to whoever reviews the catalog.
+     */
+    private String knownLabel(String label) {
+        if (noted.containsKey(label)) {
+            return label;
+        }
+        String wanted = loose(label);
+        for (String key : noted.keySet()) {
+            if (loose(key).equals(wanted)) {
+                return key;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The label with its own value peeled off the end.
+     *
+     * A detail screen prints label and value as one run of text, and an agent
+     * reading it reports what it sees — the same honest mistake {@link
+     * #longestPrefix} exists to absorb on the confirmation screen. Here the
+     * value arrives as its own argument, so the repair is exact rather than
+     * heuristic: if the label ends with the value, that tail is the value.
+     */
+    private static String withoutValue(String label, String value) {
+        if (value == null || value.isBlank()) {
+            return label;
+        }
+        String tail = value.trim();
+        if (label.length() > tail.length() && label.endsWith(tail)) {
+            return label.substring(0, label.length() - tail.length()).trim();
+        }
+        return label;
+    }
+
+    /**
+     * Which of the catalog's types a printed value belongs to.
+     *
+     * Deliberately narrow — three answers, and "text" is the default. A wrong
+     * guess here is not cosmetic: it picks the verify step a generated scenario
+     * uses, and `field equals` on an amount compares "1.250,50" letter by
+     * letter against whatever the screen formats. So only shapes that cannot be
+     * anything else are claimed, and everything ambiguous falls through to text,
+     * where the comparison is exact and therefore safe.
+     *
+     * Not guessed from the LABEL, for the same reason VariationPlanner refuses
+     * to: "Fatura No" accepts FTR-2026-0001 on this application.
+     */
+    private static String displayType(String value) {
+        String text = value == null ? "" : value.trim();
+        if (MONEY.matcher(text).matches()) {
+            return "amount";
+        }
+        if (DATE.matcher(text).matches()) {
+            return "date";
+        }
+        return "text";
+    }
+
+    /** Digits with Turkish grouping, then a currency word: "1.250,50 TL". */
+    private static final java.util.regex.Pattern MONEY =
+            java.util.regex.Pattern.compile("-?[0-9][0-9.,]*\\s*(TL|USD|EUR|GBP|₺|\\$|€)");
+
+    /** gg/aa/yyyy, the only date format these screens print. */
+    private static final java.util.regex.Pattern DATE =
+            java.util.regex.Pattern.compile("[0-3][0-9]/[0-1][0-9]/[12][0-9]{3}");
+
+    /**
      * The confirmation screen, read in ONE call at the one moment it is visible.
      *
      * verifiable started as an argument of note_field and came back empty every
@@ -216,15 +361,34 @@ public class CatalogSink {
                     + "echoes none of the values, carry on.";
         }
 
+        // Asked BEFORE marking, because markVerifiable can only flag fields
+        // that already exist: with none noted, every label comes back unknown.
+        boolean nothingNotedYet = noted.isEmpty();
         List<String> unknown = markVerifiable(labels);
+
+        // Nothing was noted all walk, and now a screen full of labels. That is
+        // not a walk that missed fifteen fields — it is a screen with nothing
+        // to fill in, where note_field had nothing to record and was rightly
+        // never called. Telling the agent it "missed" them sends it back to
+        // look for form controls that do not exist; what it needs is the tool
+        // that fits what it is actually looking at.
+        if (nothingNotedYet) {
+            return "This screen only DISPLAYS values — nothing was filled in on the way here, so "
+                    + "there is nothing to mark verifiable yet. Record each row with note_display "
+                    + "instead, giving the label and the value printed beside it separately: "
+                    + String.join(", ", unknown)
+                    + ". Those become the catalog for this screen. Then carry on.";
+        }
 
         StringBuilder reply = new StringBuilder();
         reply.append(countVerifiable()).append(" field(s) marked verifiable");
         if (!unknown.isEmpty()) {
-            reply.append(". These are on the confirmation screen but were never recorded with "
-                            + "note_field, so the walk missed them: ")
+            reply.append(". These are on the confirmation screen but were never recorded, so the "
+                            + "walk missed them: ")
                     .append(String.join(", ", unknown))
-                    .append(" — record each one now with note_field");
+                    .append(" — record each one now with note_display, which takes the label and "
+                            + "the value printed beside it (there is nothing to type into on this "
+                            + "screen, so note_field is not the tool for it)");
         }
         return reply.append(". Then carry on.").toString();
     }
@@ -349,7 +513,8 @@ public class CatalogSink {
      */
     @Tool(name = "submit_catalog", returnDirect = true,
             description = "Finish the task. Call this exactly once, after you have noted every field "
-                    + "with note_field. It closes the catalog with how the screen is reached and what "
+                    + "with note_field (things you fill in) or note_display (things the screen only "
+                    + "shows you). It closes the catalog with how the screen is reached and what "
                     + "the flow presses. Calling it ends the task immediately.")
     public String submitCatalog(
             @ToolParam(description = "NGC or NGI") String app,
@@ -378,7 +543,7 @@ public class CatalogSink {
                     + "chose, exactly as it is printed. Pass \"\" if the button opened the form "
                     + "straight away.") String entryChoice,
             @ToolParam(required = false, description = "Only for fields you did NOT already record "
-                    + "with note_field. Normally leave this out.") List<Field> fields,
+                    + "with note_field or note_display. Normally leave this out.") List<Field> fields,
             @ToolParam(required = false, description = "Buttons the flow presses, e.g. Devam, Onay")
             List<String> buttons,
             @ToolParam(description = "The success text on the RESULT screen, verbatim. Pass \"\" ONLY "

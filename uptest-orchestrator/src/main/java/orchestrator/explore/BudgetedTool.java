@@ -82,18 +82,25 @@ final class BudgetedTool implements ToolCallback {
     /**
      * The recording tools, gated until the required steps have been taken.
      *
-     * Only these two. Blocking the browser tools would leave the agent unable
-     * to do the very thing it is being asked to do; blocking the recording is
-     * what makes a skipped step impossible to write past.
+     * Only these. Blocking the browser tools would leave the agent unable to do
+     * the very thing it is being asked to do; blocking the recording is what
+     * makes a skipped step impossible to write past.
+     *
+     * Membership also keeps {@link #tick} off them, and that is the half worth
+     * remembering: a required caption named in a note_* argument would
+     * otherwise be ticked off as "touched" by the act of DESCRIBING it. A
+     * caption can only be ticked by a tool that actually drove the page.
      */
     private static final Set<String> RECORDING =
-            Set.of("note_field", "note_confirmation", "submit_catalog");
+            Set.of("note_field", "note_display", "note_confirmation", "submit_catalog");
 
     private static final String UNMENTIONED = """
             "%s" is a field of this form, and the instruction never mentions it.
             Fields it does not mention are to be READ and RECORDED, never filled,
-            ticked, chosen from or pressed. Record it with note_field if you have
-            not already, and move on to the next field the instruction DOES name.
+            ticked, chosen from or pressed. Record it if you have not already —
+            note_field if it is something you could fill in, note_display if the
+            screen only shows it to you — and move on to the next field the
+            instruction DOES name.
             """;
 
     /**

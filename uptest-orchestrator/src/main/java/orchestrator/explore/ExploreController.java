@@ -613,9 +613,24 @@ public class ExploreController {
 
         CatalogModel model = CatalogModel.parse(yaml).orElse(null);
         if (model == null) {
-            found.add("YAML ayristirilamadi ya da 'fields' bolumu yok.");
+            // CatalogModel.diagnose exists precisely so this line does not have
+            // to guess: it re-reads the draft on the failure path only and
+            // names the actual reason, down to SnakeYAML's line and column.
+            // "ayristirilamadi ya da 'fields' bolumu yok" covered both a tab in
+            // the indentation and an empty field list with one shrug, and the
+            // analyst could act on neither.
+            found.add("Katalog okunamadi: " + CatalogModel.diagnose(yaml));
             return found;
         }
+
+        // Every field readonly means nobody types anything here: a detail or
+        // summary screen, reached in order to be READ. It has no form to fill,
+        // no final button and no transaction to complete — so the
+        // success_message check further down, which exists to catch a
+        // data-entry walk that stopped at the confirmation screen, would be
+        // reporting the absence of something this screen never had.
+        boolean readOnlyScreen = !model.fields().isEmpty()
+                && model.fields().stream().allMatch(CatalogModel.CatalogField::readonly);
 
         for (String label : model.labels()) {
             CatalogModel.CatalogField field = model.field(label).orElseThrow();
@@ -697,7 +712,7 @@ public class ExploreController {
         // was never seen. A scenario built from this fills the form, presses
         // Devam, verifies the summary, and never presses the final button at
         // all.
-        if (yaml.contains("verifiable") && !yaml.contains("success_message")) {
+        if (!readOnlyScreen && yaml.contains("verifiable") && !yaml.contains("success_message")) {
             found.add("Alanlar verifiable ama success_message yok. Ajan onay ekranini okudu ve "
                     + "orada durdu: son butona basmadi ya da sonuc ekrani gelmedi. Bu katalogtan "
                     + "uretilen senaryo islemin tamamlandigini KANITLAMAZ, yalnizca onay ekranini "
@@ -727,16 +742,24 @@ public class ExploreController {
     private static final String CATALOG_RULES = """
 
             OUTPUT: you do not write the catalog as text. You build it with
-            three tools as you go.
+            four tools as you go.
 
-            1. note_field — call it for EVERY field, right after you examine
-               it, before moving on. One call per field. Do not save them up
-               for the end: what you record now is what the catalog will say,
-               and a run that ends early still keeps what you noted.
-            2. note_confirmation — call it ONCE when a screen shows your values
+            1. note_field — call it for EVERY field you can FILL IN, right
+               after you examine it, before moving on. One call per field. Do
+               not save them up for the end: what you record now is what the
+               catalog will say, and a run that ends early still keeps what
+               you noted.
+            2. note_display — call it for every value the screen only SHOWS
+               you: a row of a detail screen, a summary line, a field the
+               application filled in itself. Give the label and the value
+               printed beside it as two separate arguments. Some screens have
+               nothing to fill in at all — a detail screen reached to be read.
+               On those, note_field has nothing to record and these calls ARE
+               the catalog; without them the walk produces an empty one.
+            3. note_confirmation — call it ONCE when a screen shows your values
                back to you, BEFORE you press the final confirm. See the rule
                below; a catalog without this call is half a catalog.
-            3. submit_catalog — call it ONCE at the very end, with how the
+            4. submit_catalog — call it ONCE at the very end, with how the
                screen is reached and what the flow presses. If you passed a
                confirmation screen and did not call note_confirmation, its
                labels go here in "confirmedLabels" — do not let them fall on
@@ -824,8 +847,10 @@ public class ExploreController {
                 gone by then.
               * If you were not instructed to submit you never reach that
                 screen: do not call it, and do not submit just to find out.
-              * A read-only detail screen IS a summary screen — call
-                note_confirmation with its labels too.
+              * A read-only detail screen IS a summary screen, but there is
+                nothing on it you filled in, so note_confirmation has nothing
+                to flag. Record its rows with note_display instead — label and
+                printed value, one call each.
             - "navigation" must describe how to REACH the screen, step by step,
               INCLUDING the parts that were not obvious:
               * if you had to switch a tab or a filter before the list showed

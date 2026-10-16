@@ -222,6 +222,32 @@ at all. On DBS Fatura Oluştur the app looks "Bayi Ünvanı" up from the chosen
 "Bayi Kodu"; a scenario that tries to type into it waits 30 s for an element
 that will never accept input, and the run is wasted.
 
+### A screen with nothing to fill in
+
+Not every flow is a form. Banko's "Detay" screen is reached in order to be
+READ: pick a record out of a list, open it, and check what the application
+shows. There is nothing to type into and no final button to press.
+
+Such a screen is catalogued as fields that are all `readonly: true` and
+`verifiable: true`. Its `navigation` block carries the whole route to the
+record — `entry_tab`, `entry_row`, `entry_button` — and it has no
+`success_message`, because no transaction is completed.
+
+The MCP agent records these with `note_display`, giving the label and the value
+printed beside it as separate arguments. **The value is not written to the
+catalog.** "15,00 TL" is this record's amount, not this screen's, and a catalog
+carries no test data. It is read for one purpose: to decide the field's `type`,
+which is what picks the verify verb in the table below — `verify ... has amount`
+normalises "1.250,50", while `verify ... field equals` compares it letter by
+letter.
+
+This shape had to be added. `note_field` asks for a type to drive and a list to
+choose from, so on a read-only screen there was nothing it could record; the
+draft came back with an empty `fields` block, which `CatalogModel.parse` treats
+as unreadable. A correct walk of a real screen was reported as a broken
+catalog. `ExploreController.problems()` now also recognises the shape: a catalog
+whose fields are all readonly is not asked for a `success_message`.
+
 `type` maps directly to vocabulary verbs:
 
 | `type` | enter with | verify with | select with |
