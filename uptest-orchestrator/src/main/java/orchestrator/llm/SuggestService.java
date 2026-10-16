@@ -117,7 +117,8 @@ public class SuggestService {
                            VariationPlanner.Variation variation) {
         List<String> log = new ArrayList<>();
 
-        String draft = settle(llm.ask(system, userMessage), loginStep, catalog, vocabulary, variation);
+        String draft = settle(llm.ask(system, userMessage), loginStep, catalog, vocabulary,
+                variation, intent);
         ValidationResult result = validator.validate(draft, vocabulary, catalog, intent);
         int attempts = 1;
         log.add(describe(attempts, result));
@@ -127,7 +128,7 @@ public class SuggestService {
             // original task: the model already knows what it was asked for and
             // repeating it invites a fresh scenario instead of a fix.
             draft = settle(llm.ask(system, prompts.repair(draft, result)), loginStep, catalog,
-                    vocabulary, variation);
+                    vocabulary, variation, intent);
             result = validator.validate(draft, vocabulary, catalog, intent);
             attempts++;
             log.add(describe(attempts, result));
@@ -152,16 +153,24 @@ public class SuggestService {
      * navigation step; no two of them touch the same line. EntryRow may DELETE a
      * line, which shifts the numbers the validator reports -- harmless only
      * because it runs before the validation, never between its passes.
+     *
+     * ReadOnlyAssertion goes LAST because it is the only one that APPENDS: it
+     * has to find the final step of the finished draft, and OutlineFlattener
+     * can still be rewriting lines above it. It is also the only one that reads
+     * the analyst's intent, which is what tells it which field to assert about.
      */
     private static String settle(String answer, String loginStep, CatalogModel catalog,
-                                 Vocabulary vocabulary, VariationPlanner.Variation variation) {
-        return OutlineFlattener.apply(
-                EntryRow.apply(
-                        DateVerb.apply(
-                                LoginStep.apply(LlmOutputCleaner.clean(answer), loginStep),
+                                 Vocabulary vocabulary, VariationPlanner.Variation variation,
+                                 String intent) {
+        return ReadOnlyAssertion.apply(
+                OutlineFlattener.apply(
+                        EntryRow.apply(
+                                DateVerb.apply(
+                                        LoginStep.apply(LlmOutputCleaner.clean(answer), loginStep),
+                                        catalog, vocabulary),
                                 catalog, vocabulary),
-                        catalog, vocabulary),
-                variation);
+                        variation),
+                catalog, vocabulary, intent);
     }
 
     /* =========================== batch generation ========================== */

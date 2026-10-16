@@ -629,8 +629,7 @@ public class ExploreController {
         // success_message check further down, which exists to catch a
         // data-entry walk that stopped at the confirmation screen, would be
         // reporting the absence of something this screen never had.
-        boolean readOnlyScreen = !model.fields().isEmpty()
-                && model.fields().stream().allMatch(CatalogModel.CatalogField::readonly);
+        boolean readOnlyScreen = model.readOnlyScreen();
 
         for (String label : model.labels()) {
             CatalogModel.CatalogField field = model.field(label).orElseThrow();

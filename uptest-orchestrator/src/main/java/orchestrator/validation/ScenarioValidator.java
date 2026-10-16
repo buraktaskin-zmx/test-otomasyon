@@ -112,7 +112,7 @@ public class ScenarioValidator {
         checkOutlineIsUsed(featureText, errors);
 
         if (everyStepIsKnown) {
-            checkSomethingIsAsserted(steps, vocabulary, errors);
+            checkSomethingIsAsserted(steps, vocabulary, catalog, errors);
         }
 
         if (everyStepIsKnown && catalog != null) {
@@ -143,12 +143,35 @@ public class ScenarioValidator {
      * way out is the honest one: assert a value the request names, or use a
      * check that needs no value.
      *
-     * Deliberately not gated on the catalog. Whether a scenario tests anything
-     * is a fact about the scenario, and a flow with no catalog is no more
-     * entitled to assert nothing.
+     * Deliberately not gated on HAVING a catalog. Whether a scenario tests
+     * anything is a fact about the scenario, and a flow with no catalog is no
+     * more entitled to assert nothing. The catalog is read for one thing only:
+     * to recognise the one screen where this rule can have no legal answer.
      */
     private static void checkSomethingIsAsserted(List<Step> steps, Vocabulary vocabulary,
-                                                 List<ValidationError> errors) {
+                                                 CatalogModel catalog, List<ValidationError> errors) {
+        // A rule whose only escape is a step this deployment does not serve is
+        // not a rule, it is a deadlock. On a read-only screen every
+        // value-bearing assertion is already refused by
+        // checkAssertionsAreEarned, so if the executor publishes no value-free
+        // assertion either, there is NOTHING the model can write — and raising
+        // the error turns a reported problem into an unproducible scenario.
+        //
+        // This is the date-verb lesson applied one level up: a CORRECTION must
+        // not outrun the deployment, and neither must a RULE. The orchestrator
+        // and the executors restart separately, and this exact gap was walked
+        // into once already — the rule shipped before the step it depends on.
+        //
+        // A scenario that asserts nothing is bad. Being unable to produce one
+        // at all is worse, and it is the analyst who pays for it.
+        if (readOnlyScreen(catalog) && waysToAssert(vocabulary).isEmpty()) {
+            System.out.println("[uptest] validator: salt-okunur ekran, ama bu executor "
+                    + "deger gerektirmeyen hicbir dogrulama yayinlamiyor "
+                    + "(verify ... field is masked) — 'hic dogrulama yok' kurali atlandi. "
+                    + "Executor'i yeniden derleyip baslatin, sonra vocabulary'yi tazeleyin.");
+            return;
+        }
+
         long lastLine = 0;
         for (Step step : steps) {
             lastLine = step.getLocation().getLine();
@@ -172,6 +195,11 @@ public class ScenarioValidator {
      */
     private static List<String> waysToAssert(Vocabulary vocabulary) {
         return EARNABLE_WITHOUT_FILLING.stream().filter(vocabulary::has).toList();
+    }
+
+    /** Null-safe {@link CatalogModel#readOnlyScreen()}; no catalog means unknown. */
+    private static boolean readOnlyScreen(CatalogModel catalog) {
+        return catalog != null && catalog.readOnlyScreen();
     }
 
     /**
@@ -241,7 +269,8 @@ public class ScenarioValidator {
             // reported by the check above and one complaint is enough.
             if (catalog.field(label).isPresent()) {
                 errors.add(ValidationError.unearnedAssertion(
-                        step.getLocation().getLine(), text, label, value));
+                        step.getLocation().getLine(), text, label, value,
+                        waysToAssert(vocabulary)));
             }
         }
     }

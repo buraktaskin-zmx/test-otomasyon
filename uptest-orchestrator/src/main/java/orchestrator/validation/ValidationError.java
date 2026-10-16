@@ -41,13 +41,30 @@ public record ValidationError(
     /**
      * An assertion on a value the scenario never typed and the analyst never
      * supplied — so the model made it up.
+     *
+     * This message used to offer three ways out, and the middle one was
+     * "delete the verification". The model read it and did exactly that: on a
+     * read-only screen, where nothing is ever filled in and so NO value-bearing
+     * assertion can be earned, deleting was the only route it was shown to a
+     * valid scenario. What came back checked nothing at all.
+     *
+     * That route is now itself a validation error, so advertising it was
+     * telling the model to walk into the other rule. It is gone, and the third
+     * way out — an assertion that needs no value — takes its place, with the
+     * patterns attached as suggestions so the repair prompt actually prints
+     * them. {@code llm.max-repairs} is 1, which means the errors raised on the
+     * SECOND attempt never reach the model: the way out has to be offered here,
+     * on the first, or it is never offered at all.
      */
-    public static ValidationError unearnedAssertion(long line, String step, String label, String value) {
+    public static ValidationError unearnedAssertion(long line, String step, String label, String value,
+                                                    List<String> valueFreeChecks) {
         return new ValidationError(line, step,
                 "\"" + label + "\" bu senaryoda doldurulmadi ve beklenen deger \"" + value
                         + "\" istekte de yok — uygulamanin turettigi bir degeri tahmin etmeyin. "
-                        + "Ya alani doldurun, ya bu dogrulamayi silin, ya da beklenen degeri isteğe yazin.",
-                List.of());
+                        + "Ya alani doldurun, ya beklenen degeri istege yazin, ya da deger "
+                        + "gerektirmeyen bir kontrol kullanin. Bu dogrulamayi SILMEYIN: hicbir "
+                        + "sey dogrulamayan bir senaryo da gecersizdir.",
+                valueFreeChecks);
     }
 
     /** A confirmation message rewritten instead of copied. */

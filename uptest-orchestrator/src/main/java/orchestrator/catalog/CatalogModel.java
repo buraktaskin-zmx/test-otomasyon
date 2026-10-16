@@ -288,4 +288,20 @@ public final class CatalogModel {
     public List<CatalogField> fields() {
         return List.copyOf(byLabel.values());
     }
+
+    /**
+     * A screen nobody types into: every field is {@code readonly}, so the
+     * application owns every value on it.
+     *
+     * The shape of a detail or summary screen — reached in order to be READ,
+     * with no form to fill, no final button and no transaction to complete.
+     * Two callers need to recognise it and they must not drift apart:
+     * {@code ExploreController.problems()} stops demanding a
+     * {@code success_message} for such a catalog, and {@code ScenarioValidator}
+     * stops demanding an assertion it cannot offer a way to write.
+     */
+    public boolean readOnlyScreen() {
+        return !byLabel.isEmpty()
+                && byLabel.values().stream().allMatch(CatalogField::readonly);
+    }
 }

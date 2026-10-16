@@ -1,5 +1,6 @@
 package orchestrator.validation;
 
+import orchestrator.catalog.CatalogModel;
 import orchestrator.vocabulary.Vocabulary;
 import orchestrator.vocabulary.VocabularyStep;
 import org.junit.jupiter.api.DisplayName;
@@ -76,7 +77,51 @@ class NothingAssertedTest {
         });
     }
 
+    @Test
+    @DisplayName("on a read-only screen the rule stays silent when the executor offers no way out")
+    void noRuleWithoutAnEscape() {
+        // Every value-bearing assertion is already refused here (nothing is
+        // filled in), so with no value-free assertion published there is
+        // NOTHING the model could write. Raising the error would turn a
+        // reported problem into an unproducible scenario — which is exactly
+        // what happened on the run that prompted this: the rule shipped before
+        // the step it depends on.
+        ValidationResult result = validator.validate(
+                WALKS_THERE_AND_STOPS, noValueFreeAssertions(), readOnlyScreen());
+
+        assertThat(result.errors())
+                .noneMatch(error -> error.message().contains("hicbir sey dogrulamiyor"));
+    }
+
+    @Test
+    @DisplayName("but it still fires on a read-only screen once there IS a way out")
+    void theGuardDoesNotOverSuppress() {
+        ValidationResult result = validator.validate(
+                WALKS_THERE_AND_STOPS, full(), readOnlyScreen());
+
+        assertThat(result.errors())
+                .anyMatch(error -> error.message().contains("hicbir sey dogrulamiyor"));
+    }
+
     /* ----------------------------------------------------------------- */
+
+    /** A detail screen: one field, readonly, nothing to fill in. */
+    private static CatalogModel readOnlyScreen() {
+        return CatalogModel.parse("""
+                app: NGC
+                flow: Odeme Detay
+                fields:
+                  - label: "Alıcı Hesabı"
+                    type: text
+                    readonly: true
+                    verifiable: true
+                """).orElseThrow();
+    }
+
+    /** An executor serving no assertion that works without a fill. */
+    private static Vocabulary noValueFreeAssertions() {
+        return vocabulary(NAVIGATION_STEPS + "|verify the {string} field equals {string}");
+    }
 
     private static Vocabulary full() {
         return vocabulary(NAVIGATION_STEPS
