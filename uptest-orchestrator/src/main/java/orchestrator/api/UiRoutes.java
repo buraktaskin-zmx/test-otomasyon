@@ -26,6 +26,24 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * Both spellings are registered because a person types /ui and a link carries
  * /ui/, and a redirect between them would be one more hop to explain.
  *
+ * THE ROOT NOW REDIRECTS HERE. It used to serve the vanilla UI, and for a
+ * while both were live at once — which is how a whole debugging session was
+ * spent on screenshots of localhost:8035 while the React app at /ui already
+ * behaved correctly. Two fixes were written into static/app.js that
+ * MultiPanel.tsx had carried all along. One address, one answer.
+ *
+ * A redirect rather than a forward, and that is deliberate: the browser's bar
+ * must end up reading /ui, or the next screenshot is ambiguous again. The
+ * vanilla files are not deleted — static/app.css is still the shared
+ * stylesheet React imports, and keeping app.js next to it makes going back a
+ * one-line change here.
+ *
+ * Registered explicitly rather than left to Spring Boot's
+ * WelcomePageHandlerMapping, which would otherwise keep answering "/" with
+ * classpath:/static/index.html. A view controller on "/" takes precedence over
+ * the welcome page, so the old entry point stops being reachable by accident
+ * while the file stays on disk.
+ *
  * DELIBERATELY NOT A CATCH-ALL. The tempting SPA rule — forward every unmatched
  * path under /ui/** to index.html — is wrong here on two counts. This app does
  * client-side navigation with useState (App.tsx holds a View in state; there is
@@ -41,6 +59,7 @@ class UiRoutes implements WebMvcConfigurer {
 
     @Override
     public void addViewControllers(ViewControllerRegistry registry) {
+        registry.addViewController("/").setViewName("redirect:/ui/");
         registry.addViewController("/ui").setViewName("forward:/ui/index.html");
         registry.addViewController("/ui/").setViewName("forward:/ui/index.html");
     }

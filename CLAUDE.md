@@ -4,11 +4,90 @@ AI test automation for Yapı Kredi internet banking. An LLM generates Gherkin
 scenarios using a fixed, human-written step vocabulary; it produces only
 `.feature` files, never step implementations.
 
+## Working rules — never skipped
+
+These come first because they are standing orders, not navigation. Everything
+below them is detail about THIS project; these are how the work is done at all.
+
+### 1. Understand the Existing Codebase First
+
+Before changing code, understand the relevant parts of the project.
+
+- Inspect the existing implementation, call hierarchy, dependencies, and related tests before editing.
+- Trace the complete flow when working on bugs, including frontend, API, service, repository, and database layers where applicable.
+- Reuse existing utilities, patterns, and conventions instead of introducing new ones unnecessarily.
+- Do not guess how a function, API, or dependency behaves. Inspect its implementation or documentation.
+- If the root cause is unclear, investigate before proposing a fix.
+
+### 2. Preserve Existing Behavior
+
+- Treat existing behavior as intentional unless there is evidence of a bug or a requirement to change it.
+- Identify potential regressions before modifying shared code.
+- Preserve backward compatibility unless the task explicitly requires breaking changes.
+- Consider edge cases, null values, validation, error handling, and concurrency when relevant.
+- Do not silently change API contracts, database schemas, configuration, or security behavior.
+
+### 3. Verify Before Claiming Success
+
+- Run the most relevant tests and build commands available.
+- For bug fixes, verify that the original problem is resolved and existing behavior remains intact.
+- Review the final diff for unrelated changes, formatting noise, accidental deletions, and generated files.
+- If tests cannot run, explain why and identify what remains unverified.
+- Never claim that tests passed, a build succeeded, or a bug was fixed unless the result has been verified.
+
+> **In THIS project Claude does not run the tests** — see *Execution model*
+> below. Nothing here reaches the banking environment, so "if tests cannot run,
+> explain why and identify what remains unverified" is the DEFAULT case, not the
+> exception. What can be verified locally is compilation and pure-Java logic;
+> everything that needs a browser is verified by the user and reported back.
+> Never describe a browser-dependent fix as working before that report arrives.
+
+### 4. Debug Systematically
+
+- Start with the observed symptoms, logs, stack traces, and reproducible steps.
+- Form a hypothesis and gather evidence before changing code.
+- Identify the root cause rather than masking the symptoms.
+- Prefer the smallest fix that addresses the root cause.
+- Avoid speculative changes and multiple unrelated fixes in a single patch.
+- After implementing a fix, explain the root cause and why the solution works.
+
+> Concretely here: diagnose by measuring, not guessing — print container and
+> element counts before assuming why a locator fails. Prove the bug, fix it,
+> prove it's fixed.
+
+### 5. Security and Sensitive Data
+
+- Never hardcode secrets, passwords, access tokens, private keys, or credentials.
+- Do not weaken authentication, authorization, input validation, or security checks to make tests pass.
+- Follow the project's existing security practices and least-privilege principles.
+- Avoid logging sensitive data.
+- Flag security vulnerabilities discovered during implementation, even if they are outside the immediate task.
+
+> Two directories in this repo are exactly this rule made concrete:
+> `DO_NOT_COMMIT/` (page objects carrying real CIF, userid and passwords) and
+> `.mcp-browser-profile/` (a logged-in bank session cookie). Never read, expose
+> or commit either; both `.gitignore` and `.dockerignore` guard them.
+
+### 6. Communication and Final Summary
+
+Before substantial changes, provide a short plan with clear verification criteria.
+
+After completing the task, summarize:
+
+- **Root cause:** What was wrong and why.
+- **Changes:** Which files and behaviors were modified.
+- **Verification:** Which tests or commands were actually run and their results.
+- **Risks:** Any known limitations, regressions, or unverified assumptions.
+
+Keep explanations concise and specific. Clearly distinguish verified facts from assumptions.
+
+---
+
 **This file covers the TEST side** — step vocabulary, page objects, Select2
 handling, NGC/NGI rules. Two companion documents own the rest; do not duplicate
 them here:
 
-- **Server side** (orchestrator + executor API, Docker, deployment):
+- **Server side** (orchestrator + executor API, deployment):
   [`uptest-executor/src/main/java/server/CLAUDE.md`](uptest-executor/src/main/java/server/CLAUDE.md)
 - **Goals, deliverables, roadmap:** [`PROJECT.md`](PROJECT.md)
 - **End-to-end flow, beginner level (Turkish):**
@@ -33,8 +112,8 @@ uptest-orchestrator/  UI, validation, dispatch. NEVER runs a test.
 
 One repository and one parent pom, but **two separate running applications**:
 built together, started apart, on their own ports. The orchestrator (`:8035`)
-is the only one analysts reach; executors (`:9035`) answer it alone, inside the
-Docker network. Each executor takes exactly one run at a time, so concurrency
+is the only one analysts reach; executors (`:9035`) answer it alone. Each
+executor takes exactly one run at a time, so concurrency
 comes from adding replicas — and there is no queue: when they are all busy the
 next request is refused outright.
 
@@ -113,15 +192,13 @@ Elsewhere:
 
 **Claude does NOT run the tests.** This local copy is for writing and editing
 code only — nothing here reaches the real banking environment. Real execution
-happens in one of two places, both operated by the user:
-
-- the corporate VDI (IDE / `mvn test`), or
-- the Docker stack on the Linux server (orchestrator UI → executor).
+happens in exactly ONE place, operated by the user: **the corporate VDI**
+(IDE / `mvn test`, or the orchestrator UI driving an executor there).
 
 The loop:
 
 1. Claude writes or edits the code (step definitions, page object, features).
-2. The user runs it on the VDI or the server.
+2. The user runs it on the VDI.
 3. The user brings results back as a screenshot or pasted text (console
    output, stack traces, the Cucumber run panel, the UI's step timeline).
 4. Claude reads those results and continues — diagnosing failures, fixing,
@@ -131,25 +208,33 @@ So: never assume a test was run, never claim a fix works until the user reports
 the result, and don't try to execute Maven/test commands locally. Produce the
 code; the user is the bridge to execution.
 
+**Docker: later.** The repo carries compose files and Dockerfiles, and the
+server-side document describes a container deployment in detail — but it is
+**not a live path**. Docker does not work on the VDI and is not used today.
+Container deployment will be taken up later; until then do not propose a Docker
+step and do not describe one as a way runs happen.
+
 ## Environment notes
 
-**Browser settings come from three env vars** so one jar serves both hosts.
-Defaults reproduce the VDI, so existing IDE runs are unchanged; the container
-overrides all three (see `Hooks.launchOptions`):
+**Browser settings come from three env vars**, read in `Hooks.launchOptions`.
+The defaults ARE the VDI, so nothing has to be set for an ordinary run:
 
-| var | VDI (default) | container |
+| var | default (= the VDI) | meaning |
 |---|---|---|
-| `UPTEST_HEADLESS` | `false` | `true` |
-| `UPTEST_BROWSER_CHANNEL` | `msedge` (system Edge) | *(empty — bundled Chromium)* |
-| `UPTEST_SLOWMO` | `50` | `0` |
+| `UPTEST_HEADLESS` | `false` | a visible browser |
+| `UPTEST_BROWSER_CHANNEL` | `msedge` | the system Edge |
+| `UPTEST_SLOWMO` | `50` | ms between Playwright actions |
+
+They exist because a headless host would need all three overridden. That host
+is the container deployment, which is not live — see *Docker: later* above.
 
 - The VDI also needs `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` on every run config:
-  corporate SSL inspection blocks the Chromium download. The container's
-  Playwright base image ships browsers, so it does not.
+  corporate SSL inspection blocks the Chromium download.
 - `UPTEST_BROWSER_CHANNEL` deliberately does NOT go through the
   blank-means-default helper: *unset* = system Edge, *set-but-empty* = no
-  channel. Routing it back through that helper made `""` unreachable and sent
-  containers hunting for an Edge they do not have.
+  channel, which is the only way to ask for Playwright's bundled Chromium.
+  Routing it back through that helper made `""` unreachable and sent a
+  browserless host hunting for an Edge it did not have.
 - Traces go to the per-run directory the server created
   (`{runDir}/traces/<scenario>.zip`), falling back to `target/traces/` when
   Cucumber was started outside the server (`mvn test`).
@@ -810,21 +895,55 @@ and leave each independently runnable.
   path, which bypasses the classpath selector) — but plain `mvn test` and the
   IDE run gutter stay broken until the directory is renamed.
 
+## UI: React, not the legacy vanilla files
+
+**All new UI work goes to `uptest-orchestrator/src/main/frontend/`** — React 19
++ TypeScript, built by Vite. Not to `static/app.js`.
+
+```
+uptest-orchestrator/src/main/
+├── frontend/                   ← ALL UI WORK HERE
+│   ├── src/workspace/          editor · multi · side (agent, timeline, vocab)
+│   ├── src/history/ hooks/ api/ lib/ ui/ shell/
+│   └── npm run build  ──────►  ../resources/static/ui/
+└── resources/static/
+    ├── app.css                 ← SHARED. React imports it. See below.
+    ├── app.js                  ← FROZEN legacy. Do not edit.
+    └── index.html              ← FROZEN legacy. Do not edit.
+```
+
+Both UIs are served today — `/` was the vanilla one and `/ui` is React
+(`orchestrator/api/UiRoutes.java`). The root now redirects to `/ui` so there is
+one answer to "which screen am I looking at".
+
+- **`app.css` is the exception and it is not legacy.** `frontend/src/main.tsx`
+  imports it directly, so Vite bundles it into `/ui/assets/index-*.css`.
+  React's own stylesheets are only ~79 lines (`root.css` + `theme.css`); every
+  class the TSX uses — `discover-output`, `agent-save`, `s-line` — comes from
+  `app.css`. A change there affects BOTH UIs, and it reaches `/ui` only after a
+  rebuild.
+- **Build:** `cd uptest-orchestrator/src/main/frontend && npm run build`
+  (`tsc --noEmit && vite build`). Output lands in `resources/static/ui/` and is
+  served from the jar. No CDN is contacted at runtime, by design.
+- **`app.js` and `static/index.html` are frozen.** Not deleted — reverting
+  stays cheap — but a fix made there is a fix made twice. Measured: two
+  corrections written into `app.js` were already correct in `MultiPanel.tsx`,
+  and the only one that mattered was in the shared `app.css`. Check the React
+  source before touching anything under `static/`.
+
 ## Conventions
 
 - Communication: Turkish or English. Direct and skeptical, action-oriented,
   copy-pasteable commands.
 - Keep scenarios clean/readable (analysts edit them). Complexity → page object.
 - Generic over hardcoded: derive locators from labels/attributes, not fixed ids.
-- Diagnose by measuring, not guessing (e.g. print container/element counts
-  before assuming why a locator fails). Prove the bug, fix it, prove it's fixed.
 
 ## Sharing between NGC and NGI (common layer)
 
 Goal: share what is genuinely application-independent; keep
 application-specific logic separate.
 
-- **Truly shared (in `common`, done):** the 15 generic steps listed above and
+- **Truly shared (in `common`, done):** the 18 generic steps listed above and
   their logic in `CommonActions`, including `findValueElement`,
   `normalizeAmount`, `assertAmountEquals` — confirmed to work on both apps.
   `navigateTo` is bound to the `#headerMenuUsername` / `.main-nav` header
