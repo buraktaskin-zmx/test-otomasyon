@@ -4,6 +4,7 @@ import orchestrator.catalog.CatalogModel;
 import orchestrator.catalog.CatalogService;
 import orchestrator.executor.ExecutorClient;
 import orchestrator.executor.ExecutorPool;
+import orchestrator.llm.LoginStep;
 import orchestrator.persistence.TestRunEntity;
 import orchestrator.product.ProductService;
 import orchestrator.validation.ScenarioValidator;
@@ -125,6 +126,38 @@ public class RunService {
      *                flow were threaded through here to end.
      */
     public StartOutcome start(String feature, String app, String flow, String intent, String product) {
+        return start(feature, app, flow, intent, product, null, null);
+    }
+
+    /**
+     * Runs a scenario under a login the analyst PICKED rather than one typed
+     * into the scenario text.
+     *
+     * The same {@link LoginStep} the generator uses, at the other end of the
+     * pipeline and for the same reason: NGC takes a cif AND a userid while NGI
+     * takes a customer code alone, the catalog's app key already says which,
+     * and a fact that is known should never be a question. It matters more
+     * here than there. A registered scenario is written once and run by
+     * whoever needs it, so the login is the one part of it that is NOT a
+     * property of the scenario — binding a test to one analyst's credentials
+     * is how a suite stops being shareable.
+     *
+     * Order is load-bearing. The login is written in BEFORE validation, so
+     * what gets checked is what gets dispatched; applying it afterwards would
+     * validate one document and run another, which is the exact disagreement
+     * between the editor and this gate that app, flow, intent and product were
+     * each threaded through here to end. The recorded text is the rewritten
+     * one too, and {@link Redactor} strips the cif out of it on the way to the
+     * database — so a picked login reaches the browser and never the column.
+     *
+     * A blank cif leaves the feature untouched: whatever login it carries is
+     * its own, which is what every caller got before this parameter existed.
+     */
+    public StartOutcome start(String submitted, String app, String flow, String intent, String product,
+                              String cif, String userid) {
+        String login = LoginStep.forApp(app, cif, userid);
+        String feature = login == null ? submitted : LoginStep.apply(submitted, login);
+
         Optional<Vocabulary> vocabulary = vocabularyService.get();
         if (vocabulary.isEmpty()) {
             // Refusing beats validating against an empty vocabulary, which would

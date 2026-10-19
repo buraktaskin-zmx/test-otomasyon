@@ -5,7 +5,8 @@ import type { TreeSelection } from "../../product/ProductTree";
 import { ScenarioDetail } from "../../product/ScenarioDetail";
 import { ScenarioTable } from "../../product/ScenarioTable";
 import type { useProducts } from "../../hooks/useProducts";
-import type { Origin } from "../../api/types";
+import type { useTestUsers } from "../../hooks/useTestUsers";
+import type { Origin, RunLogin } from "../../api/types";
 
 /*
   Kayıtlı Senaryolar — ürün > ekran > senaryo kütüğü.
@@ -23,16 +24,26 @@ import type { Origin } from "../../api/types";
 export function ProductPanel({
   active,
   products,
+  users,
   onRun,
 }: {
   active: boolean;
   products: ReturnType<typeof useProducts>;
-  /** Hands a registered scenario to the ordinary run path. The registry does
-   *  not grow a second way to start a run -- there is one gate, and it
-   *  re-validates. */
-  onRun: (feature: string, origin: Origin) => void;
+  users: ReturnType<typeof useTestUsers>;
+  /** Hands a registered scenario to the ordinary run path, under the login
+   *  picked above it. The registry does not grow a second way to start a run
+   *  -- there is one gate, and it re-validates. */
+  onRun: (feature: string, origin: Origin, login?: RunLogin) => void;
 }) {
   const [selection, setSelection] = useState<TreeSelection | null>(null);
+
+  /* The login this screen's scenarios run under. It belongs to the PANEL,
+     not to the scenario: a file in products/ is written once and run by
+     whoever needs it, so a cif inside it would bind a shared test to one
+     analyst. Kept across scenario and screen changes on purpose -- picking
+     a user once and walking a screen's fifty rows is the whole point. */
+  const [loginId, setLoginId] = useState("");
+  const chosenUser = loginId ? users.byId(loginId) : null;
 
   /* Which tree nodes are open. Kept apart from `selection` because the first
      version expanded by selecting and so could never close anything -- with
@@ -122,9 +133,52 @@ export function ProductPanel({
                 ) : null}
               </div>
 
-              <h2 className="registry-title">
-                {selection.flow ?? registry?.name ?? selection.product}
-              </h2>
+              <div className="registry-titlebar">
+                <h2 className="registry-title">
+                  {selection.flow ?? registry?.name ?? selection.product}
+                </h2>
+
+                {/* The login sits ABOVE the scenario, beside the screen it
+                    belongs to, because that is the scope it has: one choice
+                    covers every row of this screen. Putting it inside the
+                    detail view would ask the same question again for each
+                    of fifty scenarios. It is a plain inline select rather
+                    than the UserPicker the generation forms use -- that one
+                    is a stacked field with its own hint and warnings, which
+                    is right in a form and three lines too tall in a title
+                    bar. */}
+                <label className="registry-login">
+                  <span className="registry-login-label">CIF</span>
+                  <select
+                    className="search"
+                    value={loginId}
+                    onChange={(event) => setLoginId(event.target.value)}
+                  >
+                    <option value="">
+                      {users.users.length === 0
+                        ? "(kayıtlı kullanıcı yok)"
+                        : "senaryodaki giriş"}
+                    </option>
+                    {users.users.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.cif}
+                        {user.name ? " — " + user.name : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              {/* NGC logs in with cif AND user id. A saved login missing the
+                  second half would be written as `userid ""` and fail in a
+                  browser, so it is refused here, where it is fixable in one
+                  click. NGI legitimately has no user id and is not asked. */}
+              {chosenUser && selection.app.toUpperCase() !== "NGI" && !chosenUser.userid ? (
+                <p className="product-warn">
+                  Bu girişin kullanıcı kodu yok — NGC için zorunlu. Test Kullanıcıları
+                  panelinden ekleyin.
+                </p>
+              ) : null}
 
               {/* A read failure, and nothing else, is allowed between the
                   title and the scenarios. It is not decoration: without it
@@ -166,12 +220,18 @@ export function ProductPanel({
                   detail={products.scenario}
                   busy={products.scenarioBusy}
                   onBack={() => setSelection({ ...selection, path: null })}
-                  onRun={(feature) => onRun(feature, {
-                    app: selection.app,
-                    flow: selection.flow ?? "",
-                    intent: products.scenario?.description ?? "",
-                    product: selection.product,
-                  })}
+                  onRun={(feature) => onRun(
+                    feature,
+                    {
+                      app: selection.app,
+                      flow: selection.flow ?? "",
+                      intent: products.scenario?.description ?? "",
+                      product: selection.product,
+                    },
+                    chosenUser
+                      ? { cif: chosenUser.cif, userid: chosenUser.userid }
+                      : undefined,
+                  )}
                 />
               ) : (
                 <ScenarioTable

@@ -753,10 +753,42 @@ body {
 
 .registry-crumbs .is-file { font-family: var(--mono); }
 
-.registry-title {
+/* Title left, login right. One row rather than two because the login is a
+   property of the screen named beside it, and a line of its own would read
+   as a step in whatever the page is asking you to do. */
+.registry-titlebar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    flex-wrap: wrap;
     margin: var(--space-2) 0 var(--space-4);
+}
+
+.registry-title {
+    margin: 0;
     font-size: var(--text-lg);
     font-weight: 600;
+}
+
+.registry-login {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.registry-login-label {
+    font-size: var(--text-xs);
+    letter-spacing: .05em;
+    color: var(--text-muted);
+}
+
+/* Wide enough for a cif and a name together, and capped so a long name does
+   not push the title off its own row. */
+.registry-login .search {
+    width: 240px;
+    font-family: var(--mono);
+    font-size: var(--text-xs);
 }
 
 .registry-empty {

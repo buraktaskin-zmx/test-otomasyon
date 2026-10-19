@@ -16,6 +16,7 @@ import type {
   ExploreToolsResponse,
   LlmHelloResponse,
   Origin,
+  RunLogin,
   ProductDetail,
   ProductRegistry,
   ProductsResponse,
@@ -83,8 +84,11 @@ export const validateScenario = (feature: string, where: Origin) =>
  * `result.status === 422`). 503 -> ErrorBody, two distinct messages
  * depending on whether no executor exists at all vs. all are busy.
  */
-export const startRun = (feature: string, where: Origin) =>
-  api<RunStarted>("POST", "/api/v1/runs", { feature, ...where });
+/** `login` is the saved test user the analyst picked, or undefined to run
+ *  the scenario with whatever login its own text carries. The orchestrator
+ *  writes the Gherkin line from it -- see RunService.start. */
+export const startRun = (feature: string, where: Origin, login?: RunLogin) =>
+  api<RunStarted>("POST", "/api/v1/runs", { feature, ...where, ...login });
 
 /* ------------------------------- runs --------------------------------- */
 

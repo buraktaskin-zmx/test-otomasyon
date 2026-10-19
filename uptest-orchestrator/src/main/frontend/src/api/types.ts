@@ -422,6 +422,19 @@ export interface Origin {
   product?: string;
 }
 
+/** The saved login a run is started UNDER. Deliberately NOT part of `Origin`:
+ *  Origin is what a scenario WAS WRITTEN against and is persisted into
+ *  TEST_RUN's own columns, while a login is who happens to be running it this
+ *  time. Folding the two together would put a cif on the one object in this
+ *  file that gets stored, which is exactly what `Redactor` exists to prevent.
+ *
+ *  The orchestrator turns this into the Gherkin login line (NGC takes both
+ *  halves, NGI the cif alone), so nothing here decides which step to write. */
+export interface RunLogin {
+  cif: string;
+  userid: string;
+}
+
 /** StepState's five getters, in Jackson's serialization order. `durationMs`
  *  is null while the step has not finished -- "the UI shows a spinner, not a
  *  0." `error` is only the throwable's first line. */

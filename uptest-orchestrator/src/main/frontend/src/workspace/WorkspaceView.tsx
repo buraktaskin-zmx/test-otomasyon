@@ -25,7 +25,7 @@ import { useRunArtifacts } from "../hooks/useRunArtifacts";
 import { useRunPoll } from "../hooks/useRunPoll";
 import { useValidation } from "../hooks/useValidation";
 import { useToast } from "../ui/Toast";
-import type { Origin, ValidationResult } from "../api/types";
+import type { Origin, RunLogin, ValidationResult } from "../api/types";
 import type { useVocabulary } from "../hooks/useVocabulary";
 
 /* app.js:18-31, verbatim. */
@@ -245,8 +245,8 @@ export function WorkspaceView({
      chat-written scenario as of a typed one, and a copy of it would be a
      copy that drifts. */
   const runWith = useCallback(
-    async (text: string, where: Origin) => {
-      const result = await runPoll.start(text, where);
+    async (text: string, where: Origin, login?: RunLogin) => {
+      const result = await runPoll.start(text, where, login);
       if (!result.ok) {
         if (result.status === 422) {
           validation.applyResult(result.body as ValidationResult);
@@ -286,12 +286,17 @@ export function WorkspaceView({
    * analyst is already watching the timeline when the first step lands rather
    * than discovering it afterwards. That is all the pause buys and all it is
    * for.
+   *
+   * `login` is the one thing a registered scenario does NOT carry. A file in
+   * products/ is written once and run by whoever needs it, so baking one
+   * analyst's cif into it is how a suite stops being shareable -- the picker
+   * sits above the scenario instead, and the orchestrator writes the step.
    */
   const runRegistered = useCallback(
-    (text: string, where: Origin) => {
+    (text: string, where: Origin, login?: RunLogin) => {
       handleGenerated(text, where);
       showPanel("timeline");
-      window.setTimeout(() => void runWith(text, where), 800);
+      window.setTimeout(() => void runWith(text, where, login), 800);
     },
     [handleGenerated, showPanel, runWith],
   );
@@ -308,14 +313,6 @@ export function WorkspaceView({
     [handleGenerated, runWith],
   );
 
-  /* Chat takes the whole width: a conversation and a growing draft side by
-     side do not fit in the 40% column the other panels live in. The editor
-     is hidden by CSS rather than unmounted -- the caret position, the scroll
-     and the refs behind them all survive the trip. */
-  /* Two panels need the whole workspace rather than the 40% column: a
-     conversation beside a growing draft, and a three-level tree beside a
-     five-column table. Both are hidden by CSS, never unmounted, so the
-     editor keeps its scroll position and the forms keep what was typed. */
   /* Three panels need the whole workspace rather than the 40% column: a
      conversation beside a growing draft, a three-level tree beside a
      five-column table, and a login pool beside the form that edits it.
@@ -398,6 +395,7 @@ export function WorkspaceView({
         <UsersPanel active={sideTab === "users"} users={users} />
         <ProductPanel
           active={sideTab === "product"}
+          users={users}
           products={products}
           onRun={runRegistered}
         />

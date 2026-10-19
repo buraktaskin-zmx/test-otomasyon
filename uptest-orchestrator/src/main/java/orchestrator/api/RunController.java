@@ -34,8 +34,19 @@ public class RunController {
      * Without them a draft the generator had already rejected starts anyway,
      * because the catalog checks cannot run without a catalog.
      */
+    /**
+     * {@code cif} and {@code userid} are the login the analyst PICKED from the
+     * saved test users, not one typed into the scenario. The orchestrator
+     * writes the step — see {@link RunService#start(String, String, String,
+     * String, String, String, String)} for why that belongs on this side.
+     *
+     * They are optional like the rest: a scenario carrying its own login still
+     * runs exactly as it did. They are also the one pair here that must never
+     * be logged or echoed back — the response below returns an id, an executor
+     * name and a step count, and nothing derived from the request body.
+     */
     public record StartRunRequest(String feature, String app, String flow, String intent,
-                                  String product) {
+                                  String product, String cif, String userid) {
     }
 
     private final RunService runService;
@@ -58,7 +69,8 @@ public class RunController {
         }
 
         RunService.StartOutcome outcome = runService.start(
-                request.feature(), request.app(), request.flow(), request.intent(), request.product());
+                request.feature(), request.app(), request.flow(), request.intent(), request.product(),
+                request.cif(), request.userid());
 
         if (outcome.accepted()) {
             return ResponseEntity.accepted().body(Map.of(

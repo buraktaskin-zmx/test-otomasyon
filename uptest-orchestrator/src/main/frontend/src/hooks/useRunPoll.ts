@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getRun, startRun, stopRun } from "../api/endpoints";
 import type { ApiResult } from "../api/client";
-import type { Origin, RunDetail, RunStarted } from "../api/types";
+import type { Origin, RunDetail, RunLogin, RunStarted } from "../api/types";
 
 const POLL_MS = 2000;
 
@@ -70,9 +70,9 @@ export function useRunPoll() {
    *  raw ApiResult so the caller can still branch on 422 (bare
    *  ValidationResult) / 503 (ErrorBody) for its own toast/panel update. */
   const start = useCallback(
-    async (feature: string, origin: Origin): Promise<ApiResult<RunStarted>> => {
+    async (feature: string, origin: Origin, login?: RunLogin): Promise<ApiResult<RunStarted>> => {
       setStarting(true);
-      const result = await startRun(feature, origin);
+      const result = await startRun(feature, origin, login);
       setStarting(false);
       if (result.ok) attachAndPoll(result.body.runId);
       return result;
