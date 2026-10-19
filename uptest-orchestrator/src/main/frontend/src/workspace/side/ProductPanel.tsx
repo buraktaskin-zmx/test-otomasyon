@@ -132,21 +132,22 @@ export function ProductPanel({
                 {selection.flow ?? registry?.name ?? selection.product}
               </h2>
 
+              {/* A read failure, and nothing else, is allowed between the
+                  title and the scenarios. It is not decoration: without it
+                  the table below falls back to "Bu ekranda kayıtlı senaryo
+                  yok", which is a different claim and a false one.
+
+                  Two paragraphs that used to live here are gone. Neither was
+                  wrong, both were PERMANENT: no screen in this product has a
+                  catalog yet, so "kataloğu henüz üretilmedi" printed three
+                  lines above every table, every time, and an undeclared
+                  folder was already named "bildirilmemiş" in the tree. A
+                  warning that is always on is furniture, and this screen is
+                  read by someone scanning fifty rows. The catalog fact still
+                  travels -- the breadcrumb above says "katalog yok" in three
+                  words -- and the product overview still lists every screen
+                  missing one, which is where a work queue belongs. */}
               {problem ? <p className="product-warn">Okunamadı: {problem}</p> : null}
-
-              {screen && !screen.catalog ? (
-                <p className="product-gap">
-                  Bu ekranın kataloğu henüz üretilmedi — senaryolar listelenir ama
-                  doğrulama katalog kontrollerini çalıştıramaz. Önce “Ekran Keşfi” panelinden YAML Katalog Çıkar.
-                </p>
-              ) : null}
-
-              {screen && !screen.declared ? (
-                <p className="product-warn">
-                  Bu klasör <code>product.yaml</code>’daki <code>flows:</code> listesinde yok.
-                  Ya listeye ekleyin ya da klasörü doğru ekran adına taşıyın.
-                </p>
-              ) : null}
 
               {selection.flow ? (
                 selection.path ? (
