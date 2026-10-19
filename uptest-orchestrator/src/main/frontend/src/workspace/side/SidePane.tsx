@@ -123,16 +123,24 @@ export function SideRail({
     ...(agentVisible ? ([{ id: "agent", label: "Ekran Keşfi" }] as const) : []),
   ];
 
+  /* Icon only, unlike every other rail item. The label is not dropped to
+     save space: this button is the one control whose meaning the icon
+     already carries, and spelling it out put a word in the rail that reads
+     as a seventh panel. The text moves to `title` and `aria-label`, so the
+     tooltip and a screen reader still get the full sentence. */
+  const toggleLabel = collapsed ? "Paneli aç" : "Paneli kapat, editöre yer aç";
+
   return (
     <nav className="side-rail" role="tablist" aria-orientation="vertical">
       <button
         type="button"
         className="rail-item rail-toggle"
         onClick={onToggleCollapse}
-        title={collapsed ? "Paneli aç" : "Paneli kapat, editöre yer aç"}
+        title={toggleLabel}
+        aria-label={toggleLabel}
+        aria-expanded={!collapsed}
       >
         {PANEL_ICON}
-        <span className="rail-label">{collapsed ? "PANELİ AÇ" : "PANELİ KAPAT"}</span>
       </button>
 
       {tabs.map((tab) => {

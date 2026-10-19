@@ -149,10 +149,10 @@ body {
 }
 
 /* The panel switch reads as a control over the list, not as one of its
-   items: smaller, quieter, and separated by the rule beneath it. */
+   items: icon only, quieter, and separated by the rule beneath it. It
+   carries no .rail-label, so the type rules it used to need are gone --
+   `color` stays because the inline SVG strokes with currentColor. */
 .rail-toggle {
-    font-size: var(--text-xs);
-    letter-spacing: .04em;
     color: var(--text-faint);
     border-radius: var(--radius-sm) var(--radius-sm) 0 0;
     margin-bottom: var(--space-1);
