@@ -65,9 +65,14 @@ export function WorkspaceView({
   const [feature, setFeature] = useState(SAMPLE);
   const [sideTab, setSideTab] = useState<SideTab>("timeline");
   /* Which half of the run panel shows. Owned here rather than inside the
-     panel because the 422 branch below has to force it: a panel cannot
-     switch itself on a decision taken somewhere else. */
-  const [runTab, setRunTab] = useState<RunTab>("vocab");
+     panel because the two forced switches below have to set it: a panel
+     cannot switch itself on a decision taken somewhere else.
+
+     It opens on the TIMELINE. The rail item that reveals this panel reads
+     "Kayıtlı adımlarla çalıştır", so landing on the dictionary answers a
+     question nobody asked -- and the dictionary is still one click away,
+     which is the whole point of the two halves. */
+  const [runTab, setRunTab] = useState<RunTab>("timeline");
   /* The panel can be closed outright to give the editor the full width --
      a long scenario is 20+ lines of quoted Turkish and the 40% column was
      costing the half of it that matters. Closing hides the panel, not the
@@ -253,7 +258,12 @@ export function WorkspaceView({
         toast(result.error, true);
         return;
       }
+      /* Showing the panel is not enough: the analyst may have switched to
+         the dictionary half while writing, and a run that streams behind
+         the other tab is a run nobody sees. The 422 branch above forces
+         the opposite half for the same reason. */
       showPanel("timeline");
+      setRunTab("timeline");
       toast("Koşu başladı · " + result.body.executor);
     },
     [runPoll, validation, toast, showPanel],
