@@ -1174,30 +1174,98 @@ body {
 .tree-row.is-product .tree-main,
 .tree-row.is-screen .tree-main { cursor: pointer; }
 
-/* ----- Test Kullanıcıları ----- */
+/* ======================= Test Kullanıcıları ==========================
 
-.user-row {
-    padding: var(--space-2) var(--space-3);
-    border-bottom: 1px solid var(--border-soft);
+   Pool left, form right, inside the wide panel -- the same shape as the
+   scenario registry next door, and it reuses that registry's .registry
+   table outright rather than growing a second table style. Five facts per
+   login fit on one row there; stacked in the 40% column they took three.
+
+   .user-chosen below is the PICKER's, not this panel's: it styles the
+   chosen login under the dropdown in the four generation forms. It used to
+   share a rule with .user-ids here, and .user-ids is gone -- the kind of
+   shared rule the discover-output lesson in CLAUDE.md is about, so it is
+   now written out on its own with its user named. */
+
+.users-panel { overflow: hidden; }
+
+.users-count {
+    font-size: var(--text-xs);
+    color: var(--text-faint);
 }
 
-.user-row.is-active { background: var(--brand-tint); }
-
-.user-main {
+.users-body {
     display: flex;
-    align-items: baseline;
-    gap: var(--space-2);
-    flex-wrap: wrap;
+    flex: 1 1 auto;
+    min-height: 0;
 }
 
-.user-label { font-weight: 600; font-size: var(--text-sm); }
+.users-list {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+    padding: var(--space-4);
+}
 
-.user-role {
+/* The form is a fixed column: it holds six short inputs whose width says
+   what belongs in them, and letting it take half the panel on a wide
+   screen would stretch a six-character user code across 400px. */
+.users-form {
+    flex: 0 0 360px;
+    min-width: 0;
+    overflow: auto;
+    padding: var(--space-4);
+    border-left: 1px solid var(--border-soft);
+}
+
+.users-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: var(--space-3);
+    background: var(--surface);
+}
+
+.users-card-title {
+    margin: 0 0 var(--space-3);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    letter-spacing: .05em;
+    color: var(--text-muted);
+}
+
+.users-field {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-bottom: var(--space-2);
+}
+
+.users-field-label {
+    flex: 0 0 110px;
     font-size: var(--text-xs);
     color: var(--text-muted);
 }
 
-.user-ids,
+.users-field .search { flex: 1 1 auto; min-width: 0; }
+
+.users-card-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-2);
+    margin-top: var(--space-3);
+}
+
+/* The row being edited. Not .is-active: that class already means "the
+   panel you are looking at" on the rail and "the open scenario" in the
+   tree, and a third meaning on a table row would make the word useless. */
+.registry tr.is-chosen { background: var(--brand-tint); }
+
+.user-name { font-family: var(--mono); font-weight: 600; }
+.user-cif { font-family: var(--mono); color: var(--brand); }
+.user-role { font-size: var(--text-sm); }
+
 .user-chosen {
     display: flex;
     align-items: baseline;
@@ -1211,13 +1279,13 @@ body {
     color: var(--text-faint);
 }
 
-.user-actions {
-    display: flex;
-    gap: var(--space-1);
-    margin-top: var(--space-1);
-}
-
-.user-actions .btn {
-    font-size: var(--text-xs);
-    padding: 2px var(--space-2);
+@media (max-width: 900px) {
+    /* Same threshold and same reason as the registry: below it the table
+       and the form cannot share a row honestly. */
+    .users-body { flex-direction: column; }
+    .users-form {
+        flex: 0 0 auto;
+        border-left: 0;
+        border-top: 1px solid var(--border-soft);
+    }
 }

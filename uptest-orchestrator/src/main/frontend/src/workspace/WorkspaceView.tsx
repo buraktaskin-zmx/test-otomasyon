@@ -316,7 +316,13 @@ export function WorkspaceView({
      conversation beside a growing draft, and a three-level tree beside a
      five-column table. Both are hidden by CSS, never unmounted, so the
      editor keeps its scroll position and the forms keep what was typed. */
-  const chatMode = panelOpen && (sideTab === "chat" || sideTab === "product");
+  /* Three panels need the whole workspace rather than the 40% column: a
+     conversation beside a growing draft, a three-level tree beside a
+     five-column table, and a login pool beside the form that edits it.
+     Each of the three is READ far more than the editor is while it is
+     open, which is the test -- not how much markup it happens to have. */
+  const wideMode = panelOpen
+    && (sideTab === "chat" || sideTab === "product" || sideTab === "users");
 
   const liveRun = runPoll.run?.status === "RUNNING";
   const agentVisible = !tools.loaded || tools.available;
@@ -377,7 +383,7 @@ export function WorkspaceView({
           App.tsx keeps both views mounted. */}
       <aside
         className={
-          "pane pane-side" + (panelOpen ? "" : " is-closed") + (chatMode ? " is-wide" : "")
+          "pane pane-side" + (panelOpen ? "" : " is-closed") + (wideMode ? " is-wide" : "")
         }
       >
         <ChatView

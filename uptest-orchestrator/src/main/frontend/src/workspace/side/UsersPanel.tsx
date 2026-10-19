@@ -20,6 +20,17 @@ const EMPTY = { id: "", name: "", cif: "", userid: "", password: "", role: "", n
   İsim is OPTIONAL and that is deliberate: a login is identified by its cif,
   so demanding a label for it would be a required field with no answer. The
   picker falls back to showing the cif.
+
+  POOL LEFT, FORM RIGHT, and the panel takes the whole workspace to do it.
+  The first version stacked the form above the list in the 40% column, which
+  put the thing being READ (which logins do we have?) below the thing being
+  WRITTEN (one of them, occasionally) and left a row's five facts folded into
+  three lines. A pool is scanned far more often than it is edited.
+
+  A row is EDITED by clicking it; Sil lives in the form, not in every row.
+  That is one fewer column than the mock needs and it puts the irreversible
+  button behind a deliberate selection rather than a pixel away from the
+  one next to it.
 */
 export function UsersPanel({
   active,
@@ -55,92 +66,138 @@ export function UsersPanel({
     password: user.password, role: user.role, note: user.note,
   });
 
-  const remove = async (user: TestUser) => {
-    const result = await users.remove(user.id);
+  const remove = async () => {
+    const result = await users.remove(form.id);
     toast(result.ok ? "Giriş silindi" : "Silinemedi: " + result.error, !result.ok);
-    if (result.ok && form.id === user.id) setForm(EMPTY);
+    if (result.ok) setForm(EMPTY);
   };
 
   return (
-    <div id="side-users" className={"side-panel" + (active ? " is-active" : "")}>
+    <div id="side-users" className={"side-panel users-panel" + (active ? " is-active" : "")}>
       <PanelHead title="Test Kullanıcıları">
-        {editing ? (
-          <button className="btn btn-ghost" type="button" onClick={() => setForm(EMPTY)}>
-            Vazgeç
-          </button>
-        ) : null}
+        <span className="users-count">{users.users.length} kayıt</span>
       </PanelHead>
 
-      <div className="suggest-form">
-        <label className="suggest-label" htmlFor="userName">
-          İsim <span className="suggest-optional">(opsiyonel)</span>
-        </label>
-        <input id="userName" className="search" value={form.name} onChange={set("name")}
-               placeholder="Ana test kullanıcısı" />
-
-        <label className="suggest-label" htmlFor="userCif">Firma / Müşteri kodu</label>
-        <input id="userCif" className="search" value={form.cif} onChange={set("cif")}
-               placeholder="LH01600254" />
-
-        <label className="suggest-label" htmlFor="userUserid">
-          Kullanıcı kodu <span className="suggest-optional">(NGI için boş)</span>
-        </label>
-        <input id="userUserid" className="search" value={form.userid} onChange={set("userid")}
-               placeholder="1081" />
-
-        <label className="suggest-label" htmlFor="userPassword">Şifre</label>
-        <input id="userPassword" className="search" type="password"
-               value={form.password} onChange={set("password")} />
-
-        <label className="suggest-label" htmlFor="userRole">
-          Rol <span className="suggest-optional">(opsiyonel)</span>
-        </label>
-        <input id="userRole" className="search" value={form.role} onChange={set("role")}
-               placeholder="tam yetkili" />
-
-        <label className="suggest-label" htmlFor="userNote">
-          Açıklama <span className="suggest-optional">(opsiyonel)</span>
-        </label>
-        <input id="userNote" className="search" value={form.note} onChange={set("note")} />
-
-        <button className="btn btn-primary suggest-go" type="button"
-                disabled={save.busy} onClick={() => void save.run()}>
-          {save.busy ? "Kaydediliyor…" : editing ? "Güncelle" : "Kaydet"}
-        </button>
-
-        <p className="suggest-hint">
-          Bunlar test ortamı bilgileridir. <code>{users.file || "testdata/users.yaml"}</code>
-          dosyasına yazılır; elle de düzenlenebilir.
-        </p>
-      </div>
-
-      <div className="suggest-status">
-        {!users.loaded ? null : users.users.length === 0 ? (
-          <p className="registry-empty">Henüz kayıtlı giriş yok.</p>
-        ) : (
-          users.users.map((user) => (
-            <div key={user.id} className={"user-row" + (form.id === user.id ? " is-active" : "")}>
-              <div className="user-main">
-                <span className="user-label">{user.label}</span>
-                {user.role ? <span className="user-role">{user.role}</span> : null}
-              </div>
-              <div className="user-ids">
-                <span className="rule-id">{user.cif}</span>
-                {user.userid ? <span className="rule-id">{user.userid}</span> : null}
-                {user.note ? <span className="user-note">{user.note}</span> : null}
-              </div>
-              <div className="user-actions">
-                <button className="btn btn-ghost" type="button" onClick={() => edit(user)}>
-                  Düzenle
-                </button>
-                <button className="btn btn-ghost" type="button" onClick={() => void remove(user)}>
-                  Sil
-                </button>
-              </div>
+      <div className="users-body">
+        <section className="users-list">
+          {!users.loaded ? null : users.users.length === 0 ? (
+            <p className="registry-empty">
+              Henüz kayıtlı giriş yok. Sağdaki formdan ekleyin — Firma / Müşteri
+              kodu dışındaki her alan opsiyoneldir.
+            </p>
+          ) : (
+            <div className="registry-scroll">
+              <table className="registry">
+                <thead>
+                  <tr>
+                    <th>İsim</th>
+                    <th>Firma / Müşteri</th>
+                    <th>Kullanıcı kodu</th>
+                    <th>Rol</th>
+                    <th>Açıklama</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {users.users.map((user) => (
+                    <tr
+                      key={user.id}
+                      className={"is-clickable" + (form.id === user.id ? " is-chosen" : "")}
+                      onClick={() => edit(user)}
+                      title="Düzenlemek için tıklayın"
+                    >
+                      <td className="user-name">{user.name || "—"}</td>
+                      <td className="user-cif">{user.cif}</td>
+                      <td className="user-cif">{user.userid || "—"}</td>
+                      <td className="user-role">{user.role || "—"}</td>
+                      <td className="user-note">{user.note}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          ))
-        )}
+          )}
+        </section>
+
+        <aside className="users-form">
+          <div className="users-card">
+            <h3 className="users-card-title">{editing ? "DÜZENLE" : "YENİ OLUŞTUR"}</h3>
+
+            <Field id="userName" label="İsim">
+              <input id="userName" className="search" value={form.name}
+                     onChange={set("name")} placeholder="MAKER_01" />
+            </Field>
+
+            <Field id="userCif" label="Firma / Müşteri">
+              <input id="userCif" className="search" value={form.cif}
+                     onChange={set("cif")} placeholder="LH01600254" />
+            </Field>
+
+            <Field id="userUserid" label="Kullanıcı kodu">
+              <input id="userUserid" className="search" value={form.userid}
+                     onChange={set("userid")} placeholder="1081" />
+            </Field>
+
+            <Field id="userPassword" label="Şifre">
+              <input id="userPassword" className="search" type="password"
+                     value={form.password} onChange={set("password")} />
+            </Field>
+
+            <Field id="userRole" label="Rol">
+              <input id="userRole" className="search" value={form.role}
+                     onChange={set("role")} placeholder="tam yetkili" />
+            </Field>
+
+            <Field id="userNote" label="Açıklama">
+              <input id="userNote" className="search" value={form.note}
+                     onChange={set("note")} placeholder="ana test kullanıcısı" />
+            </Field>
+
+            <div className="users-card-actions">
+              {editing ? (
+                <>
+                  <button className="btn btn-ghost" type="button" onClick={() => setForm(EMPTY)}>
+                    Vazgeç
+                  </button>
+                  <button className="btn btn-ghost" type="button" onClick={() => void remove()}>
+                    Sil
+                  </button>
+                </>
+              ) : null}
+              <button className="btn btn-primary" type="button"
+                      disabled={save.busy} onClick={() => void save.run()}>
+                {save.busy ? "Kaydediliyor…" : editing ? "Güncelle" : "Kaydet"}
+              </button>
+            </div>
+          </div>
+
+          <p className="suggest-hint">
+            Bunlar test ortamı bilgileridir, <code>{users.file || "testdata/users.yaml"}</code>{" "}
+            dosyasına yazılır ve elle de düzenlenebilir. Yalnızca Firma / Müşteri kodu
+            zorunlu. Rol bugün serbest metindir — doğru girişi gözle seçmek için var,
+            senaryolar henüz role göre kullanıcı istemiyor.
+          </p>
+        </aside>
       </div>
+    </div>
+  );
+}
+
+/** Label beside its input rather than above it: six short fields stacked in
+ *  pairs read as a record, which is what this is, and the column edge lines
+ *  the inputs up so a mistyped cif is visible against the one above it. */
+function Field({
+  id,
+  label,
+  children,
+}: {
+  id: string;
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="users-field">
+      <label className="users-field-label" htmlFor={id}>{label}</label>
+      {children}
     </div>
   );
 }
