@@ -1,9 +1,0 @@
-# Banko — kurumsal tahsilat ürünü.
-#
-# Bu dosya ürünün KİMLİĞİ: adı ve sahip olduğu ekranlar. Buradaki bir akışın
-# katalogu henüz yoksa bu hata değil, yapılacak işler listesidir; "Ürün"
-# panelinde "kataloğu eksik" olarak görünür.
-app: NGC
-name: "Banko"
-flows:
-  - banko-payment

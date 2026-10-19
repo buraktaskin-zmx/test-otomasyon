@@ -19,7 +19,10 @@ import type {
   ProductDetail,
   ProductRegistry,
   ProductsResponse,
+  SaveUserRequest,
   ScenarioDetail,
+  TestUser,
+  TestUsersResponse,
   RunDetail,
   RunStarted,
   SaveCatalogResponse,
@@ -130,6 +133,19 @@ export const getCatalogs = () =>
 
 export const saveCatalog = (app: string, flow: string, yaml: string) =>
   api<SaveCatalogResponse>("POST", "/api/v1/scenarios/catalogs", { app, flow, yaml });
+
+/* ---------------------------- test users ------------------------------- */
+
+export const getTestUsers = () =>
+  api<TestUsersResponse>("GET", "/api/v1/users");
+
+/** Adds, or replaces the row with the same id. Answers with the saved row,
+ *  whose `id` the server derived -- never guess it here. */
+export const saveTestUser = (user: SaveUserRequest) =>
+  api<TestUser>("POST", "/api/v1/users", user);
+
+export const deleteTestUser = (id: string) =>
+  api<{ deleted: string }>("DELETE", "/api/v1/users/" + encodeURIComponent(id));
 
 /* ------------------------------ products ------------------------------- */
 

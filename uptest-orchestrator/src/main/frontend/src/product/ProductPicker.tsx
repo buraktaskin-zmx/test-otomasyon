@@ -125,7 +125,7 @@ export function ProductPicker({
       {chosen && chosen.missingCatalogs.length > 0 ? (
         <p className="product-gap">
           Kataloğu olmayan {chosen.missingCatalogs.length} ekran:{" "}
-          {chosen.missingCatalogs.join(", ")} — önce “Ekranı Keşfet”.
+          {chosen.missingCatalogs.join(", ")} — önce “Ekran Keşfi” panelinden YAML Katalog Çıkar.
         </p>
       ) : null}
 

@@ -1027,3 +1027,221 @@ body {
 }
 
 .sd-line { white-space: pre; }
+
+/* Disclosure markers. Fixed width so the three levels line up on the label
+   column whether or not a row has one -- a screen is a leaf and gets none,
+   and without the reserved box its text would sit a character to the left
+   of its siblings. */
+.tree-caret {
+    flex: 0 0 auto;
+    width: 10px;
+    font-size: 9px;
+    line-height: 1;
+    color: var(--text-faint);
+}
+
+.tree-row.is-screen { padding-left: calc(var(--space-6) + 10px); }
+
+/* ----- scenario level in the tree ----- */
+
+.tree-row.is-scenario {
+    padding-left: calc(var(--space-6) + 24px);
+    font-size: var(--text-xs);
+    line-height: 1.45;
+    color: var(--text-muted);
+}
+
+.tree-row.is-scenario:hover { background: var(--surface-2); }
+.tree-row.is-scenario .tree-label { white-space: normal; }
+
+.tree-dot {
+    flex: 0 0 auto;
+    width: 7px;
+    height: 7px;
+    margin-top: 5px;
+    border-radius: 2px;
+    background: currentColor;
+}
+
+.tree-dot.is-ready { color: var(--ok); }
+.tree-dot.is-seed { color: var(--run); }
+.tree-dot.is-missing { color: var(--warn); }
+.tree-dot.is-blocked { color: var(--fail); }
+.tree-dot.is-unknown { background: none; border: 1px dashed var(--text-faint); }
+
+/* ----- scenario detail: two panes ----- */
+
+.sd-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+    margin-bottom: var(--space-3);
+}
+
+.sd-split {
+    display: flex;
+    gap: var(--space-4);
+    align-items: flex-start;
+    flex-wrap: wrap;
+}
+
+/* Side by side so the two forms are read as the pair they are: what runs
+   deterministically, and what a person (or the agent) reads. Below ~720px
+   they stack rather than squeeze -- neither is useful at half a phone. */
+.sd-pane {
+    flex: 1 1 340px;
+    min-width: 0;
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-sm);
+    padding: var(--space-3);
+}
+
+.sd-pane-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+    margin-bottom: var(--space-3);
+}
+
+.sd-pane-title {
+    font-size: var(--text-xs);
+    font-weight: 600;
+    letter-spacing: .06em;
+    color: var(--text-muted);
+}
+
+.sd-pane-gap { flex: 1 1 auto; }
+.sd-pane-head .sd-path { flex: 1 1 auto; margin: 0; }
+.sd-pane-note { margin-bottom: var(--space-2); }
+
+.sd-plain-title {
+    margin: 0 0 var(--space-2);
+    font-size: var(--text-base);
+    font-weight: 600;
+}
+
+.sd-plain {
+    margin: 0;
+    padding-left: var(--space-5);
+    font-size: var(--text-sm);
+    line-height: 1.6;
+}
+
+.sd-plain li { margin-bottom: var(--space-2); }
+
+/* A step no pattern matched, shown as the raw Gherkin line. Marked so a
+   reader can tell "this is the sentence" from "this is the line I could not
+   turn into one" -- inventing prose for an unknown step would be worse. */
+.sd-untranslated { font-family: var(--mono); font-size: var(--text-xs); }
+
+.sd-badge {
+    display: inline-block;
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-xs);
+    font-weight: 600;
+}
+
+.sd-badge.is-ready { color: var(--ok); background: var(--ok-bg); }
+.sd-badge.is-seed { color: var(--run); background: var(--run-bg); }
+.sd-badge.is-missing { color: var(--warn); background: var(--warn-bg); }
+.sd-badge.is-blocked { color: var(--fail); background: var(--fail-bg); }
+.sd-badge.is-unknown { color: var(--text-faint); background: var(--surface-2); }
+
+/* ----- run panel: two tabs in one header ----- */
+
+.run-tabs {
+    display: flex;
+    gap: var(--space-1);
+    flex: 1 1 auto;
+}
+
+/* Secondary to the real actions beside them: these switch a view, they do
+   not do anything, so they sit a size smaller than Çalıştır. */
+.run-tabs .btn {
+    font-size: var(--text-xs);
+    padding: 4px var(--space-2);
+}
+
+/* The one-line explanation above each half. Reads as part of the header
+   rather than as content, which is why it is faint and not boxed. */
+.vocab-intro {
+    margin: 0;
+    padding: var(--space-2) var(--space-3) 0;
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    color: var(--text-faint);
+}
+
+/* ----- tree: the caret is a real button now ----- */
+
+.tree-caret {
+    cursor: pointer;
+    text-align: center;
+}
+
+.tree-caret:hover { color: var(--text); }
+
+/* The label half of a row. The caret is its sibling, not its child: nested
+   buttons are invalid HTML, and both halves have to be clickable. */
+.tree-main {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: left;
+}
+
+.tree-row.is-product .tree-main,
+.tree-row.is-screen .tree-main { cursor: pointer; }
+
+/* ----- Test Kullanıcıları ----- */
+
+.user-row {
+    padding: var(--space-2) var(--space-3);
+    border-bottom: 1px solid var(--border-soft);
+}
+
+.user-row.is-active { background: var(--brand-tint); }
+
+.user-main {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+}
+
+.user-label { font-weight: 600; font-size: var(--text-sm); }
+
+.user-role {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+}
+
+.user-ids,
+.user-chosen {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+    margin: var(--space-1) 0 0;
+}
+
+.user-note {
+    font-size: var(--text-xs);
+    color: var(--text-faint);
+}
+
+.user-actions {
+    display: flex;
+    gap: var(--space-1);
+    margin-top: var(--space-1);
+}
+
+.user-actions .btn {
+    font-size: var(--text-xs);
+    padding: 2px var(--space-2);
+}

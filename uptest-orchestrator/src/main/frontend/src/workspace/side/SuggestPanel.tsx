@@ -3,6 +3,8 @@ import { PanelHead } from "./PanelHead";
 import { suggestScenario } from "../../api/endpoints";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
 import { NO_PRODUCT, ProductPicker } from "../../product/ProductPicker";
+import { UserPicker } from "../../users/UserPicker";
+import type { useTestUsers } from "../../hooks/useTestUsers";
 import type { ProductSelection } from "../../product/ProductPicker";
 import type { useProducts } from "../../hooks/useProducts";
 import { Badge } from "../../ui/Badge";
@@ -60,6 +62,7 @@ export function SuggestPanel({
   active,
   catalogs,
   products,
+  users,
   preselect,
   onGenerated,
   onFallbackChange,
@@ -67,6 +70,7 @@ export function SuggestPanel({
   active: boolean;
   catalogs: string[];
   products: ReturnType<typeof useProducts>;
+  users: ReturnType<typeof useTestUsers>;
   /** Set right after a catalog is saved from the Ajan panel -- re-read from
    *  the server (app.js:1071: "a name the server normalised differently
    *  would otherwise be wrong here"), then adopted here so the newly saved
@@ -81,8 +85,13 @@ export function SuggestPanel({
   useEffect(() => {
     if (preselect) setSelection((was) => ({ ...was, catalog: preselect }));
   }, [preselect]);
-  const [cif, setCif] = useState("");
-  const [userid, setUserid] = useState("");
+  /* The cif and user id are no longer typed here: they come from a saved
+     login, so the same digits are not retyped into four panels and a typo
+     cannot reach a browser. */
+  const [userId, setUserId] = useState("");
+  const chosen = userId ? users.byId(userId) : null;
+  const cif = chosen?.cif ?? "";
+  const userid = chosen?.userid ?? "";
   const [intent, setIntent] = useState("");
   const [response, setResponse] = useState<SuggestResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -145,32 +154,14 @@ export function SuggestPanel({
           onChange={setSelection}
           disabled={generate.busy}
         />
-        <label className="suggest-label" htmlFor="suggestCif">
-          CIF / Müşteri Kodu
-        </label>
-        <input
-          id="suggestCif"
-          className="search"
-          type="text"
-          autoComplete="off"
-          value={cif}
-          onChange={(event) => setCif(event.target.value)}
+        <UserPicker
+          idPrefix="suggest"
+          users={users}
+          value={userId}
+          onChange={setUserId}
+          needsUserid={!isNGI}
+          disabled={generate.busy}
         />
-        {!isNGI ? (
-          <div id="suggestUseridRow">
-            <label className="suggest-label" htmlFor="suggestUserid">
-              Kullanıcı ID
-            </label>
-            <input
-              id="suggestUserid"
-              className="search"
-              type="text"
-              autoComplete="off"
-              value={userid}
-              onChange={(event) => setUserid(event.target.value)}
-            />
-          </div>
-        ) : null}
         <label className="suggest-label" htmlFor="suggestIntent">
           Ne test edilsin?
         </label>

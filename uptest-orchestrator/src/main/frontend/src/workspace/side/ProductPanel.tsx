@@ -5,9 +5,10 @@ import type { TreeSelection } from "../../product/ProductTree";
 import { ScenarioDetail } from "../../product/ScenarioDetail";
 import { ScenarioTable } from "../../product/ScenarioTable";
 import type { useProducts } from "../../hooks/useProducts";
+import type { Origin } from "../../api/types";
 
 /*
-  Ürünler — kayıtlı senaryoların kütüğü.
+  Kayıtlı Senaryolar — ürün > ekran > senaryo kütüğü.
 
   Read-only, and that is a decision rather than an unfinished half. Rules,
   test data and scenarios all live in the repository, where git gives review,
@@ -22,11 +23,27 @@ import type { useProducts } from "../../hooks/useProducts";
 export function ProductPanel({
   active,
   products,
+  onRun,
 }: {
   active: boolean;
   products: ReturnType<typeof useProducts>;
+  /** Hands a registered scenario to the ordinary run path. The registry does
+   *  not grow a second way to start a run -- there is one gate, and it
+   *  re-validates. */
+  onRun: (feature: string, origin: Origin) => void;
 }) {
   const [selection, setSelection] = useState<TreeSelection | null>(null);
+
+  /* Which tree nodes are open. Kept apart from `selection` because the first
+     version expanded by selecting and so could never close anything -- with
+     fifty scenarios under one screen the panel only ever grew. */
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
+  const toggle = (key: string) =>
+    setExpanded((was) => {
+      const next = new Set(was);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
 
   const registry = selection
     ? products.registry(selection.app, selection.product)
@@ -56,9 +73,13 @@ export function ProductPanel({
      detail view would survive into a screen the file does not belong to,
      and the breadcrumb above it would be lying. */
   useEffect(() => {
-    products.closeScenario();
+    if (selection?.path) {
+      void products.openScenario(selection.app, selection.product, selection.path);
+    } else {
+      products.closeScenario();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selection?.app, selection?.product, selection?.flow]);
+  }, [selection?.app, selection?.product, selection?.flow, selection?.path]);
 
   const detail = selection ? products.detail(selection.app, selection.product) : null;
   const screen = selection?.flow
@@ -71,7 +92,7 @@ export function ProductPanel({
 
   return (
     <div id="side-product" className={"side-panel product-panel" + (active ? " is-active" : "")}>
-      <PanelHead title="Ürünler">
+      <PanelHead title="Kayıtlı Senaryolar">
         <button className="btn btn-ghost" type="button" onClick={() => void products.reload()}>
           Yenile
         </button>
@@ -83,6 +104,8 @@ export function ProductPanel({
           registryOf={products.registry}
           selection={selection}
           onSelect={setSelection}
+          expanded={expanded}
+          onToggle={toggle}
         />
 
         <section className="registry-main">
@@ -114,7 +137,7 @@ export function ProductPanel({
               {screen && !screen.catalog ? (
                 <p className="product-gap">
                   Bu ekranın kataloğu henüz üretilmedi — senaryolar listelenir ama
-                  doğrulama katalog kontrollerini çalıştıramaz. Önce “Ekranı Keşfet”.
+                  doğrulama katalog kontrollerini çalıştıramaz. Önce “Ekran Keşfi” panelinden YAML Katalog Çıkar.
                 </p>
               ) : null}
 
@@ -126,18 +149,24 @@ export function ProductPanel({
               ) : null}
 
               {selection.flow ? (
-                products.scenario || products.scenarioBusy ? (
+                selection.path ? (
                   <ScenarioDetail
                     detail={products.scenario}
                     busy={products.scenarioBusy}
-                    onBack={products.closeScenario}
+                    onBack={() => setSelection({ ...selection, path: null })}
+                    onRun={(feature) => onRun(feature, {
+                      app: selection.app,
+                      flow: selection.flow ?? "",
+                      intent: products.scenario?.description ?? "",
+                      product: selection.product,
+                    })}
                   />
                 ) : (
                   <ScenarioTable
                     scenarios={rows}
                     busy={busy}
                     onOpen={(scenario) =>
-                      void products.openScenario(selection.app, selection.product, scenario.path)}
+                      setSelection({ ...selection, path: scenario.path })}
                   />
                 )
               ) : (

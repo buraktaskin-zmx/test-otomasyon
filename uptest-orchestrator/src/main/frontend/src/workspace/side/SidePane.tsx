@@ -14,7 +14,7 @@ import type { ReactNode } from "react";
   .is-active, exactly as the tab strip did.
 */
 
-export type SideTab = "vocab" | "product" | "timeline" | "chat" | "suggest" | "multi" | "agent";
+export type SideTab = "product" | "users" | "timeline" | "chat" | "suggest" | "multi" | "agent";
 
 /*
   Inline SVG, 16px, stroke-based.
@@ -42,20 +42,18 @@ function Icon({ children }: { children: ReactNode }) {
 }
 
 const ICONS: Record<SideTab, ReactNode> = {
-  // A list of steps.
-  vocab: (
-    <Icon>
-      <path d="M5.5 4h8M5.5 8h8M5.5 12h8" />
-      <circle cx="2.6" cy="4" r=".9" />
-      <circle cx="2.6" cy="8" r=".9" />
-      <circle cx="2.6" cy="12" r=".9" />
-    </Icon>
-  ),
   // The rule book: a document with a checked clause.
   product: (
     <Icon>
       <path d="M4 2.5h6.2L13 5.3V13a.5.5 0 0 1-.5.5h-8.5A.5.5 0 0 1 3.5 13V3a.5.5 0 0 1 .5-.5z" />
       <path d="M6 9.3 7.2 10.6 10 7.6" />
+    </Icon>
+  ),
+  // A person.
+  users: (
+    <Icon>
+      <circle cx="8" cy="5.5" r="2.6" />
+      <path d="M2.8 13.5c0-2.6 2.3-4.2 5.2-4.2s5.2 1.6 5.2 4.2" />
     </Icon>
   ),
   // A run: play, with progress beneath it.
@@ -116,13 +114,13 @@ export function SideRail({
   onToggleCollapse: () => void;
 }) {
   const tabs: ReadonlyArray<{ id: SideTab; label: string }> = [
-    { id: "vocab", label: "Adım Sözlüğü" },
-    { id: "product", label: "Ürünler" },
-    { id: "timeline", label: "Koşu" },
+    { id: "product", label: "Kayıtlı Senaryolar" },
+    { id: "users", label: "Test Kullanıcıları" },
+    { id: "timeline", label: "Kayıtlı adımlarla çalıştır" },
     { id: "chat", label: "Chat" },
     { id: "suggest", label: "AI Üret" },
     { id: "multi", label: "Çoklu Üret" },
-    ...(agentVisible ? ([{ id: "agent", label: "Ajan" }] as const) : []),
+    ...(agentVisible ? ([{ id: "agent", label: "Ekran Keşfi" }] as const) : []),
   ];
 
   return (

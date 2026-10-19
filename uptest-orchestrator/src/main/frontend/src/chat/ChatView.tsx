@@ -6,6 +6,8 @@ import { ScenarioPreview } from "./ScenarioPreview";
 import { useChat } from "../hooks/useChat";
 import type { useProducts } from "../hooks/useProducts";
 import { NO_PRODUCT, ProductPicker } from "../product/ProductPicker";
+import { UserPicker } from "../users/UserPicker";
+import type { useTestUsers } from "../hooks/useTestUsers";
 import type { ProductSelection } from "../product/ProductPicker";
 import { useToast } from "../ui/Toast";
 import type { Origin } from "../api/types";
@@ -28,6 +30,7 @@ export function ChatView({
   active,
   catalogs,
   products,
+  users,
   preselect,
   onHandOff,
   onRunDraft,
@@ -35,6 +38,7 @@ export function ChatView({
   active: boolean;
   catalogs: string[];
   products: ReturnType<typeof useProducts>;
+  users: ReturnType<typeof useTestUsers>;
   preselect: string | null;
   onHandOff: (feature: string, origin: Origin) => void;
   onRunDraft: (feature: string, origin: Origin) => void;
@@ -44,8 +48,10 @@ export function ChatView({
 
   const [selection, setSelection] = useState<ProductSelection>(NO_PRODUCT);
   const catalog = selection.catalog;
-  const [cif, setCif] = useState("");
-  const [userid, setUserid] = useState("");
+  const [userId, setUserId] = useState("");
+  const chosen = userId ? users.byId(userId) : null;
+  const cif = chosen?.cif ?? "";
+  const userid = chosen?.userid ?? "";
   const [opening, setOpening] = useState("");
 
   useEffect(() => {
@@ -120,25 +126,14 @@ export function ChatView({
             disabled={chat.busy}
           />
 
-          <label className="suggest-label" htmlFor="chatCif">CIF / Müşteri kodu</label>
-          <input
-            id="chatCif"
-            className="search"
-            value={cif}
-            onChange={(event) => setCif(event.target.value)}
+          <UserPicker
+            idPrefix="chat"
+            users={users}
+            value={userId}
+            onChange={setUserId}
+            needsUserid={needsUserid}
+            disabled={chat.busy}
           />
-
-          {needsUserid ? (
-            <>
-              <label className="suggest-label" htmlFor="chatUserid">Kullanıcı ID</label>
-              <input
-                id="chatUserid"
-                className="search"
-                value={userid}
-                onChange={(event) => setUserid(event.target.value)}
-              />
-            </>
-          ) : null}
 
           <label className="suggest-label" htmlFor="chatOpening">Ne test edilsin?</label>
           <textarea

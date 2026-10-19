@@ -249,6 +249,46 @@ export interface ProductSummary {
   duplicateIds: string[];
 }
 
+/* ========================================================================
+   Test users -- GET/POST /api/v1/users, DELETE /api/v1/users/{id}
+
+   Saved TEST-ENVIRONMENT logins. The password really is returned to the
+   browser: the four generation panels have to put one into a request, and
+   withholding it would only force the analyst to retype what they just saved.
+   ======================================================================== */
+
+export interface TestUser {
+  /** Derived server-side from the name, or the cif when there is none. */
+  id: string;
+  /** Optional. A login is identified by its cif, so a label is not required. */
+  name: string;
+  /** What a picker shows: the name, falling back to the cif. */
+  label: string;
+  cif: string;
+  /** NGC needs one, NGI does not -- empty is legitimate. */
+  userid: string;
+  password: string;
+  role: string;
+  note: string;
+}
+
+export interface TestUsersResponse {
+  /** Absolute path of the YAML the server reads and writes. */
+  file: string;
+  users: TestUser[];
+}
+
+/** `id` empty = add, set = replace the row with that id. */
+export interface SaveUserRequest {
+  id: string;
+  name: string;
+  cif: string;
+  userid: string;
+  password: string;
+  role: string;
+  note: string;
+}
+
 export interface ProductsResponse {
   root: string;
   products: ProductSummary[];
@@ -296,7 +336,7 @@ export interface ScenarioNeed {
   blockedBy: string;
 }
 
-/** One row of the Ürünler table. Everything here is DERIVED from the
+/** One row of the Kayıtlı Senaryolar table. Everything here is DERIVED from the
  *  .feature file and the product's YAML -- there is no registry file
  *  listing scenarios, because a second list of the same names would start
  *  by agreeing and end by disagreeing. */

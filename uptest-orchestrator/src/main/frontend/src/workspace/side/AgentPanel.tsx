@@ -7,6 +7,8 @@ import { useToast } from "../../ui/Toast";
 import { EmptyState } from "../../ui/EmptyState";
 import { ExploreToolsDiagnostic } from "./ExploreToolsDiagnostic";
 import type { useExploreTools } from "../../hooks/useExploreTools";
+import type { useTestUsers } from "../../hooks/useTestUsers";
+import { UserPicker } from "../../users/UserPicker";
 
 type AgentEndpoint = "explore" | "catalog";
 
@@ -27,16 +29,25 @@ type AgentEndpoint = "explore" | "catalog";
 export function AgentPanel({
   active,
   tools,
+  users,
   onCatalogSaved,
 }: {
   active: boolean;
   tools: ReturnType<typeof useExploreTools>;
+  users: ReturnType<typeof useTestUsers>;
   onCatalogSaved: (name: string) => void;
 }) {
   const [url, setUrl] = useState("https://ifctest.yapikredi.com.tr/ngc/indexNgc.do");
-  const [cif, setCif] = useState("");
-  const [userId, setUserId] = useState("");
-  const [password, setPassword] = useState("");
+  /* Credentials come from a saved login. This panel typed a PASSWORD on
+     every walk, which is the field a person gets wrong most and the one
+     whose mistake costs a full browser launch to discover. The SMS code
+     stays typed: it is single-use by definition and there is nothing to
+     save. */
+  const [loginId, setLoginId] = useState("");
+  const chosen = loginId ? users.byId(loginId) : null;
+  const cif = chosen?.cif ?? "";
+  const userId = chosen?.userid ?? "";
+  const password = chosen?.password ?? "";
   const [smsCode, setSmsCode] = useState("");
   const [mainMenu, setMainMenu] = useState("");
   const [instruction, setInstruction] = useState("");
@@ -68,7 +79,7 @@ export function AgentPanel({
 
   const run = useAsyncAction(async (endpoint: AgentEndpoint) => {
     if (!instruction.trim()) {
-      toast("Ajanın ne yapacağını yazın", true);
+      toast("Ne yapılacağını yazın", true);
       return;
     }
     setOutput("");
@@ -83,7 +94,7 @@ export function AgentPanel({
     if (endpoint === "catalog") {
       const result = await exploreForCatalog(request);
       if (!result.ok) {
-        toast("Ajan başarısız: " + result.error, true);
+        toast("Ekran keşfi başarısız: " + result.error, true);
         return;
       }
       setOutput(result.body.catalog);
@@ -98,7 +109,7 @@ export function AgentPanel({
     } else {
       const result = await explore(request);
       if (!result.ok) {
-        toast("Ajan başarısız: " + result.error, true);
+        toast("Ekran keşfi başarısız: " + result.error, true);
         return;
       }
       setOutput(result.body.answer);
@@ -111,7 +122,7 @@ export function AgentPanel({
 
   return (
     <div id="side-agent" className={"side-panel" + (active ? " is-active" : "")}>
-      <PanelHead title="Ajan" />
+      <PanelHead title="Ekran Keşfi" />
       <div className="suggest-form">
         <label className="suggest-label" htmlFor="agentUrl">
           Adres
@@ -124,38 +135,13 @@ export function AgentPanel({
           value={url}
           onChange={(e) => setUrl(e.target.value)}
         />
-        <label className="suggest-label" htmlFor="agentCif">
-          Firma / Müşteri Kodu
-        </label>
-        <input
-          id="agentCif"
-          className="search"
-          type="text"
-          autoComplete="off"
-          value={cif}
-          onChange={(e) => setCif(e.target.value)}
-        />
-        <label className="suggest-label" htmlFor="agentUserid">
-          Kullanıcı Kodu
-        </label>
-        <input
-          id="agentUserid"
-          className="search"
-          type="text"
-          autoComplete="off"
-          value={userId}
-          onChange={(e) => setUserId(e.target.value)}
-        />
-        <label className="suggest-label" htmlFor="agentPassword">
-          Şifre
-        </label>
-        <input
-          id="agentPassword"
-          className="search"
-          type="password"
-          autoComplete="off"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
+        <UserPicker
+          idPrefix="agent"
+          users={users}
+          value={loginId}
+          onChange={setLoginId}
+          needsUserid={false}
+          disabled={busy}
         />
         <label className="suggest-label" htmlFor="agentSms">
           Akıllı SMS kodu <span className="suggest-optional">(opsiyonel)</span>
@@ -204,7 +190,7 @@ export function AgentPanel({
             disabled={busy}
             onClick={() => run.run("explore")}
           >
-            Gez ve Anlat
+            Serbest Gözlem
           </button>
           <button
             id="btnAgentCatalog"
@@ -213,13 +199,13 @@ export function AgentPanel({
             disabled={busy}
             onClick={() => run.run("catalog")}
           >
-            Katalog Üret
+            YAML Katalog Çıkar
           </button>
         </div>
         <p className="suggest-hint">
-          Ajan gerçek bir tarayıcı sürer ve her adımdan önce sayfayı okur. <b>Gez ve Anlat</b> düzyazı
-          gözlem verir; <b>Katalog Üret</b> aynı gezintinin sonunda <code>SCHEMA.md</code> biçiminde
-          YAML döndürür. Taslak, emin olmadığı satırları <code># emin degil</code> ile işaretler —
+          Gerçek bir tarayıcı sürülür ve her adımdan önce sayfa okunur. <b>Serbest Gözlem</b> düzyazı
+          bir cevap verir; <b>YAML Katalog Çıkar</b> aynı gezintinin sonunda <code>SCHEMA.md</code>
+          biçiminde ekranın YAML kataloğunu döndürür. Taslak, emin olmadığı satırları <code># emin degil</code> ile işaretler —
           özellikle <code>type</code> alanını ölçülmüş bir taramayla karşılaştırın. Onay/Devam gibi
           kayıt oluşturan düğmelere basmamasını açıkça yazın.
         </p>
@@ -247,7 +233,7 @@ export function AgentPanel({
         className="search discover-output"
         spellCheck={false}
         rows={14}
-        placeholder="Ajanın cevabı burada görünecek."
+        placeholder="Gözlem ya da YAML burada görünecek."
         value={output}
         onChange={(e) => setOutput(e.target.value)}
       />

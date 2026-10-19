@@ -1,112 +1,122 @@
 import { readinessLabel } from "./readiness";
 import { tokenizeGherkinLine } from "../lib/gherkin";
+import { plainSteps } from "../lib/plainTurkish";
 import type { ScenarioDetail as Detail } from "../api/types";
 
 /*
-  Bir senaryonun kendisi.
+  Bir senaryo, iki dilde.
 
-  The table's columns are CLAIMS the tags make — "this covers R-AL-011",
-  "this needs a valid TCKN". This view is where they are checked against the
-  steps, which is the whole reason a row opens rather than just expanding a
-  tooltip. An analyst reading "R-AL-011" and then reading the Gherkin is the
-  only mechanism that catches a tag that has drifted from what the file does;
-  no parser can check that.
+  Solda GHERKIN: çalışan hâli. Sağda DOĞAL DİL: okunan hâli.
 
-  Read-only. The scenarios are repository files, reviewed in git.
+  İkisi aynı şeyin iki yazımı değil, iki AYRI çalıştırma yolu. Senaryo doğal
+  dille yazılır ve ajan onu tarayıcıyı sürerek uygular; Gherkin aynı senaryonun
+  DETERMINISTIK TEKRARI olarak sonradan yazılır. Bu yüzden bir dosyanın "0
+  adım" olması eksiklik değil bilgi: doğal dil hazır, kayıtlı adımlar henüz
+  yazılmamış.
+
+  Salt okunur. Senaryolar git'te yaşıyor, orada gözden geçiriliyor.
 */
 export function ScenarioDetail({
   detail,
   busy,
   onBack,
+  onRun,
 }: {
   detail: Detail | null;
   busy: boolean;
   onBack: () => void;
+  onRun: (feature: string) => void;
 }) {
   if (!detail) {
-    return (
-      <p className="registry-empty">{busy ? "Okunuyor…" : "Senaryo okunamadı."}</p>
-    );
+    return <p className="registry-empty">{busy ? "Okunuyor…" : "Senaryo okunamadı."}</p>;
   }
 
+  const steps = plainSteps(detail.feature);
   const state = readinessLabel(detail.readiness, detail.needsNone);
+  const hasGherkin = detail.stepCount > 0;
 
   return (
     <div className="sd">
-      <button type="button" className="btn btn-ghost sd-back" onClick={onBack}>
-        ← Listeye dön
-      </button>
+      <div className="sd-head">
+        <button type="button" className="btn btn-ghost" onClick={onBack}>
+          ← Senaryo listesi
+        </button>
+        <h3 className="sd-title">{detail.title}</h3>
+      </div>
 
-      <h3 className="sd-title">{detail.title}</h3>
-      <p className="sd-path">
-        {detail.path}
-        {detail.problem ? null : <span className="sc-steps"> · {detail.stepCount} adım</span>}
-      </p>
-      {detail.description ? <p className="sd-desc">{detail.description}</p> : null}
-      {detail.problem ? <p className="product-warn">{detail.problem}</p> : null}
+      <div className="sd-split">
+        {/* ---------------------------- Gherkin ---------------------------- */}
+        <section className="sd-pane">
+          <header className="sd-pane-head">
+            <span className="sd-pane-title">GHERKİN</span>
+            <code className="sd-path">{detail.path}</code>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={!hasGherkin}
+              title={hasGherkin
+                ? "Kayıtlı adımlarla çalıştır"
+                : "Bu senaryonun kayıtlı adımları henüz yazılmadı"}
+              onClick={() => onRun(detail.feature)}
+            >
+              Çalıştır
+            </button>
+          </header>
 
-      <div className="sd-facts">
-        <section>
-          <h4 className="product-section-title">Doğruladığı kurallar</h4>
-          {detail.rules.length === 0 ? (
-            <p className="sd-note">
-              Hiçbir kurala bağlı değil. Dosyaya <code>@R-...</code> etiketi ekleyin;
-              bağsız bir senaryonun amacını kimse ifade edemez.
+          {hasGherkin ? null : (
+            <p className="sd-note sd-pane-note">
+              Kayıtlı adım yok — bu senaryonun yalnızca doğal dil hâli yazılmış.
+              Deterministik tekrarı için adımlar sözlükten yazılmalı.
             </p>
-          ) : (
-            detail.rules.map((rule) => (
-              <div key={rule.id} className="sd-rule">
-                <span className={"rule-chip" + (rule.known ? "" : " is-unknown")}>
-                  {rule.id}
-                </span>
-                {rule.known ? (
-                  <>
-                    <span className="rule-title">{rule.title || "(başlıksız)"}</span>
-                    <span className={rule.confirmed ? "rule-ok" : "rule-guess"}>
-                      {rule.confirmed ? "DOĞRULANDI" : "VARSAYIM"}
-                    </span>
-                  </>
-                ) : (
-                  <span className="sd-note">rules.yaml’da böyle bir kural yok</span>
-                )}
-              </div>
-            ))
           )}
+
+          <Gherkin text={detail.feature} />
         </section>
 
-        <section>
-          <h4 className="product-section-title">Koşmak için gereken</h4>
-          <div className={"sc-ready is-" + state.kind}>
-            <span className="sc-dot" aria-hidden="true" />
-            {state.word}
-          </div>
-          <p className="sd-note">{state.hint}</p>
+        {/* -------------------------- Doğal dil --------------------------- */}
+        <section className="sd-pane">
+          <header className="sd-pane-head">
+            <span className="sd-pane-title">DOĞAL DİL</span>
+            <span className="sd-pane-gap" />
+            <button
+              type="button"
+              className="btn btn-ghost"
+              disabled
+              title="Ajanın giriş bilgilerine ihtiyacı var — henüz bağlanmadı"
+            >
+              AI ile çalıştır
+            </button>
+          </header>
 
-          {detail.needs.map((need) => (
-            <div key={need.id} className="sd-need">
-              <span className="sd-need-label">{need.label || need.id}</span>
-              <span className="rule-id">{need.id}</span>
-              {need.known ? (
-                <span className="sd-note">
-                  çözüm: {need.how || "?"}
-                  {need.blockedBy ? " · " + need.blockedBy + " engelliyor" : ""}
-                </span>
-              ) : (
-                <span className="sd-note">test-data.yaml’da tanımlı değil</span>
-              )}
-            </div>
-          ))}
+          <h4 className="sd-plain-title">{detail.title}</h4>
 
-          {detail.tags.length > 0 ? (
+          <ol className="sd-plain">
+            <li>
+              Ön koşul:{" "}
+              {detail.needs.length === 0
+                ? state.word
+                : detail.needs.map((need) => need.label || need.id).join(", ")}{" "}
+              <span className={"sd-badge is-" + state.kind}>{state.word}</span>
+            </li>
+            {detail.description ? <li>{detail.description}</li> : null}
+            {/* Translated from the REAL steps, not from the prose: when a
+                scenario has a deterministic replay, what it actually does is
+                what should be read. */}
+            {steps.map((step, index) => (
+              <li key={index} className={step.translated ? undefined : "sd-untranslated"}>
+                {step.text}
+              </li>
+            ))}
+          </ol>
+
+          {detail.rules.length > 0 ? (
             <p className="sd-note">
-              Diğer etiketler: {detail.tags.map((tag) => "@" + tag).join(" ")}
+              Doğruladığı kurallar:{" "}
+              {detail.rules.map((rule) => rule.id).join(", ")}
             </p>
           ) : null}
         </section>
       </div>
-
-      <h4 className="product-section-title sd-code-head">Gherkin</h4>
-      <Gherkin text={detail.feature} />
     </div>
   );
 }

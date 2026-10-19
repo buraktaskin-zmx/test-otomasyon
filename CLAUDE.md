@@ -564,6 +564,22 @@ and leave each independently runnable.
   Narrowing the wait to `:visible` would have been wrong for the reason
   immediately below. Same shape as the `navigateTo` lesson: the locator was
   right, the first match was hidden.
+  **It came back a third time, in `verify {string} text is displayed`.**
+  `verifyTextIsDisplayed` was `getByText(text).first()`. On Alıcı Listesi
+  İşlemleri the word "Detay" appears EIGHTEEN times, and the first in document
+  order sits inside a `<div class="remainText nonprintable">` the application
+  keeps hidden — so the assertion burned its whole timeout waiting for that
+  div while the real button was on screen the entire run (`18 × locator
+  resolved to … unexpected value "hidden"`). The fix is
+  `filter(setVisible(true))` before `.first()`, and it is the OPPOSITE of the
+  `select row` fix above: there the step clicks a deliberately hidden input
+  through its label, here the step's whole claim is that a person can SEE the
+  text. So the rule is not "wait for attached" or "wait for visible" — it is
+  that **`.first()` is a bet that the first match in document order is the one
+  the step means**, and on these screens that bet keeps losing. The failure
+  now also reports the match count, because "the text is nowhere" and "the
+  text is here N times and every copy is hidden" need opposite fixes and
+  Playwright's own message cannot tell them apart.
 - **Custom-styled radios are invisible to Playwright.** The drawn circle IS the
   `<label>`; the input is visually hidden and Playwright refuses to click a
   hidden element. `clickRadio` checks visibility and clicks the label instead —

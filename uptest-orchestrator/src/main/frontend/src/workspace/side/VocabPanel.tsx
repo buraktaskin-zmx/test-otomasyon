@@ -1,19 +1,27 @@
 import { useState } from "react";
-import { PanelHead } from "./PanelHead";
 import { EmptyState } from "../../ui/EmptyState";
 import { StepPattern } from "../../ui/StepPattern";
 import { filterVocabulary, groupVocabulary } from "../../lib/vocabGroups";
 import type { VocabularyStep } from "../../api/types";
 
-/* app.js:182-225 (loadVocabulary/renderVocabulary) + index.html:71-77. */
+/*
+  Adım sözlüğü — artık kendi paneli değil, koşu panelinin bir sekmesi.
+
+  Moved because of where it is actually used. The vocabulary is read while
+  WRITING a scenario and while FIXING one the run gate refused, and the
+  refusal already sends the analyst to this side of the screen. Its own rail
+  item meant a closed list sat one click away from the editor it serves, and
+  the rail grew a seventh item for a reference table.
+
+  So this renders the body only: no wrapper, no PanelHead. The parent owns
+  the header, because the header is now shared with Zaman Çizelgesi.
+*/
 export function VocabPanel({
-  active,
   steps,
   loaded,
   failed,
   onInsert,
 }: {
-  active: boolean;
   steps: VocabularyStep[];
   loaded: boolean;
   failed: boolean;
@@ -24,8 +32,12 @@ export function VocabPanel({
   const grouped = groupVocabulary(filtered);
 
   return (
-    <div id="side-vocab" className={"side-panel" + (active ? " is-active" : "")}>
-      <PanelHead title="Adım Sözlüğü" />
+    <>
+      <p className="vocab-intro">
+        Kapalı sözlük: senaryolarda yalnızca bu {steps.length} adım kullanılabilir.
+        Bir adıma tıklayınca editöre eklenir.
+      </p>
+
       <div className="search-row">
         <input
           id="vocabSearch"
@@ -37,6 +49,7 @@ export function VocabPanel({
           onChange={(event) => setSearch(event.target.value)}
         />
       </div>
+
       <div id="vocabList" className="vocab-list">
         {!loaded ? null : failed ? (
           <EmptyState title="Sözlük alınamadı">Hiçbir executor'a ulaşılamıyor.</EmptyState>
@@ -63,6 +76,6 @@ export function VocabPanel({
           ))
         )}
       </div>
-    </div>
+    </>
   );
 }

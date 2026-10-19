@@ -5,6 +5,8 @@ import { useAsyncAction } from "../../hooks/useAsyncAction";
 import type { useProducts } from "../../hooks/useProducts";
 import { buildMultiIntent } from "../../lib/multiDepth";
 import { NO_PRODUCT, ProductPicker } from "../../product/ProductPicker";
+import { UserPicker } from "../../users/UserPicker";
+import type { useTestUsers } from "../../hooks/useTestUsers";
 import type { ProductSelection } from "../../product/ProductPicker";
 import type { Depth } from "../../lib/multiDepth";
 import { Badge } from "../../ui/Badge";
@@ -18,6 +20,7 @@ export function MultiPanel({
   active,
   catalogs,
   products,
+  users,
   preselect,
   onBatchGenerated,
   onFallbackChange,
@@ -25,14 +28,17 @@ export function MultiPanel({
   active: boolean;
   catalogs: string[];
   products: ReturnType<typeof useProducts>;
+  users: ReturnType<typeof useTestUsers>;
   preselect: string | null;
   onBatchGenerated: (drafts: Draft[], notes: string[]) => void;
   onFallbackChange: (origin: Origin) => void;
 }) {
   const [selection, setSelection] = useState<ProductSelection>(NO_PRODUCT);
   const catalog = selection.catalog;
-  const [cif, setCif] = useState("");
-  const [userid, setUserid] = useState("");
+  const [userId, setUserId] = useState("");
+  const chosen = userId ? users.byId(userId) : null;
+  const cif = chosen?.cif ?? "";
+  const userid = chosen?.userid ?? "";
   const [count, setCount] = useState(5);
   const [depth, setDepth] = useState<Depth>("confirm");
   const [note, setNote] = useState("");
@@ -129,32 +135,14 @@ export function MultiPanel({
           onChange={setSelection}
           disabled={generate.busy}
         />
-        <label className="suggest-label" htmlFor="multiCif">
-          CIF / Müşteri Kodu
-        </label>
-        <input
-          id="multiCif"
-          className="search"
-          type="text"
-          autoComplete="off"
-          value={cif}
-          onChange={(event) => setCif(event.target.value)}
+        <UserPicker
+          idPrefix="multi"
+          users={users}
+          value={userId}
+          onChange={setUserId}
+          needsUserid={!isNGI}
+          disabled={generate.busy}
         />
-        {!isNGI ? (
-          <div id="multiUseridRow">
-            <label className="suggest-label" htmlFor="multiUserid">
-              Kullanıcı ID
-            </label>
-            <input
-              id="multiUserid"
-              className="search"
-              type="text"
-              autoComplete="off"
-              value={userid}
-              onChange={(event) => setUserid(event.target.value)}
-            />
-          </div>
-        ) : null}
         <label className="suggest-label" htmlFor="multiCount">
           Senaryo sayısı
         </label>

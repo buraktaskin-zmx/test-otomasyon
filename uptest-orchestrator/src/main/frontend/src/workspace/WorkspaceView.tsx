@@ -7,18 +7,20 @@ import { MultiPanel } from "./multi/MultiPanel";
 import type { Draft } from "./multi/draft";
 import { AgentPanel } from "./side/AgentPanel";
 import { ProductPanel } from "./side/ProductPanel";
+import { UsersPanel } from "./side/UsersPanel";
 import { ChatView } from "../chat/ChatView";
 import { SideRail } from "./side/SidePane";
 import type { SideTab } from "./side/SidePane";
 import { SuggestPanel } from "./side/SuggestPanel";
 import { TimelinePanel } from "./side/TimelinePanel";
-import { VocabPanel } from "./side/VocabPanel";
+import type { RunTab } from "./side/TimelinePanel";
 import { Badge } from "../ui/Badge";
 import { useCatalogs } from "../hooks/useCatalogs";
 import { useEditorOperations } from "../hooks/useEditorOperations";
 import { useExploreTools } from "../hooks/useExploreTools";
 import { useOrigin } from "../hooks/useOrigin";
 import { useProducts } from "../hooks/useProducts";
+import { useTestUsers } from "../hooks/useTestUsers";
 import { useRunArtifacts } from "../hooks/useRunArtifacts";
 import { useRunPoll } from "../hooks/useRunPoll";
 import { useValidation } from "../hooks/useValidation";
@@ -61,7 +63,11 @@ export function WorkspaceView({
   vocabulary: ReturnType<typeof useVocabulary>;
 }) {
   const [feature, setFeature] = useState(SAMPLE);
-  const [sideTab, setSideTab] = useState<SideTab>("vocab");
+  const [sideTab, setSideTab] = useState<SideTab>("timeline");
+  /* Which half of the run panel shows. Owned here rather than inside the
+     panel because the 422 branch below has to force it: a panel cannot
+     switch itself on a decision taken somewhere else. */
+  const [runTab, setRunTab] = useState<RunTab>("vocab");
   /* The panel can be closed outright to give the editor the full width --
      a long scenario is 20+ lines of quoted Turkish and the 40% column was
      costing the half of it that matters. Closing hides the panel, not the
@@ -80,6 +86,7 @@ export function WorkspaceView({
   const origin = useOrigin();
   const catalogs = useCatalogs();
   const products = useProducts();
+  const users = useTestUsers();
   const tools = useExploreTools();
   const runPoll = useRunPoll();
   const artifacts = useRunArtifacts(runPoll.run?.runId ?? null, runPoll.run?.status ?? null);
@@ -238,7 +245,8 @@ export function WorkspaceView({
       if (!result.ok) {
         if (result.status === 422) {
           validation.applyResult(result.body as ValidationResult);
-          showPanel("vocab");
+          showPanel("timeline");
+          setRunTab("vocab");
           toast("Senaryo çalıştırılmadı: tanımsız adım var", true);
           return;
         }
@@ -254,6 +262,28 @@ export function WorkspaceView({
   const handleRunClick = useCallback(
     () => runWith(feature, resolvedOrigin),
     [runWith, feature, resolvedOrigin],
+  );
+
+  /**
+   * Run a scenario straight from the registry.
+   *
+   * Goes through handleGenerated's own path — clear the batch, pin the origin,
+   * put the text in the editor — because a run whose scenario is not the one
+   * on screen is the stale-panel bug again, and because the registry must not
+   * grow a SECOND way to start a run: there is one gate and it re-validates.
+   *
+   * The panel switches before the run starts, with a short pause, so the
+   * analyst is already watching the timeline when the first step lands rather
+   * than discovering it afterwards. That is all the pause buys and all it is
+   * for.
+   */
+  const runRegistered = useCallback(
+    (text: string, where: Origin) => {
+      handleGenerated(text, where);
+      showPanel("timeline");
+      window.setTimeout(() => void runWith(text, where), 800);
+    },
+    [handleGenerated, showPanel, runWith],
   );
 
   /* Chat's Çalıştır: the draft goes into the editor FIRST, then runs. The
@@ -344,30 +374,36 @@ export function WorkspaceView({
           active={sideTab === "chat"}
           catalogs={catalogs.catalogs}
           products={products}
+          users={users}
           preselect={lastSavedCatalog}
           onHandOff={handleGenerated}
           onRunDraft={runDraft}
         />
-        <VocabPanel
-          active={sideTab === "vocab"}
-          steps={vocabulary.steps}
-          loaded={vocabulary.loaded}
-          failed={vocabulary.failed}
-          onInsert={insertAtCursor}
+        <UsersPanel active={sideTab === "users"} users={users} />
+        <ProductPanel
+          active={sideTab === "product"}
+          products={products}
+          onRun={runRegistered}
         />
-        <ProductPanel active={sideTab === "product"} products={products} />
         <TimelinePanel
           active={sideTab === "timeline"}
+          tab={runTab}
+          onTabChange={setRunTab}
           run={runPoll.run}
           artifacts={artifacts}
           onStop={() => void runPoll.stop()}
           onRun={() => void handleRunClick()}
           runDisabled={runDisabled}
+          steps={vocabulary.steps}
+          vocabularyLoaded={vocabulary.loaded}
+          vocabularyFailed={vocabulary.failed}
+          onInsert={insertAtCursor}
         />
         <SuggestPanel
           active={sideTab === "suggest"}
           catalogs={catalogs.catalogs}
           products={products}
+          users={users}
           preselect={lastSavedCatalog}
           onGenerated={handleGenerated}
           onFallbackChange={setFallbackOrigin}
@@ -376,12 +412,18 @@ export function WorkspaceView({
           active={sideTab === "multi"}
           catalogs={catalogs.catalogs}
           products={products}
+          users={users}
           preselect={lastSavedCatalog}
           onBatchGenerated={handleBatchGenerated}
           onFallbackChange={setFallbackOrigin}
         />
         {agentVisible ? (
-          <AgentPanel active={sideTab === "agent"} tools={tools} onCatalogSaved={handleCatalogSaved} />
+          <AgentPanel
+            active={sideTab === "agent"}
+            tools={tools}
+            users={users}
+            onCatalogSaved={handleCatalogSaved}
+          />
         ) : null}
       </aside>
     </section>

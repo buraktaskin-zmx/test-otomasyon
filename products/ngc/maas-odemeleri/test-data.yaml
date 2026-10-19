@@ -91,6 +91,11 @@ listeler:
     aciklama: "En az bir alıcı listesi olan firma — sorgulama senaryoları için"
     cozum: sabit
     not: "FIRMA_TEST bu koşulu bugün sağlıyor."
+  IKI_LISTE:
+    kisa: "En az 2 liste"
+    aciklama: "Sıralama ve tek-satır-seçimi senaryoları en az iki satır ister"
+    cozum: seed
+    nasil: "E5 ile iki AUTO_ listesi oluştur, koşum sonunda ikisini de sil"
   LISTE_BOS:
     kisa: "0 kayıtlı liste"
     aciklama: "0 kayıtlı liste — R-LS-003, S-20 için"
