@@ -86,10 +86,12 @@ public class RunStore {
      */
     @Transactional
     public TestRunEntity record(UUID id, String feature, String executorName,
-                                String scenarioName, String app, String flow, String intent) {
+                                String scenarioName, String app, String flow, String intent,
+                                String product) {
         TestRunEntity row = new TestRunEntity(
                 id, Instant.now(), "RUNNING", executorName, scenarioName,
-                blankToNull(app), blankToNull(flow), blankToNull(intent), feature);
+                blankToNull(app), blankToNull(flow), blankToNull(intent), feature,
+                blankToNull(product));
         return runs.save(row);
     }
 

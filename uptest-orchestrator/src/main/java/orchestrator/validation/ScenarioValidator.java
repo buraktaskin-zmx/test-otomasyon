@@ -8,6 +8,7 @@ import io.cucumber.messages.types.GherkinDocument;
 import io.cucumber.messages.types.ParseError;
 import io.cucumber.messages.types.Step;
 import orchestrator.catalog.CatalogModel;
+import orchestrator.product.ProductModel;
 import orchestrator.vocabulary.Vocabulary;
 import org.springframework.stereotype.Service;
 
@@ -63,6 +64,35 @@ public class ScenarioValidator {
      */
     public ValidationResult validate(String featureText, Vocabulary vocabulary, CatalogModel catalog,
                                      String intent) {
+        return validate(featureText, vocabulary, catalog, intent, null);
+    }
+
+    /**
+     * The same checks again, plus the sentences the PRODUCT says the
+     * application prints.
+     *
+     * This exists for one finding. {@link #checkMessageIsCatalogued} accepted
+     * exactly one asserted sentence — the catalog's {@code success_message} —
+     * and its own javadoc records the consequence: a negative scenario
+     * asserting an error dialog's text was flagged too. That shut the door on
+     * most of what is worth testing in a payment product, because almost every
+     * business rule there is a refusal ("Geçersiz IBAN numarası girdiniz.")
+     * and a screen's catalog has no place to record one. A catalog describes
+     * what a screen HAS; only a person can write down what the application
+     * must SAY when it says no.
+     *
+     * <p>Note which half of the product is consulted here: all of its
+     * messages, never only the rules the analyst ticked for this generation.
+     * The selection shapes the prompt; it must not shape the validator, or a
+     * draft accepted at generation would be refused by the identical check at
+     * the run gate.
+     *
+     * @param product may be null, and then this is byte-for-byte the previous
+     *                behaviour — the accepted set falls back to the single
+     *                catalogued success message
+     */
+    public ValidationResult validate(String featureText, Vocabulary vocabulary, CatalogModel catalog,
+                                     String intent, ProductModel product) {
         List<ValidationError> errors = new ArrayList<>();
 
         GherkinParser parser = GherkinParser.builder().includePickles(false).build();
@@ -119,7 +149,7 @@ public class ScenarioValidator {
             for (Step step : steps) {
                 checkAgainstCatalog(step, vocabulary, catalog, errors);
             }
-            checkAssertionsAreEarned(steps, vocabulary, catalog, intent, errors);
+            checkAssertionsAreEarned(steps, vocabulary, catalog, intent, product, errors);
         }
 
         return errors.isEmpty()
@@ -232,9 +262,11 @@ public class ScenarioValidator {
      * rather than invention.
      */
     private static void checkAssertionsAreEarned(List<Step> steps, Vocabulary vocabulary, CatalogModel catalog,
-                                                 String intent, List<ValidationError> errors) {
+                                                 String intent, ProductModel product,
+                                                 List<ValidationError> errors) {
         Set<String> written = new HashSet<>();
         String said = intent == null ? "" : fold(intent);
+        List<String> known = knownMessages(catalog, product);
 
         for (Step step : steps) {
             String text = step.getText().trim();
@@ -247,7 +279,7 @@ public class ScenarioValidator {
             if (pattern.startsWith("verify ") && pattern.endsWith("text is displayed")
                     && !match.arguments().isEmpty()) {
                 checkMessageIsCatalogued(text, match.arguments().get(0),
-                        step.getLocation().getLine(), catalog, said, errors);
+                        step.getLocation().getLine(), catalog, known, said, errors);
                 continue;
             }
 
@@ -284,17 +316,39 @@ public class ScenarioValidator {
      * when the catalog actually gives a message — a flow without one has
      * nothing to compare against.
      *
-     * Known limitation: a negative scenario asserting an error dialog's text
-     * is flagged too. That is arguable rather than wrong — a message a test
-     * depends on belongs in the catalog either way — but it is the reason
-     * this fires only on catalogs that carry a success_message.
+     * This used to read only {@code catalog.successMessage()}, and carried a
+     * known limitation: a negative scenario asserting an error dialog's text
+     * was flagged too. That was never arguable for a product whose rules are
+     * mostly refusals — it meant those scenarios could not be generated at
+     * all, and the only workaround was for the analyst to paste the error text
+     * into the intent so the escape hatch below would fire. The fix is not to
+     * loosen the check but to widen what counts as catalogued: a screen's
+     * catalog records what the screen HAS, and a product's rules record what
+     * the application SAYS when it refuses. Both are written down; neither is
+     * invented.
+     *
+     * @param known every sentence this screen and its product are known to
+     *              print. Empty when neither says anything, and then nothing
+     *              here has a comparison to make
+     * @param catalog consulted for one question only — whether a success
+     *                message exists — because that is what decides which of
+     *                the two findings is the truthful one
      */
     private static void checkMessageIsCatalogued(String text, String asserted, long line,
-                                                 CatalogModel catalog, String said,
-                                                 List<ValidationError> errors) {
-        String expected = catalog.successMessage();
+                                                 CatalogModel catalog, List<String> known,
+                                                 String said, List<ValidationError> errors) {
+        if (known.stream().anyMatch(message -> fold(message).equals(fold(asserted)))) {
+            return;
+        }
 
-        if (expected == null || expected.isBlank()) {
+        // "Paraphrased" is a claim about the SUCCESS message, so it is only
+        // sayable when the catalog carries one. Without it there is nothing
+        // this screen declares it prints, and the finding is the older,
+        // weaker one — along with its intent escape, which must survive:
+        // dropping it would turn a scenario that validates today into an
+        // error the moment a product is selected, for no new reason.
+        String success = catalog == null ? null : catalog.successMessage();
+        if (success == null || success.isBlank()) {
             // No message in the catalog, so there is nothing on this screen the
             // scenario is entitled to claim. The prompt already says to end
             // without one; a model that writes a plausible sentence anyway
@@ -306,9 +360,40 @@ public class ScenarioValidator {
             }
             return;
         }
-        if (!fold(expected).equals(fold(asserted))) {
-            errors.add(ValidationError.paraphrasedMessage(line, text, expected));
+        errors.add(ValidationError.paraphrasedMessage(line, text, nearest(asserted, known)));
+    }
+
+    /**
+     * Every sentence the scenario is entitled to claim the application prints:
+     * the catalog's success message, plus every message the product's rules
+     * record.
+     *
+     * Order matters only for the suggestion, and the success message goes
+     * first because a scenario that paraphrases anything usually paraphrased
+     * that one.
+     */
+    private static List<String> knownMessages(CatalogModel catalog, ProductModel product) {
+        List<String> known = new ArrayList<>();
+        if (catalog != null && catalog.successMessage() != null && !catalog.successMessage().isBlank()) {
+            known.add(catalog.successMessage());
         }
+        if (product != null) {
+            product.messages().stream().filter(m -> !m.isBlank()).forEach(known::add);
+        }
+        return known;
+    }
+
+    /**
+     * The known message the draft most likely meant, so the repair prompt and
+     * the analyst both get the right sentence rather than "it is not the
+     * success message".
+     *
+     * With one known message this is exactly what the old code reported.
+     */
+    private static String nearest(String asserted, List<String> known) {
+        return known.stream()
+                .min(Comparator.comparingInt(candidate -> distance(fold(asserted), fold(candidate))))
+                .orElse("");
     }
 
     /**

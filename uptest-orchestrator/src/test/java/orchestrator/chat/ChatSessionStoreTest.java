@@ -4,6 +4,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -26,7 +27,7 @@ class ChatSessionStoreTest {
     @DisplayName("a session is findable by its id, and nothing else is")
     void opensAndFinds() {
         ChatSessionStore store = store(Duration.ofHours(1), 10);
-        ChatSession session = store.open("ngc", "fatura-olustur", "DI1", "1335");
+        ChatSession session = store.open("ngc", "fatura-olustur", "DI1", "1335", null, List.of());
 
         assertThat(store.find(session.id())).containsSame(session);
         assertThat(store.find("not-an-id")).isEmpty();
@@ -37,7 +38,7 @@ class ChatSessionStoreTest {
     @DisplayName("closing removes it")
     void closes() {
         ChatSessionStore store = store(Duration.ofHours(1), 10);
-        ChatSession session = store.open("ngc", "x", null, null);
+        ChatSession session = store.open("ngc", "x", null, null, null, List.of());
 
         store.close(session.id());
 
@@ -52,7 +53,7 @@ class ChatSessionStoreTest {
         // alternative is a Clock on the constructor and in the Spring wiring,
         // which is a lot of surface to carry for a timer this simple.
         ChatSessionStore store = store(Duration.ofMillis(50), 10);
-        ChatSession session = store.open("ngc", "x", null, null);
+        ChatSession session = store.open("ngc", "x", null, null, null, List.of());
 
         Thread.sleep(250);
 
@@ -66,7 +67,7 @@ class ChatSessionStoreTest {
         // a test that fails when the build host is busy teaches people to
         // ignore it. 500 ms window, 100 ms steps.
         ChatSessionStore store = store(Duration.ofMillis(500), 10);
-        ChatSession session = store.open("ngc", "x", null, null);
+        ChatSession session = store.open("ngc", "x", null, null, null, List.of());
 
         // Three lookups spanning longer than one window: each must push the
         // deadline out, or a conversation dies while it is being had.
@@ -81,9 +82,9 @@ class ChatSessionStoreTest {
     void capsImmediately() {
         ChatSessionStore store = store(Duration.ofHours(1), 2);
 
-        ChatSession first = store.open("ngc", "a", null, null);
-        ChatSession second = store.open("ngc", "b", null, null);
-        ChatSession third = store.open("ngc", "c", null, null);
+        ChatSession first = store.open("ngc", "a", null, null, null, List.of());
+        ChatSession second = store.open("ngc", "b", null, null, null, List.of());
+        ChatSession third = store.open("ngc", "c", null, null, null, List.of());
 
         // Checked right after open() returns. Sweeping BEFORE the insert
         // would leave the map one over until something else happened to call
@@ -99,8 +100,8 @@ class ChatSessionStoreTest {
     void evictsOldestFirst() {
         ChatSessionStore store = store(Duration.ofHours(1), 1);
 
-        store.open("ngc", "old", null, null);
-        ChatSession newest = store.open("ngc", "new", null, null);
+        store.open("ngc", "old", null, null, null, List.of());
+        ChatSession newest = store.open("ngc", "new", null, null, null, List.of());
 
         assertThat(store.size()).isEqualTo(1);
         assertThat(store.find(newest.id())).isPresent();

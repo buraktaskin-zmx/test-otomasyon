@@ -5,6 +5,7 @@ import orchestrator.catalog.CatalogService;
 import orchestrator.executor.ExecutorClient;
 import orchestrator.executor.ExecutorPool;
 import orchestrator.persistence.TestRunEntity;
+import orchestrator.product.ProductService;
 import orchestrator.validation.ScenarioValidator;
 import orchestrator.validation.ValidationResult;
 import orchestrator.vocabulary.Vocabulary;
@@ -51,6 +52,7 @@ public class RunService {
     private final ScenarioValidator validator;
     private final VocabularyService vocabularyService;
     private final CatalogService catalogs;
+    private final ProductService products;
     private final RunStore store;
     private final ObjectMapper mapper;
 
@@ -59,7 +61,7 @@ public class RunService {
     private final Duration staleAfter;
 
     public RunService(ExecutorPool pool, ScenarioValidator validator, VocabularyService vocabularyService,
-                      CatalogService catalogs, RunStore store, ObjectMapper mapper,
+                      CatalogService catalogs, ProductService products, RunStore store, ObjectMapper mapper,
                       @Value("${uptest.run.list-limit:50}") int defaultListLimit,
                       @Value("${uptest.run.refresh-max:5}") int refreshMax,
                       @Value("${uptest.run.stale-after:30m}") Duration staleAfter) {
@@ -67,6 +69,7 @@ public class RunService {
         this.validator = validator;
         this.vocabularyService = vocabularyService;
         this.catalogs = catalogs;
+        this.products = products;
         this.store = store;
         this.mapper = mapper;
         this.defaultListLimit = defaultListLimit;
@@ -108,6 +111,20 @@ public class RunService {
      *               assertion would be rejected here as an invented one.
      */
     public StartOutcome start(String feature, String app, String flow, String intent) {
+        return start(feature, app, flow, intent, null);
+    }
+
+    /**
+     * @param product the product whose rules this scenario was written
+     *                against, or null. Load-bearing for the same reason
+     *                {@code intent} is: a scenario may legitimately assert an
+     *                error message the PRODUCT declares, and without the
+     *                product that assertion is rejected here as uncatalogued —
+     *                a draft the generator accepted minutes earlier refused at
+     *                the gate, which is precisely the disagreement app and
+     *                flow were threaded through here to end.
+     */
+    public StartOutcome start(String feature, String app, String flow, String intent, String product) {
         Optional<Vocabulary> vocabulary = vocabularyService.get();
         if (vocabulary.isEmpty()) {
             // Refusing beats validating against an empty vocabulary, which would
@@ -122,7 +139,12 @@ public class RunService {
                 ? catalogs.read(app, flow).flatMap(CatalogModel::parse).orElse(null)
                 : null;
 
-        ValidationResult validation = validator.validate(feature, vocabulary.get(), catalog, intent);
+        // No guard needed: ProductService.load answers empty for a null or
+        // blank name, so "no product named" and "no such product" take the
+        // same path — nothing to check against, which is this method's
+        // long-standing answer to a missing catalog too.
+        ValidationResult validation = validator.validate(feature, vocabulary.get(), catalog, intent,
+                products.load(app, product).orElse(null));
         if (!validation.valid()) {
             return new StartOutcome(null, null, Rejection.INVALID_SCENARIO, validation);
         }
@@ -158,7 +180,7 @@ public class RunService {
          * and deriving it before redaction keeps the two concerns apart.
          */
         store.record(runId, Redactor.redactFeature(feature), executor.get().name(),
-                ScenarioName.of(feature), app, flow, intent);
+                ScenarioName.of(feature), app, flow, intent, product);
 
         return new StartOutcome(runId, executor.get().name(), null, validation);
     }

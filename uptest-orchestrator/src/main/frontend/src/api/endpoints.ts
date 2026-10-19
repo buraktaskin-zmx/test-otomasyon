@@ -16,6 +16,10 @@ import type {
   ExploreToolsResponse,
   LlmHelloResponse,
   Origin,
+  ProductDetail,
+  ProductRegistry,
+  ProductsResponse,
+  ScenarioDetail,
   RunDetail,
   RunStarted,
   SaveCatalogResponse,
@@ -126,6 +130,44 @@ export const getCatalogs = () =>
 
 export const saveCatalog = (app: string, flow: string, yaml: string) =>
   api<SaveCatalogResponse>("POST", "/api/v1/scenarios/catalogs", { app, flow, yaml });
+
+/* ------------------------------ products ------------------------------- */
+
+/** Every product, without its rules -- three pickers load this, and a
+ *  product may carry fifty rules none of them show. */
+export const getProducts = () =>
+  api<ProductsResponse>("GET", "/api/v1/products");
+
+/** One product in full: rules, free text, and what it is missing. 404 with
+ *  an ErrorBody carrying `detail` when the files will not parse, which is
+ *  the only way an analyst finds out why a product they just wrote is not
+ *  in the picker. */
+export const getProduct = (app: string, product: string) =>
+  api<ProductDetail>(
+    "GET",
+    "/api/v1/products/" + encodeURIComponent(app) + "/" + encodeURIComponent(product),
+  );
+
+/** The registered scenarios of one product, with their rule bindings, data
+ *  preconditions and last run. Re-read every time it is opened: a .feature
+ *  is edited by hand in an IDE while this screen is open, and a registry
+ *  showing yesterday's step count is worse than none. */
+/** One scenario's Gherkin plus its resolved row. The path travels as a
+ *  query parameter because it contains slashes; the server still checks
+ *  containment, because a path from a browser is never trusted. */
+export const getScenario = (app: string, product: string, path: string) =>
+  api<ScenarioDetail>(
+    "GET",
+    "/api/v1/products/" + encodeURIComponent(app) + "/"
+      + encodeURIComponent(product) + "/scenario?path=" + encodeURIComponent(path),
+  );
+
+export const getProductScenarios = (app: string, product: string) =>
+  api<ProductRegistry>(
+    "GET",
+    "/api/v1/products/" + encodeURIComponent(app) + "/"
+      + encodeURIComponent(product) + "/scenarios",
+  );
 
 /* ----------------------------- generation ------------------------------ */
 

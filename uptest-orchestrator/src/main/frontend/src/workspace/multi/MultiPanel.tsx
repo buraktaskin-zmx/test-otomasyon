@@ -2,7 +2,10 @@ import { useEffect, useState } from "react";
 import { PanelHead } from "../side/PanelHead";
 import { suggestMany } from "../../api/endpoints";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
+import type { useProducts } from "../../hooks/useProducts";
 import { buildMultiIntent } from "../../lib/multiDepth";
+import { NO_PRODUCT, ProductPicker } from "../../product/ProductPicker";
+import type { ProductSelection } from "../../product/ProductPicker";
 import type { Depth } from "../../lib/multiDepth";
 import { Badge } from "../../ui/Badge";
 import { useToast } from "../../ui/Toast";
@@ -14,17 +17,20 @@ import type { Origin } from "../../api/types";
 export function MultiPanel({
   active,
   catalogs,
+  products,
   preselect,
   onBatchGenerated,
   onFallbackChange,
 }: {
   active: boolean;
   catalogs: string[];
+  products: ReturnType<typeof useProducts>;
   preselect: string | null;
   onBatchGenerated: (drafts: Draft[], notes: string[]) => void;
   onFallbackChange: (origin: Origin) => void;
 }) {
-  const [catalog, setCatalog] = useState("");
+  const [selection, setSelection] = useState<ProductSelection>(NO_PRODUCT);
+  const catalog = selection.catalog;
   const [cif, setCif] = useState("");
   const [userid, setUserid] = useState("");
   const [count, setCount] = useState(5);
@@ -37,12 +43,12 @@ export function MultiPanel({
   const isNGI = appPart.toUpperCase() === "NGI";
 
   useEffect(() => {
-    if (preselect) setCatalog(preselect);
+    if (preselect) setSelection((was) => ({ ...was, catalog: preselect }));
   }, [preselect]);
 
   useEffect(() => {
-    onFallbackChange({ app: appPart, flow: flowPart, intent: note });
-  }, [appPart, flowPart, note, onFallbackChange]);
+    onFallbackChange({ app: appPart, flow: flowPart, intent: note, product: selection.product });
+  }, [appPart, flowPart, note, selection.product, onFallbackChange]);
 
   const generate = useAsyncAction(async () => {
     if (!catalog) {
@@ -71,13 +77,19 @@ export function MultiPanel({
     const intent = buildMultiIntent(depth, note);
     setSummary(null);
 
-    const result = await suggestMany({ app: appPart, flow: flowPart, intent, cif, userid, count });
+    const result = await suggestMany({
+      app: appPart, flow: flowPart, intent, cif, userid, count,
+      product: selection.product, ruleIds: selection.ruleIds,
+    });
     if (!result.ok) {
       toast("Üretim başarısız: " + result.error, true);
       return;
     }
 
-    const origin: Origin = { app: appPart, flow: flowPart, intent };
+    // Carried on EVERY draft of the batch, exactly as app/flow are: each one
+    // is independently editable and runnable, and each gets re-validated
+    // against the rule book it was written under.
+    const origin: Origin = { app: appPart, flow: flowPart, intent, product: selection.product };
     const drafts: Draft[] = result.body.scenarios.map((s) => ({
       label: s.label,
       feature: s.feature,
@@ -109,25 +121,14 @@ export function MultiPanel({
     <div id="side-multi" className={"side-panel" + (active ? " is-active" : "")}>
       <PanelHead title="Çoklu Üret" />
       <div className="suggest-form">
-        <label className="suggest-label" htmlFor="multiCatalog">
-          Ekran
-        </label>
-        <select
-          id="multiCatalog"
-          className="search"
-          value={catalog}
-          onChange={(event) => setCatalog(event.target.value)}
-        >
-          {catalogs.length === 0 ? (
-            <option value="">(katalog bulunamadı)</option>
-          ) : (
-            catalogs.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))
-          )}
-        </select>
+        <ProductPicker
+          idPrefix="multi"
+          products={products}
+          catalogs={catalogs}
+          value={selection}
+          onChange={setSelection}
+          disabled={generate.busy}
+        />
         <label className="suggest-label" htmlFor="multiCif">
           CIF / Müşteri Kodu
         </label>

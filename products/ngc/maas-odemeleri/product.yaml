@@ -1,0 +1,21 @@
+# products/ngc/maas-odemeleri/product.yaml
+app: ngc
+product: maas-odemeleri
+name: "Maaş Ödemeleri"
+
+# Ürünler ağacında ürünün üstündeki seviye. Uygulamadan (NGC/NGI) bağımsız:
+# Ödemeler ve Hesap İşlemleri uygulamaların ikisini de kesiyor.
+category: "Ödemeler"
+
+description: >
+  Kurumsal müşterilerin toplu maaş ödemelerinde kullandıkları alıcı
+  listelerinin yönetimi ve bu listelerin ödeme işlemine yüklenmesi.
+  Alıcı listesi, firmanın bir kez kurup her ay tekrar kullandığı
+  TCKN / hesap no / tutar üçlülerinden oluşan bir şablondur.
+
+flows:
+  - alici-listesi-islemleri      # E1 — sorgulama, ana ekran
+  - yeni-liste-olustur           # E5 — 2 adımlı sihirbaz
+  - alici-listesi-sil            # E4 — onay ekranı
+  - alici-listesi-detay          # E2 — kayıt yönetimi
+  - alici-listesinden-yukleme    # E3 — ödemeye yükleme (kural seti henüz yazılmadı)

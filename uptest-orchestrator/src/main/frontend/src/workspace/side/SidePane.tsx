@@ -14,7 +14,7 @@ import type { ReactNode } from "react";
   .is-active, exactly as the tab strip did.
 */
 
-export type SideTab = "vocab" | "timeline" | "chat" | "suggest" | "multi" | "agent";
+export type SideTab = "vocab" | "product" | "timeline" | "chat" | "suggest" | "multi" | "agent";
 
 /*
   Inline SVG, 16px, stroke-based.
@@ -49,6 +49,13 @@ const ICONS: Record<SideTab, ReactNode> = {
       <circle cx="2.6" cy="4" r=".9" />
       <circle cx="2.6" cy="8" r=".9" />
       <circle cx="2.6" cy="12" r=".9" />
+    </Icon>
+  ),
+  // The rule book: a document with a checked clause.
+  product: (
+    <Icon>
+      <path d="M4 2.5h6.2L13 5.3V13a.5.5 0 0 1-.5.5h-8.5A.5.5 0 0 1 3.5 13V3a.5.5 0 0 1 .5-.5z" />
+      <path d="M6 9.3 7.2 10.6 10 7.6" />
     </Icon>
   ),
   // A run: play, with progress beneath it.
@@ -110,6 +117,7 @@ export function SideRail({
 }) {
   const tabs: ReadonlyArray<{ id: SideTab; label: string }> = [
     { id: "vocab", label: "Adım Sözlüğü" },
+    { id: "product", label: "Ürünler" },
     { id: "timeline", label: "Koşu" },
     { id: "chat", label: "Chat" },
     { id: "suggest", label: "AI Üret" },

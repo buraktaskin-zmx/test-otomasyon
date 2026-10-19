@@ -6,6 +6,7 @@ import { MultiList } from "./multi/MultiList";
 import { MultiPanel } from "./multi/MultiPanel";
 import type { Draft } from "./multi/draft";
 import { AgentPanel } from "./side/AgentPanel";
+import { ProductPanel } from "./side/ProductPanel";
 import { ChatView } from "../chat/ChatView";
 import { SideRail } from "./side/SidePane";
 import type { SideTab } from "./side/SidePane";
@@ -17,6 +18,7 @@ import { useCatalogs } from "../hooks/useCatalogs";
 import { useEditorOperations } from "../hooks/useEditorOperations";
 import { useExploreTools } from "../hooks/useExploreTools";
 import { useOrigin } from "../hooks/useOrigin";
+import { useProducts } from "../hooks/useProducts";
 import { useRunArtifacts } from "../hooks/useRunArtifacts";
 import { useRunPoll } from "../hooks/useRunPoll";
 import { useValidation } from "../hooks/useValidation";
@@ -77,13 +79,19 @@ export function WorkspaceView({
   const toast = useToast();
   const origin = useOrigin();
   const catalogs = useCatalogs();
+  const products = useProducts();
   const tools = useExploreTools();
   const runPoll = useRunPoll();
   const artifacts = useRunArtifacts(runPoll.run?.runId ?? null, runPoll.run?.status ?? null);
 
   /* The live fallback screen/intent AI Üret or Çoklu Üret currently shows --
      read only when nothing has been pinned yet. See lib/originScreen.ts. */
-  const [fallbackOrigin, setFallbackOrigin] = useState<Origin>({ app: "", flow: "", intent: "" });
+  const [fallbackOrigin, setFallbackOrigin] = useState<Origin>({
+    app: "",
+    flow: "",
+    intent: "",
+    product: "",
+  });
   const resolvedOrigin = origin.resolve(fallbackOrigin);
 
   /* ------------------------------ Çoklu Üret ------------------------------ */
@@ -264,7 +272,11 @@ export function WorkspaceView({
      side do not fit in the 40% column the other panels live in. The editor
      is hidden by CSS rather than unmounted -- the caret position, the scroll
      and the refs behind them all survive the trip. */
-  const chatMode = panelOpen && sideTab === "chat";
+  /* Two panels need the whole workspace rather than the 40% column: a
+     conversation beside a growing draft, and a three-level tree beside a
+     five-column table. Both are hidden by CSS, never unmounted, so the
+     editor keeps its scroll position and the forms keep what was typed. */
+  const chatMode = panelOpen && (sideTab === "chat" || sideTab === "product");
 
   const liveRun = runPoll.run?.status === "RUNNING";
   const agentVisible = !tools.loaded || tools.available;
@@ -331,6 +343,7 @@ export function WorkspaceView({
         <ChatView
           active={sideTab === "chat"}
           catalogs={catalogs.catalogs}
+          products={products}
           preselect={lastSavedCatalog}
           onHandOff={handleGenerated}
           onRunDraft={runDraft}
@@ -342,6 +355,7 @@ export function WorkspaceView({
           failed={vocabulary.failed}
           onInsert={insertAtCursor}
         />
+        <ProductPanel active={sideTab === "product"} products={products} />
         <TimelinePanel
           active={sideTab === "timeline"}
           run={runPoll.run}
@@ -353,6 +367,7 @@ export function WorkspaceView({
         <SuggestPanel
           active={sideTab === "suggest"}
           catalogs={catalogs.catalogs}
+          products={products}
           preselect={lastSavedCatalog}
           onGenerated={handleGenerated}
           onFallbackChange={setFallbackOrigin}
@@ -360,6 +375,7 @@ export function WorkspaceView({
         <MultiPanel
           active={sideTab === "multi"}
           catalogs={catalogs.catalogs}
+          products={products}
           preselect={lastSavedCatalog}
           onBatchGenerated={handleBatchGenerated}
           onFallbackChange={setFallbackOrigin}

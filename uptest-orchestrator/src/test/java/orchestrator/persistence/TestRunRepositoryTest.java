@@ -61,7 +61,7 @@ class TestRunRepositoryTest {
         UUID id = UUID.randomUUID();
 
         TestRunEntity row = new TestRunEntity(id, Instant.now(), "RUNNING", "executor-1:9035",
-                "Uzun senaryo", "ngc", "banko-payment", huge, huge);
+                "Uzun senaryo", "ngc", "banko-payment", huge, huge, null);
         row.setLastStatusJson(huge);
         runs.saveAndFlush(row);
         em.clear();
@@ -305,7 +305,7 @@ class TestRunRepositoryTest {
     private static TestRunEntity newRun(UUID id, Instant submittedAt) {
         return new TestRunEntity(id, submittedAt, "RUNNING", "executor-1:9035",
                 "Kullanıcı ödeme talep eder", "ngc", "banko-payment",
-                "banko ödeme testi", "Feature: X\n  Scenario: Y\n");
+                "banko ödeme testi", "Feature: X\n  Scenario: Y\n", null);
     }
 
     private static List<UUID> ids(List<TestRunEntity> rows) {

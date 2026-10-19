@@ -101,12 +101,22 @@ touches the top layer.
 
 ### What a scenario is made of
 
-> **catalog** (the nouns) + **analyst intent** (the verbs and values) +
-> **vocabulary** (the grammar)
+> **catalog** (the nouns) + **product rules** (what must be true) +
+> **analyst intent** (the verbs and values) + **vocabulary** (the grammar)
 
 A catalog is a screen's dictionary — labels, types, options, how to reach the
 screen — and carries no test data, which is why one catalog serves many
 scenarios and why the validator can check a generated scenario against it.
+
+The **product rules** are the fourth element and the newest. They exist
+because a test has two halves and only one of them can be read off a screen:
+an action, which discovery can find, and an *expectation*, which it cannot. A
+catalog is produced by looking at the application, so whatever it records is
+true by construction — including a bug. Told only to "test this screen", the
+model treats what it sees as what should be, and writes the defect into the
+suite. The rules are written by a person, live in
+`products/<app>/<product>/rules.yaml`, and are the only input that can
+contradict the application. See `products/SCHEMA.md`.
 
 ### Two applications
 

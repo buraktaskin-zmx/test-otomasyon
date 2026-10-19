@@ -447,3 +447,583 @@ body {
     outline: 2px solid var(--brand);
     outline-offset: 1px;
 }
+
+/* ========================= Ürün bağlamı ===============================
+
+   The rule book: what the application must DO, as opposed to what a screen
+   HAS. Three generation panels show a picker; the Ürün panel shows the whole
+   thing read-only.
+
+   Why any of this is on screen at all: a product's rules steer every
+   generation made under it, and this project's own history says an input
+   nobody can see is the most dangerous kind -- a silent wrong answer is the
+   hardest to notice. Ticking a rule and seeing it listed is the whole point,
+   so these rules are about legibility, not decoration.
+
+   Reuses app.css's tokens throughout (--warn, --ok, --border-soft,
+   --text-faint); nothing here defines a colour of its own, so both themes
+   follow without a second definition. */
+
+/* ----- the picker, inside .suggest-form ----- */
+
+.rule-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 190px;
+    overflow: auto;
+    padding: var(--space-1) 0;
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-sm);
+}
+
+/* A whole row is the hit target, not just the 13px box. These lists run to
+   a dozen entries and an analyst ticks several at a time. */
+.rule-row {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-2);
+    font-size: var(--text-sm);
+    line-height: 1.4;
+    cursor: pointer;
+}
+
+.rule-row:hover { background: var(--surface-2); }
+.rule-row input { margin: 0; flex: 0 0 auto; cursor: pointer; }
+
+/* Monospace so the ids form a column the eye can run down -- they are
+   structured identifiers (R-MAAS-010), and a proportional face makes a list
+   of them ragged. */
+.rule-id {
+    font-family: var(--mono);
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    flex: 0 0 auto;
+}
+
+.rule-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* VARSAYIM has to read as a caution rather than as a neutral label: an
+   unverified rule put into a test produces a scenario that asserts somebody's
+   guess, and nothing downstream can tell that apart from a fact. */
+.rule-guess {
+    flex: 0 0 auto;
+    font-size: var(--text-xs);
+    font-weight: 600;
+    letter-spacing: .04em;
+    color: var(--warn);
+}
+
+.rule-ok {
+    flex: 0 0 auto;
+    font-size: var(--text-xs);
+    font-weight: 600;
+    letter-spacing: .04em;
+    color: var(--ok);
+}
+
+/* ----- two kinds of note under the picker -----
+   A gap is information (screens still to walk); a warning is something the
+   analyst should act on before generating. Different colours on purpose. */
+
+.product-gap,
+.product-warn {
+    margin: var(--space-1) 0 0;
+    font-size: var(--text-xs);
+    line-height: 1.5;
+}
+
+.product-gap { color: var(--text-faint); }
+
+.product-warn {
+    color: var(--warn);
+    background: var(--warn-bg);
+    border-radius: var(--radius-sm);
+    padding: var(--space-2);
+}
+
+/* ----- the Ürün panel ----- */
+
+.product-body {
+    overflow: auto;
+    padding: 0 var(--space-3) var(--space-4);
+    flex: 1 1 auto;
+}
+
+.product-counts {
+    margin: var(--space-3) 0 0;
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+}
+
+.product-section { margin-top: var(--space-4); }
+
+.product-section.is-warn {
+    border-left: 2px solid var(--warn);
+    padding-left: var(--space-3);
+}
+
+.product-section-title {
+    margin: 0 0 var(--space-2);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.product-rule {
+    padding: var(--space-2) 0;
+    border-bottom: 1px solid var(--border-soft);
+}
+
+.product-rule:last-child { border-bottom: 0; }
+
+.product-rule-head {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+}
+
+.product-rule-head .rule-title { white-space: normal; overflow: visible; }
+
+.product-rule-text {
+    margin: var(--space-1) 0 0;
+    font-size: var(--text-sm);
+    line-height: 1.5;
+}
+
+/* The one thing on this panel that is compared CHARACTER FOR CHARACTER by
+   the validator, so it is shown in the same face the editor uses: a message
+   whose trailing space or curly apostrophe differs is a scenario that cannot
+   pass, and a proportional font hides exactly that. */
+.product-message {
+    margin: var(--space-1) 0 0;
+    font-family: var(--mono);
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    color: var(--ok);
+    word-break: break-word;
+}
+
+.product-source {
+    margin: var(--space-1) 0 0;
+    font-size: var(--text-xs);
+    color: var(--text-faint);
+}
+
+.product-note {
+    margin: 0 0 var(--space-2);
+    font-size: var(--text-xs);
+    color: var(--text-faint);
+}
+
+/* pre, so a hand-written markdown file keeps the shape its author gave it
+   -- these are state machines drawn in text. Wrapped rather than scrolled
+   sideways: the panel is 40% of the width and a horizontal scrollbar per
+   block would make the file unreadable. */
+.product-text {
+    margin: 0;
+    font-family: var(--mono);
+    font-size: var(--text-xs);
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--text-muted);
+}
+
+/* ===================== Ürünler — senaryo kütüğü =======================
+
+   Three-level tree beside a five-column table, both inside the wide panel
+   the chat already uses. Read-only by design: rules, test data and scenarios
+   live in the repository where git reviews them.
+
+   The two columns that justify the screen are KURALLAR and ÖN KOŞUL. A
+   .feature file states its steps; it cannot state that the rule it claims to
+   cover was deleted, or that the alias it needs is still nobody's. Both are
+   styled to be noticed when they are wrong, not when they are right. */
+
+.product-panel .registry-body {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+/* ----- the tree ----- */
+
+.tree {
+    flex: 0 0 240px;
+    min-width: 0;
+    overflow: auto;
+    border-right: 1px solid var(--border-soft);
+    padding-bottom: var(--space-4);
+}
+
+.tree-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-3);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    letter-spacing: .06em;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border-soft);
+}
+
+.tree-empty {
+    margin: var(--space-3);
+    font-size: var(--text-xs);
+    line-height: 1.6;
+    color: var(--text-faint);
+}
+
+.tree-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: var(--space-2);
+    width: 100%;
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-sm);
+    line-height: 1.4;
+}
+
+/* Indentation carries the hierarchy; the three levels do not otherwise
+   differ in shape, so a product reads as a child of its business area
+   without a second font or a disclosure triangle per row. */
+/* The separation belongs to the GROUP, not to its heading: a heading-based
+   margin collapses differently depending on what precedes it, and the first
+   group would be pushed away from the panel head for no reason. */
+.tree-group + .tree-group { margin-top: var(--space-3); }
+
+.tree-row.is-category {
+    font-size: var(--text-xs);
+    font-weight: 600;
+    letter-spacing: .05em;
+    color: var(--text-muted);
+}
+
+.tree-row.is-product { padding-left: var(--space-4); }
+.tree-row.is-screen {
+    padding-left: var(--space-6);
+    font-family: var(--mono);
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+}
+
+.tree-row.is-product:hover,
+.tree-row.is-screen:hover { background: var(--surface-2); }
+
+.tree-row.is-active {
+    background: var(--brand-tint);
+    color: var(--brand);
+    font-weight: 600;
+}
+
+.tree-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tree-count {
+    flex: 0 0 auto;
+    font-size: var(--text-xs);
+    color: var(--text-faint);
+    font-variant-numeric: tabular-nums;
+}
+
+.tree-note {
+    margin-left: var(--space-2);
+    font-family: var(--sans);
+    font-size: var(--text-xs);
+    color: var(--warn);
+}
+
+/* ----- the main column ----- */
+
+.registry-main {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+    padding: var(--space-4);
+}
+
+.registry-crumbs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    font-size: var(--text-xs);
+    color: var(--text-faint);
+}
+
+.registry-crumbs > span + span::before {
+    content: "/";
+    margin-right: var(--space-2);
+    color: var(--border);
+}
+
+.registry-crumbs .is-file { font-family: var(--mono); }
+
+.registry-title {
+    margin: var(--space-2) 0 var(--space-4);
+    font-size: var(--text-lg);
+    font-weight: 600;
+}
+
+.registry-empty {
+    margin: var(--space-4) 0;
+    font-size: var(--text-sm);
+    line-height: 1.6;
+    color: var(--text-faint);
+    max-width: 60ch;
+}
+
+/* The table is the one thing allowed to scroll sideways, per the responsive
+   rule: five columns of real content do not fold into a phone width, and a
+   wrapped cell would hide the alignment that makes the readiness column
+   scannable down the page. */
+.registry-scroll {
+    overflow-x: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.registry {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--text-sm);
+}
+
+.registry th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--surface);
+    text-align: left;
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border);
+}
+
+.registry td {
+    padding: var(--space-3);
+    border-bottom: 1px solid var(--border-soft);
+    vertical-align: top;
+}
+
+.registry tr.is-broken { background: var(--fail-bg); }
+
+.sc-title { font-weight: 600; line-height: 1.4; }
+
+.sc-path {
+    margin-top: 2px;
+    font-family: var(--mono);
+    font-size: var(--text-xs);
+    color: var(--text-faint);
+}
+
+.sc-steps { color: var(--text-muted); }
+
+.sc-problem {
+    margin-top: var(--space-1);
+    font-size: var(--text-xs);
+    color: var(--fail);
+}
+
+.sc-desc {
+    max-width: 44ch;
+    line-height: 1.5;
+    color: var(--text-muted);
+}
+
+/* ----- rule chips ----- */
+
+.rule-chip {
+    display: inline-block;
+    margin: 0 var(--space-1) var(--space-1) 0;
+    padding: 2px var(--space-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-family: var(--mono);
+    font-size: var(--text-xs);
+    white-space: nowrap;
+}
+
+/* A tag naming a rule that no longer exists. The scenario LOOKS bound and is
+   not, which is exactly the state worth seeing at a glance. */
+.rule-chip.is-unknown {
+    border-color: var(--fail);
+    color: var(--fail);
+    text-decoration: line-through;
+}
+
+.sc-unbound {
+    font-size: var(--text-xs);
+    color: var(--warn);
+}
+
+/* ----- the readiness column ----- */
+
+.sc-ready {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-xs);
+    font-weight: 600;
+}
+
+.sc-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    background: currentColor;
+    flex: 0 0 auto;
+}
+
+.sc-ready.is-ready { color: var(--ok); }
+.sc-ready.is-seed { color: var(--run); }
+.sc-ready.is-missing { color: var(--warn); }
+/* Engelli is a QUESTION nobody answered, not data nobody supplied -- a
+   different person has to act, so it gets a different colour rather than
+   sharing eksik's. */
+.sc-ready.is-blocked { color: var(--fail); }
+/* Belirtilmemiş is not a state of the data at all: it is an unfinished
+   scenario. Muted rather than alarming, because the fix is one tag. */
+.sc-ready.is-unknown { color: var(--text-faint); }
+.sc-ready.is-unknown .sc-dot { background: none; border: 1px dashed currentColor; }
+
+.sc-alias {
+    margin-top: 2px;
+    font-family: var(--mono);
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+}
+
+.sc-alias.is-weak { color: var(--warn); }
+.sc-alias-none { font-family: var(--sans); color: var(--text-faint); }
+
+
+/* The wide panel's own scrolling is handled by its two columns, so the
+   panel itself must not add a third scrollbar. */
+.product-panel { overflow: hidden; }
+
+@media (max-width: 900px) {
+    /* Below this the tree and the table cannot share a row honestly; the
+       tree becomes a short list above the table rather than a 240px column
+       squeezing the five columns into nothing. */
+    .product-panel .registry-body { flex-direction: column; }
+    .tree {
+        flex: 0 0 auto;
+        max-height: 220px;
+        border-right: 0;
+        border-bottom: 1px solid var(--border-soft);
+    }
+}
+
+/* ----- a row opens its file ----- */
+
+.registry tr.is-clickable { cursor: pointer; }
+.registry tr.is-clickable:hover { background: var(--surface-2); }
+
+/* A real <button> so the row is reachable by keyboard; the <tr> click is the
+   convenience, not the only way in. */
+.sc-open {
+    font-weight: 600;
+    line-height: 1.4;
+    color: var(--brand);
+}
+
+.sc-open:hover { text-decoration: underline; }
+
+.sc-tag {
+    display: inline-block;
+    margin: var(--space-1) var(--space-1) 0 0;
+    font-family: var(--mono);
+    font-size: var(--text-xs);
+    color: var(--text-faint);
+}
+
+/* ----- scenario detail ----- */
+
+.sd { display: flex; flex-direction: column; min-height: 0; }
+.sd-back { align-self: flex-start; margin-bottom: var(--space-3); }
+
+.sd-title { margin: 0; font-size: var(--text-md); font-weight: 600; }
+
+.sd-path {
+    margin: var(--space-1) 0 0;
+    font-family: var(--mono);
+    font-size: var(--text-xs);
+    color: var(--text-faint);
+}
+
+.sd-desc {
+    margin: var(--space-2) 0 0;
+    font-size: var(--text-sm);
+    line-height: 1.55;
+    color: var(--text-muted);
+    max-width: 70ch;
+}
+
+/* Side by side so "what it verifies" and "what it consumes" are read as the
+   pair they are -- the distinction this screen exists to make. */
+.sd-facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-5);
+    margin: var(--space-4) 0;
+}
+
+.sd-facts > section { flex: 1 1 260px; min-width: 0; }
+
+.sd-rule,
+.sd-need {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
+    font-size: var(--text-sm);
+}
+
+.sd-need-label { font-weight: 600; }
+
+.sd-note {
+    margin: var(--space-1) 0 0;
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    color: var(--text-faint);
+}
+
+.sd-code-head { margin-top: var(--space-4); }
+
+.sd-code {
+    margin: 0;
+    padding: var(--space-3);
+    background: var(--surface-2);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-sm);
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: var(--text-xs);
+    line-height: 1.62;
+}
+
+.sd-line { white-space: pre; }

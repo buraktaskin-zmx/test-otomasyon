@@ -4,6 +4,9 @@ import { PanelHead } from "../workspace/side/PanelHead";
 import { QuestionCard } from "./QuestionCard";
 import { ScenarioPreview } from "./ScenarioPreview";
 import { useChat } from "../hooks/useChat";
+import type { useProducts } from "../hooks/useProducts";
+import { NO_PRODUCT, ProductPicker } from "../product/ProductPicker";
+import type { ProductSelection } from "../product/ProductPicker";
 import { useToast } from "../ui/Toast";
 import type { Origin } from "../api/types";
 
@@ -24,12 +27,14 @@ import type { Origin } from "../api/types";
 export function ChatView({
   active,
   catalogs,
+  products,
   preselect,
   onHandOff,
   onRunDraft,
 }: {
   active: boolean;
   catalogs: string[];
+  products: ReturnType<typeof useProducts>;
   preselect: string | null;
   onHandOff: (feature: string, origin: Origin) => void;
   onRunDraft: (feature: string, origin: Origin) => void;
@@ -37,22 +42,34 @@ export function ChatView({
   const chat = useChat();
   const toast = useToast();
 
-  const [catalog, setCatalog] = useState("");
+  const [selection, setSelection] = useState<ProductSelection>(NO_PRODUCT);
+  const catalog = selection.catalog;
   const [cif, setCif] = useState("");
   const [userid, setUserid] = useState("");
   const [opening, setOpening] = useState("");
 
   useEffect(() => {
-    if (preselect) setCatalog(preselect);
+    if (preselect) setSelection((was) => ({ ...was, catalog: preselect }));
   }, [preselect]);
 
   const [app = "", flow = ""] = catalog.split("/");
   const needsUserid = app.toUpperCase() !== "NGI";
-  /* The WHOLE agreement, not the opening line. The editor re-validates what
-     it is handed, and checkAssertionsAreEarned looks for expected values in
-     the intent -- so a value the analyst gave mid-conversation has to travel
-     with the scenario or the editor asks the question again. */
-  const origin: Origin = { app, flow, intent: chat.turn?.request ?? opening };
+  /* Both fields answer the same question: what was this draft ACTUALLY
+     generated against? The editor re-validates whatever the chat hands it, so
+     anything the verdict depends on has to travel with the scenario.
+
+     `intent` is the WHOLE agreement, not the opening line --
+     checkAssertionsAreEarned looks for expected values in the intent, so a
+     value the analyst gave mid-conversation lives there and nowhere else.
+
+     `product` comes from the SERVER's turn rather than the picker, because
+     the conversation was opened under one product and stays there. */
+  const origin: Origin = {
+    app,
+    flow,
+    intent: chat.turn?.request ?? opening,
+    product: chat.turn?.product ?? selection.product,
+  };
 
   useEffect(() => {
     if (chat.error) toast(chat.error, true);
@@ -71,7 +88,15 @@ export function ChatView({
       toast(app + " için kullanıcı ID zorunlu", true);
       return;
     }
-    chat.start({ app, flow, cif: cif.trim(), userid: userid.trim(), text: opening.trim() });
+    chat.start({
+      app,
+      flow,
+      cif: cif.trim(),
+      userid: userid.trim(),
+      text: opening.trim(),
+      product: selection.product,
+      ruleIds: selection.ruleIds,
+    });
   };
 
   return (
@@ -86,24 +111,14 @@ export function ChatView({
 
       {chat.turn === null ? (
         <div className="suggest-form">
-          <label className="suggest-label" htmlFor="chatCatalog">Ekran</label>
-          <select
-            id="chatCatalog"
-            className="search"
-            value={catalog}
-            onChange={(event) => setCatalog(event.target.value)}
-          >
-            {catalogs.length === 0 ? (
-              <option value="">(katalog bulunamadı)</option>
-            ) : (
-              <>
-                <option value="">Seçiniz…</option>
-                {catalogs.map((name) => (
-                  <option key={name} value={name}>{name}</option>
-                ))}
-              </>
-            )}
-          </select>
+          <ProductPicker
+            idPrefix="chat"
+            products={products}
+            catalogs={catalogs}
+            value={selection}
+            onChange={setSelection}
+            disabled={chat.busy}
+          />
 
           <label className="suggest-label" htmlFor="chatCif">CIF / Müşteri kodu</label>
           <input

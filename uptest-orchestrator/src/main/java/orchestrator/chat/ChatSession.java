@@ -31,6 +31,15 @@ public final class ChatSession {
     private final String cif;
     private final String userid;
 
+    /**
+     * The product chosen when the conversation opened, and the rules ticked
+     * with it. Fixed for the session's life: a conversation is about one
+     * screen under one rule book, and letting either change mid-thread would
+     * mean the answers already given were given about something else.
+     */
+    private final String product;
+    private final List<String> ruleIds;
+
     private final List<Message> messages = new ArrayList<>();
 
     /**
@@ -50,12 +59,15 @@ public final class ChatSession {
 
     private volatile Instant touched = Instant.now();
 
-    ChatSession(String id, String app, String flow, String cif, String userid) {
+    ChatSession(String id, String app, String flow, String cif, String userid,
+                String product, List<String> ruleIds) {
         this.id = id;
         this.app = app;
         this.flow = flow;
         this.cif = cif;
         this.userid = userid;
+        this.product = product;
+        this.ruleIds = ruleIds == null ? List.of() : List.copyOf(ruleIds);
     }
 
     public String id() {
@@ -76,6 +88,14 @@ public final class ChatSession {
 
     public String userid() {
         return userid;
+    }
+
+    public String product() {
+        return product;
+    }
+
+    public List<String> ruleIds() {
+        return ruleIds;
     }
 
     public List<Message> messages() {

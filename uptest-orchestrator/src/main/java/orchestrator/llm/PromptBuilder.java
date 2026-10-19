@@ -1,5 +1,6 @@
 package orchestrator.llm;
 
+import orchestrator.product.Rule;
 import orchestrator.validation.ValidationError;
 import orchestrator.validation.ValidationResult;
 import orchestrator.vocabulary.Vocabulary;
@@ -210,6 +211,21 @@ public class PromptBuilder {
      */
     public String user(String catalogYaml, String intent, String loginStep,
                        VariationPlanner.Variation variation) {
+        return user(catalogYaml, intent, loginStep, variation, List.of());
+    }
+
+    /**
+     * @param rules the product rules the analyst ticked for THIS generation,
+     *              or empty. Not the product's whole rule book: the prompt
+     *              already carries eleven hard rules, the live step list and
+     *              the entire catalog, and this project has measured what
+     *              happens to a rule that sits far from where it applies —
+     *              "the prompt is read ONCE, and by field eleven it is far
+     *              away". A rule the analyst did not choose is a rule the
+     *              model does not read.
+     */
+    public String user(String catalogYaml, String intent, String loginStep,
+                       VariationPlanner.Variation variation, List<Rule> rules) {
         String login = (loginStep == null)
                 ? ""
                 : """
@@ -222,12 +238,65 @@ public class PromptBuilder {
         return """
                 SCREEN CATALOG (YAML):
                 %s
-
+                %s
                 WHAT TO TEST:
                 %s
                 %s%s
                 Write the .feature file now. Output nothing but the file contents.
-                """.formatted(catalogYaml, intent, login, variationBlock(variation));
+                """.formatted(catalogYaml, rulesBlock(rules), intent, login, variationBlock(variation));
+    }
+
+    /**
+     * What the application must DO, as opposed to what the screen HAS.
+     *
+     * Placed between the catalog and the intent on purpose, because that is
+     * the order the three are meant to be read in: the catalog gives the
+     * nouns, the rules say what is true of them, and only then does the
+     * analyst's request say which of it to exercise. Put after the intent it
+     * reads as an afterthought to a task already described.
+     *
+     * <p>In the USER turn rather than the system one, for the same reason the
+     * variation block is: the eleven hard rules are identical for every
+     * generation and belong where the model weighs them most, while this
+     * changes with every screen and every tick box.
+     *
+     * <p>The instruction about copying a message verbatim is not politeness.
+     * {@code checkMessageIsCatalogued} compares the asserted sentence against
+     * the known ones character for character after folding, so a model that
+     * rewords "Geçersiz IBAN numarası girdiniz." into something tidier has
+     * written a scenario that cannot pass — the same failure the explore agent
+     * produced when it retyped an option as "Taksitli Ödnsin" instead of
+     * copying it.
+     */
+    private static String rulesBlock(List<Rule> rules) {
+        if (rules == null || rules.isEmpty()) {
+            return "";
+        }
+        StringBuilder block = new StringBuilder("\nÜRÜN KURALLARI — bu ekran bunlara uymak ZORUNDA:\n");
+        for (Rule rule : rules) {
+            block.append("  [").append(rule.id()).append("] ");
+            if (!rule.confirmed()) {
+                // Said out loud because the model cannot tell a verified fact
+                // from someone's best guess, and the analyst deliberately
+                // ticked this one: an assumption may be tested, but a scenario
+                // built on it should be recognisable as such.
+                block.append("(VARSAYIM — kesinleşmemiş) ");
+            }
+            block.append(rule.title()).append('\n');
+            if (!rule.description().isEmpty()) {
+                block.append("    ").append(oneLine(rule.description())).append('\n');
+            }
+            for (String message : rule.messages()) {
+                block.append("    Uygulamanın yazdığı mesaj, BİREBİR kopyala: \"")
+                        .append(message).append("\"\n");
+            }
+        }
+        return block.toString();
+    }
+
+    /** A rule's description folded onto one line, so the block stays scannable. */
+    private static String oneLine(String text) {
+        return text.replaceAll("\\s+", " ").trim();
     }
 
     /**

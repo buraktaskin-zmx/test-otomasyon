@@ -102,10 +102,18 @@ public record ValidationError(
                 valueFreeChecks, Kind.UNEARNED_ASSERTION, label);
     }
 
-    /** A confirmation message rewritten instead of copied. */
+    /**
+     * A message rewritten instead of copied.
+     *
+     * {@code expected} is the NEAREST sentence the screen or its product is
+     * known to print, not necessarily the success message — once a product can
+     * declare the refusals a screen shows, "it is not the success message" had
+     * stopped being a useful thing to say.
+     */
     public static ValidationError paraphrasedMessage(long line, String step, String expected) {
         return new ValidationError(line, step,
-                "Onay mesaji test verisi degildir, katalogtan birebir kopyalanir",
+                "Ekranin yazdigi mesaj test verisi degildir: katalogtan ya da urun "
+                        + "kurallarindan birebir kopyalanir",
                 List.of("verify \"" + expected + "\" text is displayed"),
                 Kind.PARAPHRASED_MESSAGE, null);
     }
@@ -113,8 +121,10 @@ public record ValidationError(
     /** A message asserted on a screen whose text nobody recorded. */
     public static ValidationError uncataloguedMessage(long line, String step) {
         return new ValidationError(line, step,
-                "Katalogda success_message yok, istekte de bu metin gecmiyor — ekranin yazdigi "
-                        + "metni tahmin etmeyin. Ya kataloga gercek metni ekleyin, ya bu satiri silin.",
+                "Katalogda success_message yok, urun kurallarinda da bu mesaj tanimli degil, "
+                        + "istekte de gecmiyor — ekranin yazdigi metni tahmin etmeyin. Ya kataloga "
+                        + "gercek metni ekleyin, ya ilgili urun kuralina mesaj olarak yazin, ya da "
+                        + "bu satiri silin.",
                 List.of(), Kind.UNCATALOGUED_MESSAGE, null);
     }
 

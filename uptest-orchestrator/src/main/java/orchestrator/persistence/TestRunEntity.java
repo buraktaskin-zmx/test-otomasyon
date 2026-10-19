@@ -134,6 +134,22 @@ public class TestRunEntity {
     private String flow;
 
     /**
+     * The product whose rules this scenario was written against; null when
+     * none was chosen, which is every run recorded before this column existed.
+     *
+     * Stored for the same reason {@code app} and {@code flow} are: a run's row
+     * should say what it was checked against. The validator's verdict depends
+     * on the product — it decides which asserted sentences count as
+     * catalogued — so a history that omitted it could not explain why an
+     * identical scenario was accepted in March and refused in May.
+     *
+     * Nullable and additive, so {@code ddl-auto=update} adds it to an existing
+     * database without touching a row.
+     */
+    @Column(name = "product", length = 64)
+    private String product;
+
+    /**
      * The analyst's own words.
      *
      * Kept because it is the only record of WHY a scenario looks the way it
@@ -212,7 +228,7 @@ public class TestRunEntity {
 
     public TestRunEntity(UUID id, Instant submittedAt, String status, String executorName,
                          String scenarioName, String app, String flow, String intent,
-                         String feature) {
+                         String feature, String product) {
         this.id = id;
         this.submittedAt = submittedAt;
         this.status = status;
@@ -222,6 +238,7 @@ public class TestRunEntity {
         this.flow = flow;
         this.intent = intent;
         this.feature = feature;
+        this.product = product;
     }
 
     public UUID getId() {
@@ -258,6 +275,10 @@ public class TestRunEntity {
 
     public String getFlow() {
         return flow;
+    }
+
+    public String getProduct() {
+        return product;
     }
 
     public String getIntent() {

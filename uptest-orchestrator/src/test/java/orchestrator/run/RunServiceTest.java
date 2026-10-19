@@ -4,6 +4,7 @@ import orchestrator.catalog.CatalogService;
 import orchestrator.executor.ExecutorClient;
 import orchestrator.executor.ExecutorPool;
 import orchestrator.persistence.TestRunEntity;
+import orchestrator.product.ProductService;
 import orchestrator.validation.ScenarioValidator;
 import orchestrator.validation.ValidationError;
 import orchestrator.validation.ValidationResult;
@@ -30,6 +31,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -67,6 +69,7 @@ class RunServiceTest {
     private ScenarioValidator validator;
     private VocabularyService vocabularyService;
     private CatalogService catalogs;
+    private ProductService products;
     private RunStore store;
     private RunService service;
 
@@ -78,7 +81,10 @@ class RunServiceTest {
         catalogs = mock(CatalogService.class);
         store = mock(RunStore.class);
 
-        service = new RunService(pool, validator, vocabularyService, catalogs, store,
+        products = mock(ProductService.class);
+        when(products.load(any(), any())).thenReturn(Optional.empty());
+
+        service = new RunService(pool, validator, vocabularyService, catalogs, products, store,
                 new ObjectMapper(), 50, 2, Duration.ofMinutes(30));
     }
 
@@ -138,7 +144,7 @@ class RunServiceTest {
     void unknownFallback() {
         UUID id = UUID.randomUUID();
         TestRunEntity row = new TestRunEntity(id, Instant.now(), null, "executor-1:9035",
-                "Kullanıcı ödeme talep eder", "ngc", "banko-payment", "intent", FEATURE);
+                "Kullanıcı ödeme talep eder", "ngc", "banko-payment", "intent", FEATURE, null);
         row.setFinishedAt(Instant.now());
         when(store.find(id)).thenReturn(Optional.of(row));
 
@@ -208,7 +214,7 @@ class RunServiceTest {
     void invalidScenarioWritesNothing() {
         when(vocabularyService.get()).thenReturn(Optional.of(emptyVocabulary()));
         when(catalogs.read(anyString(), anyString())).thenReturn(Optional.empty());
-        when(validator.validate(any(), any(), any(), any())).thenReturn(
+        when(validator.validate(any(), any(), any(), any(), any())).thenReturn(
                 ValidationResult.failed(4, List.of(
                         ValidationError.undefinedStep(3, "bogus step", List.of()))));
 
@@ -252,7 +258,7 @@ class RunServiceTest {
                         && feature.contains("login with cif \"***\"")),
                 eq("executor-2:9035"),
                 eq("Kullanıcı ödeme talep eder"),
-                eq("ngc"), eq("banko-payment"), eq("fatura testi"));
+                eq("ngc"), eq("banko-payment"), eq("fatura testi"), isNull());
     }
 
     /** The executor still gets the REAL feature — redaction is for the row. */
@@ -396,7 +402,7 @@ class RunServiceTest {
     private void acceptValidation() {
         when(vocabularyService.get()).thenReturn(Optional.of(emptyVocabulary()));
         when(catalogs.read(anyString(), anyString())).thenReturn(Optional.empty());
-        when(validator.validate(any(), any(), any(), any())).thenReturn(ValidationResult.ok(4));
+        when(validator.validate(any(), any(), any(), any(), any())).thenReturn(ValidationResult.ok(4));
     }
 
     private static Vocabulary emptyVocabulary() {
@@ -406,12 +412,12 @@ class RunServiceTest {
     /** Dispatched, nothing heard back yet: finished_at is null. */
     private static TestRunEntity freshRow(UUID id) {
         return new TestRunEntity(id, Instant.now(), "RUNNING", "executor-1:9035",
-                "Kullanıcı ödeme talep eder", "ngc", "banko-payment", "intent", FEATURE);
+                "Kullanıcı ödeme talep eder", "ngc", "banko-payment", "intent", FEATURE, null);
     }
 
     private static TestRunEntity terminalRow(UUID id) {
         TestRunEntity row = new TestRunEntity(id, Instant.now(), "DONE", "executor-1:9035",
-                "Kullanıcı ödeme talep eder", "ngc", "banko-payment", "intent", FEATURE);
+                "Kullanıcı ödeme talep eder", "ngc", "banko-payment", "intent", FEATURE, null);
         row.setFinishedAt(Instant.now());
         row.setLastStatusJson(
                 "{\"status\":\"DONE\",\"output\":null,\"steps\":[],\"currentStepIndex\":-1}");

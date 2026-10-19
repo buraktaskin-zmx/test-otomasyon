@@ -3,6 +3,7 @@ package orchestrator.chat;
 import orchestrator.catalog.CatalogService;
 import orchestrator.llm.LoginStep;
 import orchestrator.llm.SuggestService;
+import orchestrator.product.ProductService;
 import orchestrator.validation.ValidationResult;
 import orchestrator.vocabulary.Vocabulary;
 import orchestrator.vocabulary.VocabularyService;
@@ -58,6 +59,16 @@ public class ChatController {
              * just answered.
              */
             String request,
+            /**
+             * The product this conversation is being held under, or null.
+             *
+             * Travels for exactly the reason {@code request} does. The editor
+             * re-validates whatever the chat hands it, and the product decides
+             * which asserted sentences count as catalogued — so a draft that
+             * legitimately asserts a product's error message would be flagged
+             * the moment it left the chat if this did not go with it.
+             */
+            String product,
             /** The draft as it stands; null before the first generation. */
             String feature,
             ValidationResult validation,
@@ -66,7 +77,8 @@ public class ChatController {
     ) {
     }
 
-    public record StartRequest(String app, String flow, String cif, String userid, String text) {
+    public record StartRequest(String app, String flow, String cif, String userid, String text,
+                               String product, List<String> ruleIds) {
     }
 
     /**
@@ -78,15 +90,32 @@ public class ChatController {
 
     private final ChatSessionStore sessions;
     private final CatalogService catalogs;
+    private final ProductService products;
     private final VocabularyService vocabularyService;
     private final SuggestService suggestService;
 
-    public ChatController(ChatSessionStore sessions, CatalogService catalogs,
+    public ChatController(ChatSessionStore sessions, CatalogService catalogs, ProductService products,
                           VocabularyService vocabularyService, SuggestService suggestService) {
         this.sessions = sessions;
         this.catalogs = catalogs;
+        this.products = products;
         this.vocabularyService = vocabularyService;
         this.suggestService = suggestService;
+    }
+
+    /**
+     * Re-resolved from disk on every turn rather than held on the session.
+     *
+     * A conversation lasts minutes and the rules file is a repository file
+     * someone may be editing; reading it each turn means an edit takes effect
+     * on the next answer instead of requiring a new conversation. The cost is
+     * two small file reads against a model call that takes seconds.
+     */
+    private SuggestService.ProductContext productContext(ChatSession session) {
+        return products.load(session.app(), session.product())
+                .map(model -> new SuggestService.ProductContext(model,
+                        model.selected(session.ruleIds())))
+                .orElse(SuggestService.ProductContext.NONE);
     }
 
     @PostMapping
@@ -107,7 +136,8 @@ public class ChatController {
                     "error", body.app() + " için kullanıcı ID zorunlu"));
         }
 
-        ChatSession session = sessions.open(body.app(), body.flow(), body.cif(), body.userid());
+        ChatSession session = sessions.open(body.app(), body.flow(), body.cif(), body.userid(),
+                body.product(), body.ruleIds());
         session.say("you", body.text());
         session.add(body.text());
         return advance(session);
@@ -186,7 +216,8 @@ public class ChatController {
                     catalog.get(),
                     session.request(),
                     vocabulary.get(),
-                    LoginStep.forApp(session.app(), session.cif(), session.userid()));
+                    LoginStep.forApp(session.app(), session.cif(), session.userid()),
+                    productContext(session));
         } catch (Exception failed) {
             Throwable root = failed;
             while (root.getCause() != null && root.getCause() != root) {
@@ -216,6 +247,7 @@ public class ChatController {
                 session.messages(),
                 pending == null ? null : pending.question(),
                 session.request(),
+                session.product(),
                 session.feature(),
                 session.validation(),
                 pending == null && session.validation() != null && session.validation().valid());

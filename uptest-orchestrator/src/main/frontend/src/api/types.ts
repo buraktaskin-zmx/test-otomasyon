@@ -174,6 +174,11 @@ export interface ChatTurn {
    *  values in the intent, and a value supplied mid-conversation lives here
    *  and nowhere else. */
   request: string;
+  /** The product this conversation is held under, or null. Put it in the
+   *  Origin alongside `request` when handing the draft over, for the same
+   *  reason: the editor re-validates, and the accepted message set comes
+   *  from here. */
+  product: string | null;
   feature: string | null;
   validation: ValidationResult | null;
   complete: boolean;
@@ -187,6 +192,165 @@ export interface ChatStartRequest {
   cif: string;
   userid: string;
   text: string;
+  product?: string;
+  ruleIds?: string[];
+}
+
+/* ========================================================================
+   Products -- GET /api/v1/products, GET /api/v1/products/{app}/{product}
+
+   What the application must DO, as opposed to what a screen HAS. A catalog
+   is discovered from a live screen and so can never carry an oracle; these
+   are written by a person. See products/SCHEMA.md.
+   ======================================================================== */
+
+/** One rule as ProductController.rule() emits it. `confirmed` is computed
+ *  server-side from `status`, and anything unrecognised -- including a
+ *  missing status -- is NOT confirmed: a guess must never be promoted to a
+ *  fact by omission. */
+export interface ProductRule {
+  id: string;
+  title: string;
+  status: string;
+  confirmed: boolean;
+  description: string;
+  fields: string[];
+  /** The exact sentences the application prints. Compared character for
+   *  character after folding, so these are copied, never paraphrased. */
+  messages: string[];
+  source: string;
+}
+
+/** A row of GET /api/v1/products -- enough for a picker and the gap report,
+ *  deliberately WITHOUT the rules themselves (a product may carry fifty and
+ *  three pickers load this list). */
+export interface ProductSummary {
+  app: string;
+  product: string;
+  name: string;
+  /** The business area above the product in the tree ("Ödemeler"), or "".
+   *  NOT derived from `app`: NGC and NGI are applications, and the business
+   *  areas cut across them. */
+  category: string;
+  description: string;
+  /** How many .feature files are registered, counted without parsing them. */
+  scenarioCount: number;
+  flows: string[];
+  /** Flows this product claims that nobody has catalogued yet. Not an
+   *  error -- a product is specified before its screens are walked, so this
+   *  is the work queue. */
+  missingCatalogs: string[];
+  ruleCount: number;
+  assumptionCount: number;
+  messageCount: number;
+  hasOpenQuestions: boolean;
+  /** Rule ids that appeared twice; the first won. Reported rather than
+   *  silently resolved, or the file would disagree with the screen. */
+  duplicateIds: string[];
+}
+
+export interface ProductsResponse {
+  root: string;
+  products: ProductSummary[];
+}
+
+/** A rule chip on a scenario row. `known: false` means the .feature carries
+ *  a @R-... tag naming a rule the product no longer has -- reported rather
+ *  than dropped, because a scenario pointing at a deleted rule LOOKS bound
+ *  and is not. */
+export interface ScenarioRuleRef {
+  id: string;
+  known: boolean;
+  title: string;
+  confirmed: boolean;
+}
+
+/** Can this scenario run today?
+ *
+ *  READY      -- the data exists or can be produced.
+ *  SEED       -- the test creates it first; a precondition, not a blocker.
+ *  MISSING    -- nobody has it yet. Somebody must supply it.
+ *  BLOCKED    -- an open question forbids it. Somebody must ANSWER first.
+ *  UNDECLARED -- the file carries no @needs tag at all, so nobody knows.
+ *
+ *  The last two are the ones worth separating. MISSING is a request to whoever
+ *  provisions test users; BLOCKED is a request to an analyst, and until it is
+ *  answered the scenario cannot even be WRITTEN correctly, because what it
+ *  should assert is unknown. UNDECLARED is neither -- it is an unfinished
+ *  scenario, and showing it green would queue a run that cannot survive. */
+export type Readiness = "READY" | "SEED" | "MISSING" | "BLOCKED" | "UNDECLARED";
+
+/** One @needs:ALIAS, resolved against the product's test-data.yaml.
+ *  `blockedBy` carries an open question's id (e.g. "S-18") and outranks
+ *  `how`: a synthetic TCKN is producible and still unusable while nobody
+ *  knows whether the application accepts one. */
+export interface ScenarioNeed {
+  id: string;
+  known: boolean;
+  /** The need in a few words ("Geçerli TCKN") -- what the column prints.
+   *  The id is for machines; a reader scanning fifty rows wants the need. */
+  label: string;
+  readiness: Readiness;
+  how: string;
+  description: string;
+  blockedBy: string;
+}
+
+/** One row of the Ürünler table. Everything here is DERIVED from the
+ *  .feature file and the product's YAML -- there is no registry file
+ *  listing scenarios, because a second list of the same names would start
+ *  by agreeing and end by disagreeing. */
+export interface RegisteredScenario {
+  /** Relative to the product's scenarios/ directory, and the row's identity. */
+  path: string;
+  /** The screen -- the first path segment, i.e. the folder it sits in. */
+  flow: string;
+  title: string;
+  description: string;
+  stepCount: number;
+  /** Non-null when the file would not parse as Gherkin. Listed anyway: a
+   *  scenario that silently vanishes is worse than one shown as broken. */
+  problem: string | null;
+  /** Tags that are neither a rule nor a need: @mutating, @regression. */
+  tags: string[];
+  rules: ScenarioRuleRef[];
+  needs: ScenarioNeed[];
+  /** The file says @needs:none -- "checked, there are none". NOT the same
+   *  as an empty `needs` with no tag, which is UNDECLARED. */
+  needsNone: boolean;
+  /** The worst of `needs` -- a row is as ready as its least ready need. */
+  readiness: Readiness;
+}
+
+/** GET .../scenario?path= -- the row plus the file itself. */
+export interface ScenarioDetail extends RegisteredScenario {
+  feature: string;
+}
+
+/** A screen under a product. `declared: false` means scenarios sit in a
+ *  folder the product.yaml never listed -- a screen somebody forgot to
+ *  declare, which is only visible because both sources are merged. */
+export interface ProductScreen {
+  flow: string;
+  catalog: string | null;
+  declared: boolean;
+  scenarioCount: number;
+}
+
+export interface ProductRegistry extends ProductSummary {
+  screens: ProductScreen[];
+  scenarios: RegisteredScenario[];
+}
+
+/** GET /api/v1/products/{app}/{product} -- the summary plus everything a
+ *  person needs to read. `openQuestions` is shown here and NEVER sent to the
+ *  model: its purpose is to mark where an assumption would be invented, and
+ *  handing it to something that invents plausible text defeats it. */
+export interface ProductDetail extends ProductSummary {
+  rules: ProductRule[];
+  stateMachine: string;
+  roles: string;
+  openQuestions: string;
 }
 
 /** ChatController.ReplyRequest. Either a button (`optionId`, plus `value`
@@ -210,6 +374,12 @@ export interface Origin {
   app: string;
   flow: string;
   intent: string;
+  /** The product whose rules the draft was written against, or "" for none.
+   *  Travels for the same reason `intent` does: the validator decides which
+   *  asserted sentences count as catalogued, and a scenario that legitimately
+   *  asserts a product's error message would be flagged the moment it reached
+   *  the editor or the run gate without this. */
+  product?: string;
 }
 
 /** StepState's five getters, in Jackson's serialization order. `durationMs`
@@ -330,6 +500,10 @@ export interface SaveCatalogResponse {
 export interface SuggestRequest extends Origin {
   cif: string;
   userid: string;
+  /** The rule ids the analyst ticked. Shapes the PROMPT only -- the validator
+   *  sees the product's whole message set regardless, which is why this is
+   *  NOT part of Origin. */
+  ruleIds?: string[];
 }
 
 /** SuggestService.Suggestion record -- FIVE fields. `validation` (the nested
@@ -350,6 +524,7 @@ export interface SuggestManyRequest extends Origin {
   cif: string;
   userid: string;
   count?: number;
+  ruleIds?: string[];
 }
 
 /**

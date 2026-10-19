@@ -1,0 +1,556 @@
+# products/ngc/maas-odemeleri/rules.yaml
+#
+# ORACLE — beklentilerin tek kaynağı.
+# Bu dosya "olması gereken"i tutar. Ekranın şu anki davranışı değil.
+#
+# status:
+#   DOĞRULANDI — analiz dokümanında yazılı veya canlı ekranda teyit edilmiş
+#   VARSAYIM    — mantıksal çıkarım, henüz doğrulanmadı
+#
+# Senaryolar bu ID'lere @R-XX-NNN etiketiyle bağlanır.
+#
+# messages: alanı DENETLENİR. ScenarioValidator bu metinleri harfi harfine
+# karşılaştırır, o yüzden ekranda yazdığı gibi kopyalanır; yeniden yazılmaz.
+
+rules:
+
+  # ─────────────────────────────────────────────────────────────
+  # E1 — Alıcı Listesi İşlemleri (sorgulama ekranı)
+  # ─────────────────────────────────────────────────────────────
+
+  - id: R-AL-001
+    title: "Firma yetkisi"
+    status: DOĞRULANDI
+    description: >
+      Kullanıcı yalnızca yetkili olduğu firmalara ait alıcı listelerini
+      görüntüleyebilir. Yetkisiz firmaya ait liste hiçbir sorguda dönmez.
+    fields: ["Firma"]
+    messages: []
+    source: "Confluence DIJIMAAS / Alıcı Listesi İşlemleri Kapsam"
+
+  - id: R-AL-002
+    title: "Firma seçimi sorguyu belirler"
+    status: DOĞRULANDI
+    description: >
+      Firma seçimi sonrasında yalnızca o firmaya ait kayıtlar sorgulanır.
+      Firma değiştiğinde tablo yenilenir.
+    fields: ["Firma"]
+    messages: []
+    source: "Confluence DIJIMAAS / Alıcı Listesi İşlemleri Kapsam"
+
+  - id: R-AL-003
+    title: "Döviz cinsi filtresi"
+    status: DOĞRULANDI
+    description: >
+      Döviz cinsi seçimi filtreleme amacıyla kullanılır. Seçilen döviz
+      cinsi dışındaki listeler sonuçta yer almaz.
+    fields: ["Döviz Cinsi"]
+    messages: []
+    source: "Confluence DIJIMAAS / Alıcı Listesi İşlemleri Kapsam"
+
+  - id: R-AL-004
+    title: "Tarih kriteri oluşturma tarihidir"
+    status: DOĞRULANDI
+    description: >
+      Hızlı tarih seçimi ve başlangıç/bitiş tarihi, listenin Oluşturma
+      Tarihi baz alınarak uygulanır. Aralık dışında oluşturulmuş liste dönmez.
+    fields: ["Hızlı Tarih Seçim", "Başlangıç Tarihi", "Bitiş Tarihi", "Oluşturma Tarihi"]
+    messages: []
+    source: "Confluence DIJIMAAS / Alıcı Listesi İşlemleri Kapsam"
+
+  - id: R-AL-005
+    title: "Detay yalnızca seçili kayıt için"
+    status: DOĞRULANDI
+    description: >
+      Detay işlemi yalnızca seçili bir kayıt için gerçekleştirilebilir.
+      Seçili kayıt varken Detay, o listenin detay ekranını açar.
+    fields: ["Detay"]
+    messages: []
+    source: "Confluence DIJIMAAS / Alıcı Listesi İşlemleri Kapsam"
+
+  - id: R-AL-006
+    title: "Silinen liste ödemede kullanılamaz"
+    status: DOĞRULANDI
+    description: >
+      Silinen alıcı listesi maaş ödeme işlemlerinde kullanılamaz;
+      Alıcı Listesi'nden Yükleme ekranında listelenmez.
+    fields: []
+    messages: []
+    source: "Confluence DIJIMAAS / Alıcı Listesi İşlemleri Kapsam"
+
+  - id: R-AL-007
+    title: "Yeni liste sorguda görünür"
+    status: DOĞRULANDI
+    description: >
+      Yeni oluşturulan alıcı listesi, oluşturma tarihini kapsayan bir
+      tarih aralığıyla sorgulandığında sorgu ekranında listelenir.
+    fields: []
+    messages: []
+    source: "Confluence DIJIMAAS / Alıcı Listesi İşlemleri Kapsam"
+
+  - id: R-AL-008
+    title: "Liste tekrar kullanılabilir"
+    status: DOĞRULANDI
+    description: >
+      Oluşturulan liste sonraki maaş ödeme işlemlerinde tekrar kullanılabilir;
+      aynı liste birden fazla kez ödemeye yüklenebilir.
+    fields: []
+    messages: []
+    source: "Confluence DIJIMAAS / Alıcı Listesi İşlemleri Kapsam"
+
+  - id: R-AL-009
+    title: "Sonuçsuz sorgu"
+    status: DOĞRULANDI
+    description: >
+      Kritere uyan alıcı listesi bulunmadığında tablo gövdesinde
+      bilgi mesajı görüntülenir.
+    fields: []
+    messages:
+      - "Kayıt bulunamadı."
+    source: "Ekran gözlemi, 18–19.10.2026"
+
+  - id: R-AL-010
+    title: "İşlemler paneli içeriği"
+    status: DOĞRULANDI
+    description: >
+      E1 İşlemler panelinde Detay, Sil ve Yeni Liste Oluştur bulunur.
+      Üç seçenek de kayıt seçili olmasa da görünür durumdadır.
+    fields: ["Detay", "Sil", "Yeni Liste Oluştur"]
+    messages: []
+    source: "Ekran gözlemi, 19.10.2026"
+
+  - id: R-AL-011
+    title: "Firma ve döviz cinsi zorunludur"
+    status: DOĞRULANDI
+    description: >
+      Belirli bir firma ve döviz cinsi seçilmeden Listele çalışmaz,
+      filtreleme gerçekleşmez.
+    fields: ["Firma", "Döviz Cinsi", "Listele"]
+    messages: []
+    source: "Ekran notu, 19.10.2026"
+
+  - id: R-AL-012
+    title: "Seçimsiz Detay ve Sil ile ilerlenemez"
+    status: DOĞRULANDI
+    description: >
+      Herhangi bir kayıt seçili değilken Detay ve Sil işlemleriyle
+      ilerlenemez. Yeni Liste Oluştur seçimden bağımsız çalışır.
+    fields: ["Detay", "Sil"]
+    messages: []
+    source: "Ekran notu, 19.10.2026"
+
+  - id: R-AL-013
+    title: "Aynı anda tek liste seçimi"
+    status: DOĞRULANDI
+    description: >
+      Kayıtlar listelendiğinde aynı anda yalnızca bir kayıt seçilebilir.
+      Yeni bir satır seçilince önceki seçim kalkar.
+    fields: []
+    messages: []
+    source: "Ekran notu, 19.10.2026"
+
+  - id: R-AL-014
+    title: "Filtre alanlarının tipi"
+    status: DOĞRULANDI
+    description: >
+      Firma, Döviz Cinsi ve Hızlı Tarih Seçim alanları searchable select
+      bileşenidir; klasik select davranışı göstermez. Alan tıklanır,
+      yazılarak filtrelenir ve sonuçtan seçilir.
+    fields: ["Firma", "Döviz Cinsi", "Hızlı Tarih Seçim"]
+    messages: []
+    source: "Ekran notu, 19.10.2026"
+
+  - id: R-AL-015
+    title: "Detaylı Arama tarih alanlarını açar"
+    status: DOĞRULANDI
+    description: >
+      Detaylı Arama / Hızlı Arama bağlantısına tıklandığında Başlangıç
+      Tarihi ve Bitiş Tarihi alanları görünür hale gelir. Her ikisi de
+      takvim (date picker) bileşenidir.
+    fields: ["Detaylı Arama", "Başlangıç Tarihi", "Bitiş Tarihi"]
+    messages: []
+    source: "Ekran notu, 19.10.2026"
+
+  # ─────────────────────────────────────────────────────────────
+  # E5 — Yeni Liste Oluştur
+  # ─────────────────────────────────────────────────────────────
+
+  - id: R-YL-001
+    title: "İki adımlı sihirbaz"
+    status: DOĞRULANDI
+    description: >
+      Yeni Liste Oluştur, Bilgi Girişi ve Onay olmak üzere iki adımdan
+      oluşur. Onay adımından Geri ile Bilgi Girişi'ne dönülebilir.
+    fields: ["Devam", "Geri", "Onay"]
+    messages: []
+    source: "Ekran gözlemi, 19.10.2026"
+
+  - id: R-YL-002
+    title: "Bilgi Girişi alanları"
+    status: DOĞRULANDI
+    description: >
+      Bilgi Girişi adımında Firma, Döviz Cinsi ve Alıcı Listesi Adı
+      alanları bulunur. Alıcı Listesi Adı alanında karakter sayacı gösterilir.
+    fields: ["Firma", "Döviz Cinsi", "Alıcı Listesi Adı"]
+    messages: []
+    source: "Ekran gözlemi, 19.10.2026"
+
+  - id: R-YL-003
+    title: "Zorunlu alan validasyonu"
+    status: DOĞRULANDI
+    description: >
+      Alanlar boşken Devam'a basıldığında her boş alan için hata gösterilir.
+      Validasyon form seviyesindedir; birden fazla alan boşsa hatalar
+      aynı anda görüntülenir. Seçim alanları ile metin alanının mesajı farklıdır.
+    fields: ["Firma", "Döviz Cinsi", "Alıcı Listesi Adı", "Devam"]
+    messages:
+      - "Seçim yapınız."
+      - "Giriş yapınız."
+    source: "Ekran gözlemi, 19.10.2026"
+
+  - id: R-YL-004
+    title: "Liste adı üst sınırı"
+    status: DOĞRULANDI
+    description: >
+      Alıcı Listesi Adı en fazla 100 karakter alır. 100'den fazla karakter
+      girilmeye çalışıldığında fazlası yazılmaz, hata mesajı gösterilmez.
+      Karakter sayacı girilen uzunluğu gösterir.
+    fields: ["Alıcı Listesi Adı"]
+    messages: []
+    source: "Ekran notu, 19.10.2026"
+
+  - id: R-YL-005
+    title: "Liste adı alt sınırı yoktur"
+    status: DOĞRULANDI
+    description: >
+      Alıcı Listesi Adı tek karakter olabilir; minimum uzunluk kısıtı yoktur.
+    fields: ["Alıcı Listesi Adı"]
+    messages: []
+    source: "Ekran notu, 19.10.2026"
+
+  - id: R-YL-006
+    title: "Onay adımı özeti"
+    status: DOĞRULANDI
+    description: >
+      Onay adımında Firma Adı/Kodu, Firma Şubesi, Döviz Cinsi ve Alıcı
+      Listesi Adı gösterilir. Değerler Bilgi Girişi'nde girilenlerle aynıdır.
+      Firma Şubesi kullanıcı tarafından girilmez, sistem tarafından getirilir.
+    fields: []
+    messages: []
+    source: "Ekran gözlemi, 19.10.2026"
+
+  - id: R-YL-007
+    title: "Onay sonrası liste oluşur"
+    status: VARSAYIM
+    description: >
+      Onay'a basıldığında liste oluşturulur, sisteme bir Grup No atanır ve
+      liste E1 sorgusunda 0 kayıt / 0,00 tutar ile görünür hale gelir.
+    fields: ["Onay"]
+    messages: []
+    source: "R-AL-007'den türetilmiş; başarı ekranı henüz gözlenmedi"
+
+  # ─────────────────────────────────────────────────────────────
+  # E4 — Alıcı Listesi Sil
+  # ─────────────────────────────────────────────────────────────
+
+  - id: R-LS-001
+    title: "Silme ayrı onay ekranında yapılır"
+    status: DOĞRULANDI
+    description: >
+      E1'de liste seçilip Sil denildiğinde popup değil, ayrı bir onay
+      ekranı açılır. Ekranda Geri ve Onay butonları bulunur.
+    fields: ["Sil", "Geri", "Onay"]
+    messages: []
+    source: "Ekran gözlemi, 19.10.2026"
+
+  - id: R-LS-002
+    title: "Silme onay ekranı özeti"
+    status: DOĞRULANDI
+    description: >
+      Onay ekranında Firma Adı/Kodu, Firma Şubesi, Alıcı Listesi Adı,
+      Toplam Tutar ve Toplam Kayıt Sayısı gösterilir. Değerler silinecek
+      listenin E1'deki değerleriyle aynıdır.
+    fields: []
+    messages: []
+    source: "Ekran gözlemi, 19.10.2026"
+
+  - id: R-LS-003
+    title: "Boş liste silinebilir"
+    status: DOĞRULANDI
+    description: >
+      Hiç kaydı olmayan (0 kayıt, 0,00 tutar) bir alıcı listesi silinebilir.
+    fields: []
+    messages: []
+    source: "Ekran gözlemi, 19.10.2026"
+
+  - id: R-LS-004
+    title: "Silme başarı mesajı"
+    status: DOĞRULANDI
+    description: >
+      Onay sonrası başarı mesajı görüntülenir ve liste E1 sorgusunda
+      artık listelenmez.
+    fields: []
+    messages:
+      - "Alıcı Listesi Silme işleminiz başarıyla gerçekleştirilmiştir."
+    source: "Ekran gözlemi, 19.10.2026"
+
+  - id: R-LS-005
+    title: "Geri ile vazgeçme"
+    status: VARSAYIM
+    description: >
+      Onay ekranında Geri'ye basıldığında silme gerçekleşmez ve liste
+      E1'de yerinde kalır.
+    fields: ["Geri"]
+    messages: []
+    source: "Standart sihirbaz davranışından türetilmiş"
+
+  # ─────────────────────────────────────────────────────────────
+  # E2 — Alıcı Listesi Detay
+  # ─────────────────────────────────────────────────────────────
+
+  - id: R-AD-001
+    title: "Detay özet bilgileri"
+    status: DOĞRULANDI
+    description: >
+      Detay ekranının başlığında Firma Adı/Kodu, Döviz Cinsi, Firma Şubesi,
+      Alıcı Listesi Adı, Grup No, Toplam Kayıt Sayısı ve Toplam Tutar
+      görüntülenir.
+    fields: []
+    messages: []
+    source: "Ekran gözlemi, 19.10.2026"
+
+  - id: R-AD-002
+    title: "Alıcı kayıt kolonları"
+    status: DOĞRULANDI
+    description: >
+      Liste içindeki alıcılar TCKN, Hesap No, Ad Soyad ve Tutar
+      kolonlarıyla listelenir.
+    fields: ["TCKN", "Hesap No", "Ad Soyad", "Tutar"]
+    messages: []
+    source: "Confluence DIJIMAAS / Alıcı Listesi İşlemleri Kapsam"
+
+  - id: R-AD-003
+    title: "Kolon sıralama"
+    status: DOĞRULANDI
+    description: >
+      Kayıt tablosunun kolonları artan ve azalan şekilde sıralanabilir.
+      Tutar kolonu sayısal, tarih alanları kronolojik sıralanır.
+    fields: []
+    messages: []
+    source: "Confluence DIJIMAAS / Alıcı Listesi İşlemleri Kapsam"
+
+  - id: R-AD-004
+    title: "TCKN maskeleme"
+    status: DOĞRULANDI
+    description: >
+      TCKN güvenlik amacıyla maskeli görüntülenir. Ne kayıt listesinde ne de
+      güncelleme ekranında TCKN'nin tamamı açık olarak gösterilmez.
+    fields: ["TCKN"]
+    messages: []
+    source: "Confluence DIJIMAAS / Alıcı Listesi İşlemleri Kapsam"
+
+  - id: R-AD-005
+    title: "Güncelleme ve silme yalnızca seçili kayıtta"
+    status: DOĞRULANDI
+    description: >
+      Güncelleme ve silme işlemleri yalnızca seçili kayıt üzerinde yapılabilir.
+    fields: ["Güncelle", "Sil"]
+    messages: []
+    source: "Confluence DIJIMAAS / Alıcı Listesi İşlemleri Kapsam"
+
+  - id: R-AD-006
+    title: "Aynı anda tek kayıt seçimi"
+    status: DOĞRULANDI
+    description: >
+      Liste içinde aynı anda yalnızca bir alıcı kaydı seçilebilir.
+    fields: []
+    messages: []
+    source: "Ekran notu, 19.10.2026"
+
+  - id: R-AD-007
+    title: "Güncelleme ekranı"
+    status: DOĞRULANDI
+    description: >
+      Güncelle ile seçili kaydın bilgileri dolu olarak bir popup açılır.
+      TCKN maskeli ve düzenlenemez durumdadır. Hesap No ve Tutar
+      düzenlenebilir. Tutar TL ve kuruş olmak üzere iki ayrı alandır.
+      Popupta Vazgeç ve Kaydet butonları bulunur.
+    fields: ["TCKN", "Hesap No", "Tutar", "Vazgeç", "Kaydet"]
+    messages: []
+    source: "Ekran gözlemi, 19.10.2026"
+
+  - id: R-AD-008
+    title: "Güncelleme sonrası liste yenilenir"
+    status: DOĞRULANDI
+    description: >
+      Başarılı güncelleme sonrasında liste yeniden yüklenir, değişen değer
+      tabloda görünür ve toplamlar yeni değere göre hesaplanır.
+    fields: []
+    messages: []
+    source: "Confluence DIJIMAAS / Alıcı Listesi İşlemleri Kapsam"
+
+  - id: R-AD-009
+    title: "Kayıt silme onayı"
+    status: DOĞRULANDI
+    description: >
+      Kayıt silme işlemi kullanıcı onayı alındıktan sonra gerçekleştirilir.
+      Onay alınmadan kayıt silinmez.
+    fields: ["Sil"]
+    messages: []
+    source: "Confluence DIJIMAAS / Alıcı Listesi İşlemleri Kapsam"
+
+  - id: R-AD-010
+    title: "Silme sonrası toplamlar"
+    status: DOĞRULANDI
+    description: >
+      Başarılı silme sonrasında Toplam Kayıt Sayısı bir azalır, Toplam Tutar
+      silinen kaydın tutarı kadar düşer ve liste ekranı güncellenir.
+    fields: []
+    messages: []
+    source: "Confluence DIJIMAAS / Alıcı Listesi İşlemleri Kapsam"
+
+  - id: R-AD-011
+    title: "Ekleme sonrası toplamlar"
+    status: DOĞRULANDI
+    description: >
+      Başarılı kayıt ekleme sonrasında Toplam Kayıt Sayısı bir artar,
+      Toplam Tutar eklenen kaydın tutarı kadar yükselir ve yeni kayıt
+      listeye eklenir.
+    fields: []
+    messages: []
+    source: "Confluence DIJIMAAS / Alıcı Listesi İşlemleri Kapsam"
+
+  - id: R-AD-012
+    title: "Toplamlar sistem tarafından hesaplanır"
+    status: DOĞRULANDI
+    description: >
+      Her işlemden sonra geçerli olan değişmez kural — Toplam Kayıt Sayısı
+      tablodaki satır sayısına, Toplam Tutar ise Tutar kolonundaki
+      değerlerin toplamına eşittir.
+    fields: []
+    messages: []
+    source: "Confluence DIJIMAAS / Alıcı Listesi İşlemleri Kapsam"
+    note: "Bu kural kodla doğrulanmalıdır, AI assertion ile değil."
+
+  - id: R-AD-013
+    title: "Döviz cinsi uyumu"
+    status: VARSAYIM
+    description: >
+      Listeye eklenecek kayıtlar listenin döviz cinsine uygun olmalıdır.
+      Kontrolün hangi alan üzerinden yapıldığı belirsizdir.
+    fields: ["Hesap No"]
+    messages: []
+    source: "Confluence'ta yazılı ancak mekanizması belirsiz — S-06"
+
+  - id: R-AD-014
+    title: "Yetkisiz kullanıcı kısıtı"
+    status: VARSAYIM
+    description: >
+      Yetkisiz kullanıcılar kayıt ekleme, güncelleme veya silme işlemlerini
+      gerçekleştiremez. Butonların gizli mi, pasif mi olduğu belirsizdir.
+    fields: ["Güncelle", "Sil", "Yeni Kayıt Ekle"]
+    messages: []
+    source: "Confluence'ta yazılı ancak davranışı belirsiz — S-11"
+
+  - id: R-AD-015
+    title: "Tablo içinde arama"
+    status: VARSAYIM
+    description: >
+      Detay ekranındaki "Tablo içinde bul" alanı, listelenen kayıtları
+      girilen metne göre filtreler.
+    fields: ["Tablo içinde bul"]
+    messages: []
+    source: "Ekran gözlemi; hangi kolonlarda arama yaptığı doğrulanmadı — S-17"
+
+  # ─────────────────────────────────────────────────────────────
+  # Kayıt Ekle / Güncelle popup validasyonları
+  # ─────────────────────────────────────────────────────────────
+
+  - id: R-KE-001
+    title: "TCKN uzunluk kontrolü"
+    status: DOĞRULANDI
+    description: >
+      TCKN alanı 11 karakter uzunluğunda olmalıdır. Daha kısa bir değer
+      girildiğinde uzunluk hatası gösterilir.
+    fields: ["TCKN"]
+    messages:
+      - "11 karakter uzunluğunda bir değer giriniz."
+    source: "Ekran gözlemi, 19.10.2026"
+
+  - id: R-KE-002
+    title: "TCKN algoritma kontrolü"
+    status: DOĞRULANDI
+    description: >
+      11 karakter girilmiş olsa dahi TC Kimlik Numarası algoritma kontrolünden
+      geçmiyorsa kayıt eklenemez. Uzunluk ve algoritma iki ayrı kontroldür.
+    fields: ["TCKN"]
+    messages:
+      - "Hatalı TC Kimlik Numarası"
+    source: "Ekran gözlemi, 19.10.2026"
+
+  - id: R-KE-003
+    title: "Tutar geçerliliği"
+    status: DOĞRULANDI
+    description: >
+      Tutar alanı varsayılan olarak 0,00 gelir ve bu değer geçersizdir.
+      Geçerli bir tutar girilmeden kayıt kaydedilemez.
+    fields: ["Tutar"]
+    messages:
+      - "Geçerli bir tutar giriniz."
+    source: "Ekran gözlemi, 19.10.2026"
+
+  - id: R-KE-004
+    title: "Hesap No validasyonu yoktur"
+    status: DOĞRULANDI
+    description: >
+      Hesap No alanında format veya varlık kontrolü yapılmaz. Herhangi bir
+      değer kabul edilir.
+    fields: ["Hesap No"]
+    messages: []
+    source: "Ekran notu, 19.10.2026"
+
+  - id: R-KE-005
+    title: "Kayıt Ekle formu alanları"
+    status: DOĞRULANDI
+    description: >
+      Yeni Kayıt Ekle popup'ında TCKN, Hesap No ve Tutar alanları bulunur.
+      Tutar TL ve kuruş olmak üzere iki ayrı alandır. Butonlar Vazgeç ve
+      Kaydet'tir. Güncelle popup'ından farkı TCKN alanının düzenlenebilir
+      olmasıdır.
+    fields: ["TCKN", "Hesap No", "Tutar", "Vazgeç", "Kaydet"]
+    messages: []
+    source: "Ekran gözlemi, 19.10.2026"
+
+  - id: R-KE-006
+    title: "Vazgeç ile değişiklik kaydedilmez"
+    status: VARSAYIM
+    description: >
+      Kayıt Ekle ve Güncelle popup'larında Vazgeç'e basıldığında popup
+      kapanır, hiçbir değişiklik kaydedilmez, toplamlar değişmez.
+    fields: ["Vazgeç"]
+    messages: []
+    source: "Standart popup davranışından türetilmiş"
+
+  # ─────────────────────────────────────────────────────────────
+  # Ekranlar arası tutarlılık
+  # ─────────────────────────────────────────────────────────────
+
+  - id: R-X-001
+    title: "Detay değişiklikleri sorgu ekranına yansır"
+    status: VARSAYIM
+    description: >
+      E2'de kayıt ekleme, güncelleme veya silme sonrasında E1 sorgu
+      ekranındaki Kayıt Sayısı ve Toplam Tutar güncel değeri gösterir.
+    fields: []
+    messages: []
+    source: "R-AD-012'den türetilmiş"
+
+  - id: R-X-002
+    title: "Silinen liste yükleme ekranında görünmez"
+    status: VARSAYIM
+    description: >
+      E1'de silinen bir liste, Alıcı Listesi'nden Yükleme ekranında
+      listelenmez ve seçilemez.
+    fields: []
+    messages: []
+    source: "R-AL-006'dan türetilmiş"

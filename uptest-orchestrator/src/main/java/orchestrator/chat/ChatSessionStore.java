@@ -41,8 +41,10 @@ public class ChatSessionStore {
         this.keepAtMost = Math.max(1, keepAtMost);
     }
 
-    public ChatSession open(String app, String flow, String cif, String userid) {
-        ChatSession session = new ChatSession(UUID.randomUUID().toString(), app, flow, cif, userid);
+    public ChatSession open(String app, String flow, String cif, String userid,
+                            String product, List<String> ruleIds) {
+        ChatSession session = new ChatSession(UUID.randomUUID().toString(), app, flow, cif, userid,
+                product, ruleIds);
         live.put(session.id(), session);
 
         // Swept AFTER the insert, not before. Sweeping first checks a count

@@ -2,6 +2,9 @@ import { useEffect, useState } from "react";
 import { PanelHead } from "./PanelHead";
 import { suggestScenario } from "../../api/endpoints";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
+import { NO_PRODUCT, ProductPicker } from "../../product/ProductPicker";
+import type { ProductSelection } from "../../product/ProductPicker";
+import type { useProducts } from "../../hooks/useProducts";
 import { Badge } from "../../ui/Badge";
 import { useToast } from "../../ui/Toast";
 import type { Origin, SuggestResponse } from "../../api/types";
@@ -56,12 +59,14 @@ function SuggestStatus({
 export function SuggestPanel({
   active,
   catalogs,
+  products,
   preselect,
   onGenerated,
   onFallbackChange,
 }: {
   active: boolean;
   catalogs: string[];
+  products: ReturnType<typeof useProducts>;
   /** Set right after a catalog is saved from the Ajan panel -- re-read from
    *  the server (app.js:1071: "a name the server normalised differently
    *  would otherwise be wrong here"), then adopted here so the newly saved
@@ -70,10 +75,11 @@ export function SuggestPanel({
   onGenerated: (feature: string, origin: Origin) => void;
   onFallbackChange: (origin: Origin) => void;
 }) {
-  const [catalog, setCatalog] = useState("");
+  const [selection, setSelection] = useState<ProductSelection>(NO_PRODUCT);
+  const catalog = selection.catalog;
 
   useEffect(() => {
-    if (preselect) setCatalog(preselect);
+    if (preselect) setSelection((was) => ({ ...was, catalog: preselect }));
   }, [preselect]);
   const [cif, setCif] = useState("");
   const [userid, setUserid] = useState("");
@@ -85,9 +91,14 @@ export function SuggestPanel({
   const [appPart = "", flowPart = ""] = catalog.split("/");
   const isNGI = appPart.toUpperCase() === "NGI";
 
+  /** Everything the editor and the run gate need to re-check this draft the
+   *  way the generator checked it. `product` belongs here and `ruleIds` does
+   *  not: the ticks shape the prompt, the product shapes the verdict. */
+  const origin: Origin = { app: appPart, flow: flowPart, intent, product: selection.product };
+
   useEffect(() => {
-    onFallbackChange({ app: appPart, flow: flowPart, intent });
-  }, [appPart, flowPart, intent, onFallbackChange]);
+    onFallbackChange({ app: appPart, flow: flowPart, intent, product: selection.product });
+  }, [appPart, flowPart, intent, selection.product, onFallbackChange]);
 
   const generate = useAsyncAction(async () => {
     if (!catalog) {
@@ -106,7 +117,7 @@ export function SuggestPanel({
     }
 
     setError(null);
-    const result = await suggestScenario({ app: appPart, flow: flowPart, intent, cif, userid });
+    const result = await suggestScenario({ ...origin, cif, userid, ruleIds: selection.ruleIds });
     if (!result.ok) {
       setResponse(null);
       setError(result.error);
@@ -115,7 +126,7 @@ export function SuggestPanel({
     }
 
     setResponse(result.body);
-    onGenerated(result.body.feature, { app: appPart, flow: flowPart, intent });
+    onGenerated(result.body.feature, origin);
     toast(
       result.body.valid ? "Senaryo üretildi ve doğrulandı" : "Taslak üretildi ama geçersiz — hataları düzeltin",
       !result.body.valid,
@@ -126,25 +137,14 @@ export function SuggestPanel({
     <div id="side-suggest" className={"side-panel" + (active ? " is-active" : "")}>
       <PanelHead title="AI Üret" />
       <div className="suggest-form">
-        <label className="suggest-label" htmlFor="suggestCatalog">
-          Ekran
-        </label>
-        <select
-          id="suggestCatalog"
-          className="search"
-          value={catalog}
-          onChange={(event) => setCatalog(event.target.value)}
-        >
-          {catalogs.length === 0 ? (
-            <option value="">(katalog bulunamadı)</option>
-          ) : (
-            catalogs.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))
-          )}
-        </select>
+        <ProductPicker
+          idPrefix="suggest"
+          products={products}
+          catalogs={catalogs}
+          value={selection}
+          onChange={setSelection}
+          disabled={generate.busy}
+        />
         <label className="suggest-label" htmlFor="suggestCif">
           CIF / Müşteri Kodu
         </label>

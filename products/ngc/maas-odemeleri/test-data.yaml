@@ -1,0 +1,119 @@
+# products/ngc/maas-odemeleri/test-data.yaml
+#
+# Alias kataloğu. Senaryolar gerçek değer değil, bu alias'ları kullanır:
+# bir .feature dosyası @data:MAKER_01 etiketi taşır, değerin nereden geldiği
+# buranın işidir.
+#
+# ⛔ GERÇEK TCKN, IBAN, HESAP NO ve ÇALIŞAN ADI BU DOSYAYA YAZILMAZ.
+#    Gerçek değerler DO_NOT_COMMIT/ altında tutulur veya runtime'da üretilir.
+#
+# cozum alanı, değerin nereden geleceğini söyler:
+#   sabit   — bu dosyada yazılı
+#   uretim  — runtime'da hesaplanır/üretilir
+#   seed    — test başında API/UI ile yaratılır
+#   gizli   — DO_NOT_COMMIT/ altından okunur
+#   eksik   — henüz temin edilmedi, bağlı senaryolar koşamaz
+#
+# engel alanı bir açık soru kimliği taşır. Dolu olduğunda cozum ne derse desin
+# alias KULLANILAMAZ: "sentetik TCKN üretilebilir" bilgisi, uygulamanın onu
+# kabul edip etmediği bilinmeden işe yaramaz.
+
+kullanicilar:
+  MAKER_01:
+    kisa: "Tam yetkili kullanıcı"
+    aciklama: "Tam yetkili test kullanıcısı"
+    cozum: gizli
+    firmalar: [FIRMA_TEST]
+  VIEWER_01:
+    kisa: "Görüntüleme yetkili kullanıcı"
+    aciklama: "Yalnızca görüntüleme yetkisi — yetki senaryoları için"
+    cozum: eksik
+  OTHER_FIRM_01:
+    kisa: "Başka firma yetkili kullanıcı"
+    aciklama: "Farklı firma yetkisi — R-AL-001 testi için"
+    cozum: eksik
+
+firmalar:
+  FIRMA_TEST:
+    kisa: "Test firması"
+    aciklama: "Otomasyonun kendi verisini yarattığı firma"
+    kod: "07954-752"
+    ad: "SAINT_GOBAIN Test"
+    doviz: TL
+    cozum: sabit
+  FIRMA_BOS:
+    kisa: "Listesi olmayan firma"
+    aciklama: "Hiç alıcı listesi olmayan firma — boş sonuç senaryosu için"
+    cozum: eksik
+    not: >
+      Gerekmeyebilir. Boş sonucu veriyle değil filtreyle üretmek daha
+      sağlamdır: gelecekteki bir tarih aralığı her zaman boş döner.
+
+alici_verisi:
+  GECERLI_TCKN:
+    kisa: "Geçerli TCKN"
+    aciklama: "Algoritma kontrolünü geçen sentetik TCKN"
+    cozum: uretim
+    engel: S-18
+    not: >
+      TCKN checksum algoritması açıktır, sentetik üretilebilir.
+      Sistemin kişi varlığını doğrulayıp doğrulamadığı bilinmiyor.
+      S-18 cevaplanana kadar bu alias kullanılamaz.
+  GECERSIZ_TCKN_KISA:
+    kisa: "Kısa TCKN"
+    aciklama: "11 karakterden kısa — R-KE-001 testi"
+    deger: "22"
+    cozum: sabit
+  GECERSIZ_TCKN_ALGORITMA:
+    kisa: "Checksum tutmayan TCKN"
+    aciklama: "11 karakter ama checksum tutmuyor — R-KE-002 testi"
+    deger: "11111111111"
+    cozum: sabit
+  HERHANGI_HESAP:
+    kisa: "Herhangi bir hesap no"
+    aciklama: "Hesap No'da validasyon yok (R-KE-004), serbest değer"
+    deger: "60526425"
+    cozum: sabit
+  GECERSIZ_TUTAR:
+    kisa: "Sıfır tutar"
+    aciklama: "Varsayılan 0,00 — R-KE-003 testi"
+    deger: "0,00"
+    cozum: sabit
+  GECERLI_TUTAR:
+    kisa: "Geçerli tutar"
+    aciklama: "Geçerli kayıt tutarı"
+    deger: "3,00"
+    cozum: sabit
+
+listeler:
+  FIRMA_LISTELI:
+    kisa: "Listesi olan firma"
+    aciklama: "En az bir alıcı listesi olan firma — sorgulama senaryoları için"
+    cozum: sabit
+    not: "FIRMA_TEST bu koşulu bugün sağlıyor."
+  LISTE_BOS:
+    kisa: "0 kayıtlı liste"
+    aciklama: "0 kayıtlı liste — R-LS-003, S-20 için"
+    cozum: seed
+    nasil: "E5 ile oluştur, kayıt ekleme"
+  LISTE_DOLU:
+    kisa: "≥3 kayıtlı liste"
+    aciklama: "≥3 kayıtlı liste — silme/güncelleme senaryoları için"
+    cozum: seed
+    engel: S-18
+    nasil: "E5 ile oluştur, ardından 3 kayıt ekle"
+
+adlandirma:
+  prefix: "AUTO_"
+  format: "AUTO_{yyyyMMdd_HHmmss}"
+  not: >
+    Otomasyonun yarattığı her liste bu önekle adlandırılır.
+    Koşum sonunda AUTO_ ile başlayan listeler temizlenir.
+    Not: aynı isimde liste oluşturma UI'da ele alınmamış (B-01),
+    bu yüzden zaman damgası benzersizliği önemli.
+
+temizlik:
+  gerekli: true
+  kural: >
+    Veri değiştiren (@mutating) her senaryo kendi verisini yaratır ve
+    koşum sonunda siler. Paylaşılan test verisine dokunulmaz.

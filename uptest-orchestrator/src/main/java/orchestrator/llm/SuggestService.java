@@ -1,6 +1,8 @@
 package orchestrator.llm;
 
 import orchestrator.catalog.CatalogModel;
+import orchestrator.product.ProductModel;
+import orchestrator.product.Rule;
 import orchestrator.validation.ScenarioValidator;
 import orchestrator.validation.ValidationResult;
 import orchestrator.vocabulary.Vocabulary;
@@ -83,12 +85,31 @@ public class SuggestService {
     }
 
     /**
+     * The product context for one generation, and the reason it is a pair.
+     *
+     * The two halves are used at different moments and must not be collapsed:
+     * {@code rules} is what the analyst ticked and it shapes the PROMPT, while
+     * {@code product} carries every message the product knows and it shapes
+     * the VALIDATOR. Tying the validator to the ticked subset would mean a
+     * draft accepted during generation being refused by the identical check at
+     * the run gate, because a checkbox was cleared in between.
+     */
+    public record ProductContext(ProductModel product, List<Rule> rules) {
+
+        /** No product chosen — every path below behaves exactly as before. */
+        public static final ProductContext NONE = new ProductContext(null, List.of());
+    }
+
+    /**
      * @param loginStep the login line to force into the draft, or null to let
      *                  the model write its own. Applied after every generation,
      *                  including repairs, because the prompt asking for it is a
      *                  request and this is the guarantee.
+     * @param product   the chosen product and its ticked rules, or
+     *                  {@link ProductContext#NONE}
      */
-    public Suggestion suggest(String catalogYaml, String intent, Vocabulary vocabulary, String loginStep) {
+    public Suggestion suggest(String catalogYaml, String intent, Vocabulary vocabulary, String loginStep,
+                              ProductContext product) {
         // Parsed once, then used by every validation pass including repairs.
         // Empty when the catalog will not parse — the checks simply do not run,
         // which is how this worked before they existed.
@@ -99,8 +120,8 @@ public class SuggestService {
         // is the right answer. OutlineFlattener reads that null and stands
         // aside.
         return one(prompts.system(vocabulary),
-                prompts.user(catalogYaml, intent, loginStep),
-                catalog, vocabulary, loginStep, intent, null, maxRepairs);
+                prompts.user(catalogYaml, intent, loginStep, null, product.rules()),
+                catalog, product.product(), vocabulary, loginStep, intent, null, maxRepairs);
     }
 
     /**
@@ -119,11 +140,11 @@ public class SuggestService {
      * different class of scenario from the one the generator panel produces.
      */
     public Suggestion suggestOnce(String catalogYaml, String intent, Vocabulary vocabulary,
-                                  String loginStep) {
+                                  String loginStep, ProductContext product) {
         CatalogModel catalog = CatalogModel.parse(catalogYaml).orElse(null);
         return one(prompts.system(vocabulary),
-                prompts.user(catalogYaml, intent, loginStep),
-                catalog, vocabulary, loginStep, intent, null, 0);
+                prompts.user(catalogYaml, intent, loginStep, null, product.rules()),
+                catalog, product.product(), vocabulary, loginStep, intent, null, 0);
     }
 
     /**
@@ -136,13 +157,13 @@ public class SuggestService {
      * the batch path silently keeping the older behaviour.
      */
     private Suggestion one(String system, String userMessage, CatalogModel catalog,
-                           Vocabulary vocabulary, String loginStep, String intent,
-                           VariationPlanner.Variation variation, int repairs) {
+                           ProductModel product, Vocabulary vocabulary, String loginStep,
+                           String intent, VariationPlanner.Variation variation, int repairs) {
         List<String> log = new ArrayList<>();
 
         String draft = settle(llm.ask(system, userMessage), loginStep, catalog, vocabulary,
                 variation, intent);
-        ValidationResult result = validator.validate(draft, vocabulary, catalog, intent);
+        ValidationResult result = validator.validate(draft, vocabulary, catalog, intent, product);
         int attempts = 1;
         log.add(describe(attempts, result));
 
@@ -152,7 +173,7 @@ public class SuggestService {
             // repeating it invites a fresh scenario instead of a fix.
             draft = settle(llm.ask(system, prompts.repair(draft, result)), loginStep, catalog,
                     vocabulary, variation, intent);
-            result = validator.validate(draft, vocabulary, catalog, intent);
+            result = validator.validate(draft, vocabulary, catalog, intent, product);
             attempts++;
             log.add(describe(attempts, result));
         }
@@ -248,7 +269,7 @@ public class SuggestService {
      * batch of ten in one go pushes every other team's request behind it.
      */
     public Batch suggestMany(String catalogYaml, String intent, Vocabulary vocabulary,
-                             String loginStep, int count) {
+                             String loginStep, int count, ProductContext product) {
         int wanted = Math.max(1, Math.min(count, maxScenarios));
         String system = prompts.system(vocabulary);
         CatalogModel catalog = CatalogModel.parse(catalogYaml).orElse(null);
@@ -298,8 +319,9 @@ public class SuggestService {
                 running.add(pool.submit(() -> {
                     Suggestion suggestion = one(
                             system,
-                            prompts.user(catalogYaml, intent, loginStep, variation),
-                            catalog, vocabulary, loginStep, intent, variation, maxRepairs);
+                            prompts.user(catalogYaml, intent, loginStep, variation, product.rules()),
+                            catalog, product.product(), vocabulary, loginStep, intent,
+                            variation, maxRepairs);
                     done[index] = variation == null
                             ? new Scenario(index, "Senaryo " + (index + 1),
                                     Map.of(), List.of(), List.of(), suggestion)

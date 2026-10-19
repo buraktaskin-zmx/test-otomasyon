@@ -162,6 +162,16 @@ All test-side code lives in `uptest-executor/src/main/java/` under the package
 Elsewhere:
 
 - Scenarios (working copies analysts and the LLM look at): `scenarios/*.feature`
+- Product context (the oracle): `products/<app>/<product>/` — `product.yaml`
+  (identity + the flows it claims), `rules.yaml` (ID'd business rules), and
+  optional `flow.md` / `roles.md` / `open-questions.md`. Schema in
+  `products/SCHEMA.md`, read by `orchestrator/product/`. Separate from
+  `catalogs/` and NOT a directory level inside it: `Origin{app, flow}` travels
+  on every validate/suggest/run request and is persisted in `TEST_RUN`'s own
+  columns, so a third path segment would mean changing the wire format, the
+  database and three places in the UI. The product declares its flows rather
+  than each catalog naming its product — see the lesson below for why that
+  direction is load-bearing.
 - Screen catalogs for LLM prompting: `catalogs/<app>/<flow>.yaml`; schema in
   `catalogs/SCHEMA.md`
 - Screen discovery (executor): `PW/discovery/` — `CatalogDiscovery` walks a flow
@@ -320,6 +330,53 @@ Shared (CommonSteps, work on both apps):
   deleting the assertion and calling a scenario that checks nothing "valid")
 - `verify {string} text is displayed`
 - `wait {string} seconds` (avoid — prefer auto-wait)
+
+## Where rules come from — and why they are not in the catalog
+
+A catalog says what a screen HAS. A **product** says what the application must
+DO. The split is not organisational; the two have different producers and
+different sources of truth, and that is the whole argument:
+
+- A catalog is **discovered**. The DOM scan reads the rendered page, the MCP
+  agent reads an accessibility snapshot. Both produce a description of a
+  screen as it stands, and **neither can say whether what it found is
+  correct**. Ask an agent to "test this screen" and it records the İptal
+  button it finds on a paid invoice as expected behaviour — a bug promoted to
+  a passing test, for ever.
+- A rule is **written**, by a person, from an analysis document or the
+  business. Nothing on the screen establishes it.
+
+The second reason decides the direction of the binding: **rules exist before
+the screen does.** A product is specified while its catalogs are still being
+walked, so the product declares its flows and a flow with no catalog on disk
+is the work queue, not an error. Had the binding lived in the catalog, a
+product could not be written at all until someone had walked a screen.
+
+**Only `messages` is enforced**, and it earns the layer its place. Before it,
+`ScenarioValidator.checkMessageIsCatalogued` accepted exactly one asserted
+sentence — the catalog's `success_message` — and its own javadoc recorded the
+cost: *"a negative scenario asserting an error dialog's text is flagged too."*
+For a payments product that is most of the suite, because nearly every rule
+worth writing is a refusal and a catalog has nowhere to record one. The
+accepted set is now `success_message` ∪ every rule's `messages`, which widens
+what counts as catalogued rather than loosening the check.
+
+Everything else — `description`, `flow.md`, `roles.md`, `fields` — steers the
+prompt without the validator having an opinion, exactly as `navigation` and
+`verifiable` do in a catalog, and carries the same hazard.
+
+**The ticked rules shape the PROMPT; the product shapes the VALIDATOR.** Only
+the rules an analyst selected reach the model, because the prompt already
+carries eleven hard rules, the live step list and the whole catalog, and a rule
+far from where it applies is a rule the model does not read. The validator sees
+every message the product knows regardless — tying it to the ticks would mean a
+draft accepted at generation being refused by the identical check at the run
+gate because a checkbox was cleared in between.
+
+`open-questions.md` is the one file deliberately **never** sent to the model.
+Its purpose is to mark where an assumption would otherwise be invented, and
+handing that list to something that invents plausible text defeats it. It is
+shown to the analyst instead.
 
 ## Where catalogs come from
 

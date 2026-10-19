@@ -34,7 +34,8 @@ public class RunController {
      * Without them a draft the generator had already rejected starts anyway,
      * because the catalog checks cannot run without a catalog.
      */
-    public record StartRunRequest(String feature, String app, String flow, String intent) {
+    public record StartRunRequest(String feature, String app, String flow, String intent,
+                                  String product) {
     }
 
     private final RunService runService;
@@ -57,7 +58,7 @@ public class RunController {
         }
 
         RunService.StartOutcome outcome = runService.start(
-                request.feature(), request.app(), request.flow(), request.intent());
+                request.feature(), request.app(), request.flow(), request.intent(), request.product());
 
         if (outcome.accepted()) {
             return ResponseEntity.accepted().body(Map.of(

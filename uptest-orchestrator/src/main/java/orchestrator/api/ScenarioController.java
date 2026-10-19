@@ -4,6 +4,8 @@ import orchestrator.catalog.CatalogModel;
 import orchestrator.catalog.CatalogService;
 import orchestrator.llm.LoginStep;
 import orchestrator.llm.SuggestService;
+import orchestrator.product.ProductModel;
+import orchestrator.product.ProductService;
 import orchestrator.validation.ScenarioValidator;
 import orchestrator.validation.ValidationResult;
 import orchestrator.vocabulary.Vocabulary;
@@ -33,7 +35,8 @@ public class ScenarioController {
      * the same check the generator runs, so the Doğrula button and the run
      * gate stop disagreeing with it.
      */
-    public record ValidateRequest(String feature, String app, String flow, String intent) {
+    public record ValidateRequest(String feature, String app, String flow, String intent,
+                                  String product) {
     }
 
     /**
@@ -46,7 +49,8 @@ public class ScenarioController {
      * userid. Optional; without a cif the model writes the login itself, as
      * before.
      */
-    public record SuggestRequest(String app, String flow, String intent, String cif, String userid) {
+    public record SuggestRequest(String app, String flow, String intent, String cif, String userid,
+                                 String product, List<String> ruleIds) {
     }
 
     /**
@@ -58,22 +62,57 @@ public class ScenarioController {
      * hour.
      */
     public record SuggestManyRequest(String app, String flow, String intent, String cif, String userid,
-                                     Integer count) {
+                                     Integer count, String product, List<String> ruleIds) {
     }
 
     private final ScenarioValidator validator;
     private final VocabularyService vocabularyService;
     private final SuggestService suggestService;
     private final CatalogService catalogService;
+    private final ProductService productService;
 
     public ScenarioController(ScenarioValidator validator,
                               VocabularyService vocabularyService,
                               SuggestService suggestService,
-                              CatalogService catalogService) {
+                              CatalogService catalogService,
+                              ProductService productService) {
         this.validator = validator;
         this.vocabularyService = vocabularyService;
         this.suggestService = suggestService;
         this.catalogService = catalogService;
+        this.productService = productService;
+    }
+
+    /**
+     * The product named by a request, or null.
+     *
+     * Never guessed from the flow. A product declares its flows, so the
+     * mapping could be inverted here — and that would be exactly the silent
+     * wrong answer this codebase keeps paying for: a scenario would be
+     * validated against a rule book the analyst never chose, and nothing on
+     * screen would say so.
+     */
+    private ProductModel productOf(String app, String product) {
+        if (product == null || product.isBlank() || app == null || app.isBlank()) {
+            return null;
+        }
+        return productService.load(app, product).orElse(null);
+    }
+
+    /**
+     * The product plus the rules the analyst ticked.
+     *
+     * An unknown rule id is skipped rather than refused — see
+     * {@code ProductModel.selected}: the selection comes from a browser that
+     * may be one rules-file edit behind, and losing a rule beats refusing to
+     * generate.
+     */
+    private SuggestService.ProductContext productContext(String app, String product,
+                                                         List<String> ruleIds) {
+        ProductModel model = productOf(app, product);
+        return model == null
+                ? SuggestService.ProductContext.NONE
+                : new SuggestService.ProductContext(model, model.selected(ruleIds));
     }
 
     /**
@@ -103,8 +142,13 @@ public class ScenarioController {
                     .flatMap(CatalogModel::parse).orElse(null);
         }
 
+        // The product matters here for one reason: it decides which asserted
+        // sentences count as catalogued. Leave it out and the Doğrula button
+        // would disagree with the generator that just produced the draft —
+        // the same "two checks, two answers" problem app/flow was added for.
         ValidationResult result = validator.validate(
-                request.feature(), vocabulary.get(), catalog, request.intent());
+                request.feature(), vocabulary.get(), catalog, request.intent(),
+                productOf(request.app(), request.product()));
         return ResponseEntity.ok(result);
     }
 
@@ -167,7 +211,8 @@ public class ScenarioController {
         }
 
         return callModel(() -> suggestService.suggest(
-                ready.catalogYaml(), request.intent(), ready.vocabulary(), ready.loginStep()));
+                ready.catalogYaml(), request.intent(), ready.vocabulary(), ready.loginStep(),
+                productContext(request.app(), request.product(), request.ruleIds())));
     }
 
     /** How many scenarios a batch produces when the client does not say. */
@@ -229,7 +274,8 @@ public class ScenarioController {
 
         return callModel(() -> {
             SuggestService.Batch batch = suggestService.suggestMany(
-                    ready.catalogYaml(), request.intent(), ready.vocabulary(), ready.loginStep(), count);
+                    ready.catalogYaml(), request.intent(), ready.vocabulary(), ready.loginStep(), count,
+                    productContext(request.app(), request.product(), request.ruleIds()));
 
             // Flattened so each entry is the same shape app.js already knows
             // from /suggest (feature, valid, validation, attempts) plus the
