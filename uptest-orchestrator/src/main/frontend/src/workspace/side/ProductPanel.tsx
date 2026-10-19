@@ -64,11 +64,6 @@ export function ProductPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selection?.app, selection?.product]);
 
-  useEffect(() => {
-    if (selection) void products.open(selection.app, selection.product);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selection?.app, selection?.product]);
-
   /* Changing screen closes whatever scenario was open. Without this the
      detail view would survive into a screen the file does not belong to,
      and the breadcrumb above it would be lying. */
@@ -81,7 +76,6 @@ export function ProductPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selection?.app, selection?.product, selection?.flow, selection?.path]);
 
-  const detail = selection ? products.detail(selection.app, selection.product) : null;
   const screen = selection?.flow
     ? registry?.screens.find((candidate) => candidate.flow === selection.flow) ?? null
     : null;
@@ -144,157 +138,53 @@ export function ProductPanel({
                   folder was already named "bildirilmemiş" in the tree. A
                   warning that is always on is furniture, and this screen is
                   read by someone scanning fifty rows. The catalog fact still
-                  travels -- the breadcrumb above says "katalog yok" in three
-                  words -- and the product overview still lists every screen
-                  missing one, which is where a work queue belongs. */}
+                  travels in three words: the breadcrumb above says "katalog
+                  yok", and ProductPicker names every screen missing one at
+                  the moment it matters -- the generation that would have to
+                  run without it. */}
               {problem ? <p className="product-warn">Okunamadı: {problem}</p> : null}
 
-              {selection.flow ? (
-                selection.path ? (
-                  <ScenarioDetail
-                    detail={products.scenario}
-                    busy={products.scenarioBusy}
-                    onBack={() => setSelection({ ...selection, path: null })}
-                    onRun={(feature) => onRun(feature, {
-                      app: selection.app,
-                      flow: selection.flow ?? "",
-                      intent: products.scenario?.description ?? "",
-                      product: selection.product,
-                    })}
-                  />
-                ) : (
-                  <ScenarioTable
-                    scenarios={rows}
-                    busy={busy}
-                    onOpen={(scenario) =>
-                      setSelection({ ...selection, path: scenario.path })}
-                  />
-                )
+              {/* Scenarios at every level. Picking the PRODUCT used to open
+                  an overview instead -- its description, its counts, its
+                  fifty rules, the state machine, the roles and the whole of
+                  open-questions.md dumped as preformatted text. All of it
+                  real, none of it what the panel is called: a registry of
+                  scenarios answering "which of these can I run". The product
+                  row now lists every scenario it owns, across screens, and a
+                  screen row narrows that to one.
+
+                  Where the rest went, since it was not noise:
+                  - the rules are in the generation panels' ProductPicker,
+                    beside the checkbox that decides whether each one reaches
+                    the model, which is the only moment they are acted on;
+                  - open-questions.md, flow.md and roles.md are repository
+                    files. This panel is read-only BECAUSE they live in git,
+                    so an IDE already shows them with history and a diff --
+                    rendering them here bought a second, worse reader. */}
+              {selection.path ? (
+                <ScenarioDetail
+                  detail={products.scenario}
+                  busy={products.scenarioBusy}
+                  onBack={() => setSelection({ ...selection, path: null })}
+                  onRun={(feature) => onRun(feature, {
+                    app: selection.app,
+                    flow: selection.flow ?? "",
+                    intent: products.scenario?.description ?? "",
+                    product: selection.product,
+                  })}
+                />
               ) : (
-                <Overview products={products} selection={selection} detail={detail}
-                          registry={registry} busy={busy} />
+                <ScenarioTable
+                  scenarios={rows}
+                  busy={busy}
+                  onOpen={(scenario) =>
+                    setSelection({ ...selection, flow: scenario.flow, path: scenario.path })}
+                />
               )}
             </>
           )}
         </section>
       </div>
     </div>
-  );
-}
-
-/** The product itself: what it claims, what it is missing, and its rule book. */
-function Overview({
-  selection,
-  detail,
-  registry,
-  busy,
-}: {
-  products: ReturnType<typeof useProducts>;
-  selection: TreeSelection;
-  detail: ReturnType<ReturnType<typeof useProducts>["detail"]>;
-  registry: ReturnType<ReturnType<typeof useProducts>["registry"]>;
-  busy: boolean;
-}) {
-  if (!registry) {
-    return <p className="registry-empty">{busy ? "Okunuyor…" : "Ürün okunamadı."}</p>;
-  }
-
-  return (
-    <div className="product-body">
-      {registry.description ? (
-        <p className="product-rule-text">{registry.description}</p>
-      ) : null}
-
-      <p className="product-counts">
-        {registry.scenarioCount} senaryo · {registry.ruleCount} kural ·{" "}
-        {registry.assumptionCount} varsayım · {registry.messageCount} tanımlı mesaj ·{" "}
-        {registry.screens.length} ekran
-      </p>
-
-      {registry.duplicateIds.length > 0 ? (
-        <p className="product-warn">
-          Aynı kimlik birden çok kez yazılmış: {registry.duplicateIds.join(", ")}. İlki
-          geçerli, diğerleri yok sayıldı — rules.yaml’ı düzeltin.
-        </p>
-      ) : null}
-
-      {registry.missingCatalogs.length > 0 ? (
-        <p className="product-gap">
-          Kataloğu olmayan ekranlar: {registry.missingCatalogs.join(", ")}. Hata değil,
-          yapılacak işler listesi — kurallar ekrandan önce yazılabilsin diye böyle.
-        </p>
-      ) : null}
-
-      {detail ? (
-        <>
-          {detail.openQuestions.trim() ? (
-            <Section title="Cevaplanmamış sorular" warn>
-              <p className="product-note">
-                Bu metin modele <b>gönderilmez</b>. Varsayım üretilmesini engellemek için var.
-              </p>
-              <pre className="product-text">{detail.openQuestions}</pre>
-            </Section>
-          ) : null}
-
-          <Section title={"Kurallar (" + detail.rules.length + ")"}>
-            {detail.rules.length === 0 ? (
-              <p className="suggest-hint">Hiç kural yazılmamış.</p>
-            ) : (
-              detail.rules.map((rule) => (
-                <div key={rule.id} className="product-rule">
-                  <div className="product-rule-head">
-                    <span className="rule-id">{rule.id}</span>
-                    <span className="rule-title">{rule.title || "(başlıksız)"}</span>
-                    <span className={rule.confirmed ? "rule-ok" : "rule-guess"}>
-                      {rule.confirmed ? "DOĞRULANDI" : "VARSAYIM"}
-                    </span>
-                  </div>
-                  {rule.description ? (
-                    <p className="product-rule-text">{rule.description}</p>
-                  ) : null}
-                  {rule.messages.map((message) => (
-                    <p key={message} className="product-message">“{message}”</p>
-                  ))}
-                  {rule.source ? <p className="product-source">Kaynak: {rule.source}</p> : null}
-                </div>
-              ))
-            )}
-          </Section>
-
-          {detail.stateMachine.trim() ? (
-            <Section title="Akış">
-              <pre className="product-text">{detail.stateMachine}</pre>
-            </Section>
-          ) : null}
-
-          {detail.roles.trim() ? (
-            <Section title="Roller">
-              <pre className="product-text">{detail.roles}</pre>
-            </Section>
-          ) : null}
-        </>
-      ) : null}
-
-      <p className="suggest-hint">
-        Ürün: <code>products/{selection.app}/{selection.product}/</code>
-      </p>
-    </div>
-  );
-}
-
-function Section({
-  title,
-  warn,
-  children,
-}: {
-  title: string;
-  warn?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className={"product-section" + (warn ? " is-warn" : "")}>
-      <h3 className="product-section-title">{title}</h3>
-      {children}
-    </section>
   );
 }

@@ -131,10 +131,17 @@ export function ProductPicker({
 
       {problem ? <p className="product-warn">Ürün okunamadı: {problem}</p> : null}
 
+      {/* Names the FILE, not a panel. It used to send the reader to the
+          Kayıtlı Senaryolar panel, which rendered open-questions.md as
+          preformatted text; that panel now shows scenarios and nothing
+          else, so the pointer would have gone nowhere. The file is the
+          better destination anyway -- it is read in an IDE, with its
+          history and whoever last touched it. */}
       {chosen?.hasOpenQuestions ? (
         <p className="product-warn">
-          Bu üründe cevaplanmamış sorular var. “Ürün” panelinden okuyun —
-          oradaki konular hakkında senaryo üretmeyin, model varsayım uydurur.
+          Bu üründe cevaplanmamış sorular var:{" "}
+          <code>products/{chosen.app}/{chosen.product}/open-questions.md</code>. Oradaki
+          konular hakkında senaryo üretmeyin — model varsayım uydurur.
         </p>
       ) : null}
 
