@@ -166,8 +166,67 @@ body {
 }
 
 /* Closed, not unmounted -- see the comment at the <aside> in
-   WorkspaceView. The panels keep whatever the analyst typed. */
-.pane-side.is-closed { display: none; }
+   WorkspaceView. The panels keep whatever the analyst typed.
+
+   It now COLLAPSES instead of vanishing. `display: none` is not an
+   animatable property, so the pane keeps its box and gives up its width
+   while the editor takes the slack. Four details are load-bearing:
+
+   - the fade is shorter than the slide and, on the way out, runs FIRST.
+     What looks jittery in a collapsing panel is not the width, it is the
+     contents reflowing into an ever narrower column -- so the panel is
+     already invisible by the time that reflow gets violent. Opening
+     reverses it: the column arrives first, the contents fade in behind it
+     (the .06s delay).
+   - `visibility: hidden` is delayed to the END of the slide. It is what
+     takes the closed panel out of the tab order and the accessibility
+     tree -- the one thing `display: none` was giving us for free, and the
+     reason a closed panel's inputs are not reachable by Tab.
+   - the negative margin cancels the flex `gap` a zero-width item would
+     still claim (`.view.is-active` in app.css, 14px). Without it, closing
+     the panel leaves a 14px strip the editor never gets back. That number
+     is tied to the gap: change one, change the other.
+   - the border and shadow go with it. At `max-width: 0` a border-box
+     element still paints its 1px edges, so a closed panel would leave a
+     hairline and a shadow smudge down the side of the editor.
+
+   prefers-reduced-motion is handled globally in app.css (every transition
+   is dropped), which degrades this to the instant hide it replaces.
+
+   `flex-basis` is deliberately NOT transitioned, though collapsing it
+   would be the obvious way to do this. Chat and Kayıtlı Senaryolar widen
+   the same pane to the full workspace (.is-wide below) by setting the
+   basis to 100% while the editor is hidden outright -- and `display` does
+   not animate. Transitioning the basis would therefore leave a 60%-wide
+   hole where the editor used to be for the length of the slide, every
+   time someone opens Chat. The width is driven by the min/max pair
+   instead, which .is-wide releases to `none` -- a value nothing can
+   interpolate, so that path stays as instant as it is today. */
+#view-workspace .pane-side {
+    transition:
+        min-width .2s ease,
+        max-width .2s ease,
+        margin-left .2s ease,
+        opacity .16s ease .06s,
+        visibility 0s;
+}
+
+#view-workspace .pane-side.is-closed {
+    min-width: 0;
+    max-width: 0;
+    margin-left: -14px;
+    opacity: 0;
+    border-width: 0;
+    box-shadow: none;
+    pointer-events: none;
+    visibility: hidden;
+    transition:
+        min-width .2s ease,
+        max-width .2s ease,
+        margin-left .2s ease,
+        opacity .1s ease,
+        visibility 0s linear .2s;
+}
 
 /* Stacked layout: the rail becomes a scrollable row above the editor
    rather than a tall column nothing else can sit beside. Labels stay --
@@ -187,6 +246,14 @@ body {
         margin-bottom: 0;
         margin-right: var(--space-1);
         padding-bottom: 7px;
+    }
+
+    /* The collapse above animates a WIDTH, and here the panes are stacked:
+       a zero-width panel in a column leaves its full height of gap behind
+       and the editor gains nothing. Narrow screens keep the instant hide. */
+    #view-workspace .pane-side.is-closed {
+        display: none;
+        margin-left: 0;
     }
 }
 
