@@ -1,9 +1,12 @@
 @R-AL-015 @needs:none
-Feature: Alici Listesi Islemleri
+Feature: Alıcı Listesi İşlemleri
 
-  Scenario: Detayli Arama tarih alanlarini acar
+  Scenario: Detaylı Arama tarih alanlarını açar
 
-    Ekrani ac. Detayli Arama baglantisina tikla.
+    Adımlar:
+    - Alıcı Listesi İşlemleri ekranını aç
+    - Detaylı Arama bağlantısına tıkla
 
-    Beklenen: Baslangic Tarihi ve Bitis Tarihi alanlari ile Listele butonu gorunur hale gelir.
-    Her iki tarih alaninin yaninda takvim simgesi bulunur.
+    Beklenen:
+    - Başlangıç Tarihi ve Bitiş Tarihi alanları ile Listele butonu görünür hale gelir
+    - Her iki tarih alanının yanında takvim simgesi bulunur

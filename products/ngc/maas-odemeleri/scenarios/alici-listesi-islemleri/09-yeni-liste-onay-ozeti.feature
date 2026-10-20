@@ -1,16 +1,23 @@
-@R-YL-002 @R-YL-006 @needs:FIRMA_TEST
-Feature: Alici Listesi Islemleri
+@R-YL-006 @needs:FIRMA_TEST
+Feature: Alıcı Listesi İşlemleri
 
-  Scenario: Yeni liste bilgileri onay ozetinde gorunur
+  Scenario: Yeni liste bilgileri onay özetinde görünür
 
-    On kosul: ilgili firma verisi bulunabilmeli ve Doviz Cinsi TL secilebilmeli.
+    Ön koşul:
+    - İlgili firma verisi bulunabilmeli
+    - Döviz cinsi TL seçilebilmeli
 
-    Alici Listesi Islemleri ekranini ac. Islemler panelinden Yeni Liste Olustur'a
-    tikla. Firma alanindan 07954-752 ile baslayan firmayi sec. Doviz Cinsi olarak
-    TL sec. Alici Listesi Adi alanina dene3 yaz. Devam'a bas. Onay'a basma.
+    Adımlar:
+    - Alıcı Listesi İşlemleri ekranını aç
+    - İşlemler panelinden Yeni Liste Oluştur'a tıkla
+    - Firma alanından 07954-752 ile başlayan firmayı seç
+    - Döviz Cinsi olarak TL seç
+    - Alıcı Listesi Adı alanına dene3 yaz
+    - Devam'a bas
 
-    Beklenen: Islem Bilgileri ekrani gelir ve su degerler gorunur:
-    Firma Adi / Kodu: SAINT_GOBAIN Test / 07954
-    Firma Subesi: ATASEHIR (00752)
-    Doviz Cinsi: TL
-    Alici Listesi Adi: dene3
+    Beklenen:
+    - İşlem Bilgileri ekranı görünür
+    - Firma Adı / Kodu: SAINT_GOBAIN Test / 07954
+    - Firma Şubesi: ATASEHIR (00752)
+    - Döviz Cinsi: TL
+    - Alıcı Listesi Adı: dene3

@@ -1,9 +1,15 @@
 @R-AL-011 @needs:none
-Feature: Alici Listesi Islemleri
+Feature: Alıcı Listesi İşlemleri
 
-  Scenario: Firma secilmeden Listele calismaz
+  Scenario: Firma seçilmeden Listele çalışmaz
 
-    Ekrani ac, Detayli Arama alanini genislet. Firma alanini bos birak, Doviz Cinsi
-    olarak TL sec. Listele butonuna tikla.
+    Adımlar:
+    - Alıcı Listesi İşlemleri ekranını aç
+    - Detaylı Arama alanını genişlet
+    - Firma alanını boş bırak
+    - Döviz Cinsi olarak TL seç
+    - Listele butonuna tıkla
 
-    Beklenen: Sorgu calismaz, tablo sonucla dolmaz.
+    Beklenen:
+    - Sorgu çalışmaz
+    - Tablo sonuçla dolmaz

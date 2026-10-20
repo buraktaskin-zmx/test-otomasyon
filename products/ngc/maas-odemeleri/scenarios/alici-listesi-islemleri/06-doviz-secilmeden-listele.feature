@@ -1,9 +1,17 @@
 @R-AL-011 @needs:none
-Feature: Alici Listesi Islemleri
+Feature: Alıcı Listesi İşlemleri
 
-  Scenario: Doviz cinsi secilmeden Listele calismaz
+  Scenario: Döviz cinsi seçilmeden Listele çalışmaz
 
-    Firma alanindan test firmasini sec, Doviz Cinsi alanini bos birak. Listele
-    butonuna tikla.
+    Ön koşul:
+    - İlgili firma verisi bulunabilmeli
 
-    Beklenen: Sorgu calismaz, tablo sonucla dolmaz.
+    Adımlar:
+    - Alıcı Listesi İşlemleri ekranını aç
+    - Firma alanından test firmasını seç
+    - Döviz Cinsi alanını boş bırak
+    - Listele butonuna tıkla
+
+    Beklenen:
+    - Sorgu çalışmaz
+    - Tablo sonuçla dolmaz

@@ -1,27 +1,27 @@
 import { useEffect, useState } from "react";
 import { tokenizeGherkinLine } from "../lib/gherkin";
-import { plainSteps } from "../lib/plainTurkish";
-import { joinTags, readProse, splitTags, writeProse } from "../lib/scenarioProse";
+import { joinTags, readDoc, splitTags, writeDoc } from "../lib/scenarioProse";
+import type { ScenarioDoc } from "../lib/scenarioProse";
 import type { ScenarioDetail as Detail } from "../api/types";
 
 /*
   Bir senaryo, iki dilde.
 
-  Solda GHERKIN: çalışan hâli. Sağda DOĞAL DİL: okunan hâli.
+  Solda GHERKIN: çalışan hâli. Sağda DOĞAL DİL: okunan hâli, beş alan --
+  başlık, kural, ön koşul, adımlar, beklenen (bkz. lib/scenarioProse).
 
   İkisi aynı şeyin iki yazımı değil, iki AYRI çalıştırma yolu. Senaryo doğal
   dille yazılır ve ajan onu tarayıcıyı sürerek uygular; Gherkin aynı senaryonun
   DETERMINISTIK TEKRARI olarak sonradan yazılır.
 
   Her iki yarının kendi Düzenle / Kaydet düğmesi var ve ikisi de AYNI .feature
-  dosyasını yazar: Gherkin tarafı dosyanın tamamını, doğal dil tarafı yalnızca
-  Scenario başlığını ve altındaki açıklamayı (bkz. lib/scenarioProse).
+  dosyasını yazar.
 */
 export function ScenarioDetail({
   detail,
   busy,
   onBack,
-  onRun,
+  onOpen,
   onAiRun,
   aiBusy,
   aiAnswer,
@@ -31,9 +31,10 @@ export function ScenarioDetail({
   detail: Detail | null;
   busy: boolean;
   onBack: () => void;
-  onRun: (feature: string) => void;
-  /** Hands the prose to the browsing agent -- the same call as Ekran Keşfi's
-   *  Serbest Gözlem. */
+  /** "Git": open this scenario in the Çalıştır editor. */
+  onOpen: (feature: string) => void;
+  /** Hands the scenario to the browsing agent -- the same call as Ekran
+   *  Keşfi's Serbest Gözlem. */
   onAiRun: () => void;
   aiBusy: boolean;
   aiAnswer: string;
@@ -44,8 +45,7 @@ export function ScenarioDetail({
 }) {
   const [editing, setEditing] = useState<"gherkin" | "prose" | null>(null);
   const [draft, setDraft] = useState("");
-  const [titleDraft, setTitleDraft] = useState("");
-  const [preDraft, setPreDraft] = useState("");
+  const [docDraft, setDocDraft] = useState<ScenarioDoc | null>(null);
   const [saving, setSaving] = useState(false);
 
   // Another scenario opened: any half-finished edit belongs to the old one.
@@ -55,10 +55,8 @@ export function ScenarioDetail({
     return <p className="registry-empty">{busy ? "Okunuyor…" : "Senaryo okunamadı."}</p>;
   }
 
-  const steps = plainSteps(detail.feature);
-  const hasGherkin = detail.stepCount > 0;
-  const prose = readProse(detail.feature);
-  // Tag lines are hidden in the view and the editor, and put back on save.
+  const doc = readDoc(detail.feature);
+  // Tag lines are hidden in the Gherkin view and editor, and put back on save.
   const { tags, body: shown } = splitTags(detail.feature);
 
   const editGherkin = () => {
@@ -67,15 +65,14 @@ export function ScenarioDetail({
   };
 
   const editProse = () => {
-    setTitleDraft(prose?.title ?? detail.title);
-    setPreDraft(prose?.precondition ?? "");
-    setDraft(prose?.body ?? "");
+    if (!doc) return;
+    setDocDraft({ ...doc });
     setEditing("prose");
   };
 
   const save = async () => {
-    const feature = editing === "prose"
-      ? writeProse(detail.feature, { title: titleDraft, precondition: preDraft, body: draft })
+    const feature = editing === "prose" && docDraft
+      ? writeDoc(detail.feature, docDraft)
       : joinTags(tags, draft);
     setSaving(true);
     const ok = await onSave(feature);
@@ -102,6 +99,9 @@ export function ScenarioDetail({
       </button>
     );
 
+  const setField = <K extends keyof ScenarioDoc>(key: K, value: ScenarioDoc[K]) =>
+    setDocDraft((was) => (was ? { ...was, [key]: value } : was));
+
   return (
     <div className="sd">
       <div className="sd-head">
@@ -122,13 +122,10 @@ export function ScenarioDetail({
               <button
                 type="button"
                 className="btn btn-primary"
-                disabled={!hasGherkin}
-                title={hasGherkin
-                  ? "Kayıtlı adımlarla çalıştır"
-                  : "Bu senaryonun kayıtlı adımları henüz yazılmadı"}
-                onClick={() => onRun(detail.feature)}
+                title="Çalıştır ekranında aç: orada düzenlenir, doğrulanır ve çalıştırılır"
+                onClick={() => onOpen(detail.feature)}
               >
-                Çalıştır
+                Git
               </button>
             )}
           </header>
@@ -150,7 +147,7 @@ export function ScenarioDetail({
           <header className="sd-pane-head">
             <span className="sd-pane-title">DOĞAL DİL</span>
             <span className="sd-pane-gap" />
-            {prose ? editButton("prose", editProse) : null}
+            {doc ? editButton("prose", editProse) : null}
             {editing === "prose" ? null : (
               <button
                 type="button"
@@ -164,57 +161,37 @@ export function ScenarioDetail({
             )}
           </header>
 
-          {editing === "prose" ? (
-            <>
-              <label className="suggest-label" htmlFor="sdTitle">Başlık</label>
+          {editing === "prose" && docDraft ? (
+            <div className="sd-doc">
+              <label className="sd-doc-label" htmlFor="sdTitle">Başlık</label>
               <input
                 id="sdTitle"
                 className="search"
-                value={titleDraft}
-                onChange={(event) => setTitleDraft(event.target.value)}
+                value={docDraft.title}
+                onChange={(event) => setField("title", event.target.value)}
               />
-              <label className="suggest-label" htmlFor="sdPre">Ön koşul</label>
-              <textarea
-                id="sdPre"
-                className="search sd-edit sd-edit-short"
-                value={preDraft}
-                placeholder="Örn: ilgili firma verisi bulunabilmeli ve Döviz Cinsi TL seçilebilmeli"
-                onChange={(event) => setPreDraft(event.target.value)}
-              />
-              <label className="suggest-label" htmlFor="sdBody">Senaryo</label>
-              <textarea
-                id="sdBody"
-                className="search sd-edit"
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-              />
-            </>
+              <ListEditor label="Kural" items={docDraft.rules} placeholder="R-YL-006"
+                          onChange={(items) => setField("rules", items)} />
+              <ListEditor label="Ön koşul" items={docDraft.preconditions}
+                          placeholder="İlgili firma verisi bulunabilmeli"
+                          onChange={(items) => setField("preconditions", items)} />
+              <ListEditor label="Adımlar" items={docDraft.steps}
+                          placeholder="Alıcı Listesi İşlemleri ekranını aç"
+                          onChange={(items) => setField("steps", items)} />
+              <ListEditor label="Beklenen" items={docDraft.expected}
+                          placeholder="İşlem Bilgileri ekranı görünür"
+                          onChange={(items) => setField("expected", items)} />
+            </div>
+          ) : doc ? (
+            <div className="sd-doc">
+              <h4 className="sd-plain-title">{doc.title}</h4>
+              <DocList label="Kural" items={doc.rules} chips />
+              <DocList label="Ön koşul" items={doc.preconditions} />
+              <DocList label="Adımlar" items={doc.steps} numbered />
+              <DocList label="Beklenen" items={doc.expected} />
+            </div>
           ) : (
-            <>
-              <h4 className="sd-plain-title">{detail.title}</h4>
-
-              <ol className="sd-plain">
-                {/* The precondition exactly as the file writes it -- the text
-                    the Ön koşul field edits, never the @needs readiness tag. */}
-                <li>
-                  {prose?.precondition
-                    ? prose.label + " " + prose.precondition
-                    : "Ön koşul: yok"}
-                </li>
-                {(prose ? prose.body : detail.description) ? (
-                  <li>{prose ? prose.body.replace(/\s+/g, " ") : detail.description}</li>
-                ) : null}
-                {/* Translated from the REAL steps, not from the prose: when a
-                    scenario has a deterministic replay, what it actually does is
-                    what should be read. */}
-                {steps.map((step, index) => (
-                  <li key={index} className={step.translated ? undefined : "sd-untranslated"}>
-                    {step.text}
-                  </li>
-                ))}
-              </ol>
-
-            </>
+            <p className="sd-note">Bu dosyada bir Scenario bulunamadı.</p>
           )}
 
           {aiBusy ? (
@@ -231,6 +208,77 @@ export function ScenarioDetail({
           ) : null}
         </section>
       </div>
+    </div>
+  );
+}
+
+function DocList({
+  label,
+  items,
+  numbered,
+  chips,
+}: {
+  label: string;
+  items: string[];
+  numbered?: boolean;
+  chips?: boolean;
+}) {
+  return (
+    <div className="sd-doc-block">
+      <span className="sd-doc-label">{label}</span>
+      {items.length === 0 ? (
+        <span className="sd-doc-empty">yok</span>
+      ) : chips ? (
+        <div className="sd-doc-chips">
+          {items.map((item) => <span key={item} className="rule-id">{item}</span>)}
+        </div>
+      ) : numbered ? (
+        <ol className="sd-plain">{items.map((item, i) => <li key={i}>{item}</li>)}</ol>
+      ) : (
+        <ul className="sd-plain">{items.map((item, i) => <li key={i}>{item}</li>)}</ul>
+      )}
+    </div>
+  );
+}
+
+/** One input per item, with remove and "+ ekle". */
+function ListEditor({
+  label,
+  items,
+  placeholder,
+  onChange,
+}: {
+  label: string;
+  items: string[];
+  placeholder: string;
+  onChange: (items: string[]) => void;
+}) {
+  return (
+    <div className="sd-doc-block">
+      <span className="sd-doc-label">{label}</span>
+      {items.map((item, index) => (
+        <div className="sd-doc-item" key={index}>
+          <input
+            className="search"
+            value={item}
+            placeholder={placeholder}
+            onChange={(event) =>
+              onChange(items.map((was, i) => (i === index ? event.target.value : was)))}
+          />
+          <button
+            type="button"
+            className="btn btn-ghost sd-doc-remove"
+            title="Sil"
+            onClick={() => onChange(items.filter((_, i) => i !== index))}
+          >
+            ×
+          </button>
+        </div>
+      ))}
+      <button type="button" className="btn btn-ghost sd-doc-add"
+              onClick={() => onChange([...items, ""])}>
+        + ekle
+      </button>
     </div>
   );
 }

@@ -25,6 +25,7 @@ import { useRunPoll } from "../hooks/useRunPoll";
 import { useValidation } from "../hooks/useValidation";
 import { useToast } from "../ui/Toast";
 import type { Origin, RunLogin, ValidationResult } from "../api/types";
+import { joinTags, splitTags } from "../lib/scenarioProse";
 import type { useVocabulary } from "../hooks/useVocabulary";
 
 /*
@@ -159,6 +160,8 @@ export function WorkspaceView({
       if (!draft) return;
       activeDraftRef.current = index;
       setActiveDraft(index);
+      setLinked(null);
+      setFileEditing(false);
       origin.pinOrigin(draft.origin);
       setFeature(draft.feature);
       // The verdict already came back with the draft -- rendered from it
@@ -209,8 +212,28 @@ export function WorkspaceView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /* ----------------------- a registered file ("Git") ---------------------- */
+
+  /* Set while the editor holds a scenario opened from Kayıtlı Senaryolar.
+     `saved` is the text as on disk (tag lines removed, see splitTags), so
+     Vazgeç can go back to it; `tags` are put back on Kaydet. Anything else
+     that replaces the editor's text clears this -- a Kaydet must never write
+     a different scenario over the file. */
+  const [linked, setLinked] = useState<{
+    app: string;
+    product: string;
+    path: string;
+    tags: string;
+    saved: string;
+    login?: RunLogin;
+  } | null>(null);
+  const [fileEditing, setFileEditing] = useState(false);
+  const [fileSaving, setFileSaving] = useState(false);
+
   const handleGenerated = useCallback(
     (generatedFeature: string, generatedOrigin: Origin) => {
+      setLinked(null);
+      setFileEditing(false);
       clearBatch();
       origin.pinOrigin(generatedOrigin);
       setFeature(generatedFeature);
@@ -252,37 +275,58 @@ export function WorkspaceView({
     [runPoll, validation, toast, showPanel],
   );
 
+  // A registered scenario runs under the login picked beside it in the registry.
   const handleRunClick = useCallback(
-    () => runWith(feature, resolvedOrigin),
-    [runWith, feature, resolvedOrigin],
+    () => runWith(feature, resolvedOrigin, linked?.login),
+    [runWith, feature, resolvedOrigin, linked],
   );
 
   /**
-   * Run a scenario straight from the registry.
+   * "Git": open a registered scenario in the editor, on the Çalıştır screen.
    *
-   * Goes through handleGenerated's own path — clear the batch, pin the origin,
-   * put the text in the editor — because a run whose scenario is not the one
-   * on screen is the stale-panel bug again, and because the registry must not
-   * grow a SECOND way to start a run: there is one gate and it re-validates.
-   *
-   * The panel switches before the run starts, with a short pause, so the
-   * analyst is already watching the timeline when the first step lands rather
-   * than discovering it afterwards. That is all the pause buys and all it is
-   * for.
+   * Goes through handleGenerated's own path -- clear the batch, pin the
+   * origin, put the text in the editor, validate -- so the editor, its
+   * validation and its Çalıştır are the ordinary ones: the registry does not
+   * grow a second way to start a run.
    *
    * `login` is the one thing a registered scenario does NOT carry. A file in
-   * products/ is written once and run by whoever needs it, so baking one
-   * analyst's cif into it is how a suite stops being shareable -- the picker
-   * sits above the scenario instead, and the orchestrator writes the step.
+   * products/ is written once and run by whoever needs it, so the cif picked
+   * in the registry travels with the opened file instead of being written
+   * into it.
    */
-  const runRegistered = useCallback(
-    (text: string, where: Origin, login?: RunLogin) => {
-      handleGenerated(text, where);
+  const openRegistered = useCallback(
+    (text: string, where: Origin, login: RunLogin | undefined,
+     file: { app: string; product: string; path: string }) => {
+      const { tags, body } = splitTags(text);
+      handleGenerated(body, where);
+      setLinked({ ...file, tags, saved: body, login });
       showPanel("timeline");
-      window.setTimeout(() => void runWith(text, where, login), 800);
+      setRunTab("timeline");
     },
-    [handleGenerated, showPanel, runWith],
+    [handleGenerated, showPanel],
   );
+
+  const saveLinked = useCallback(async () => {
+    if (!linked) return;
+    setFileSaving(true);
+    const result = await products.saveScenario(
+      linked.app, linked.product, linked.path, joinTags(linked.tags, feature));
+    setFileSaving(false);
+    if (!result.ok) {
+      toast("Kaydedilemedi: " + result.error, true);
+      return;
+    }
+    setLinked({ ...linked, saved: feature });
+    setFileEditing(false);
+    toast("Senaryo kaydedildi");
+  }, [linked, products, feature, toast]);
+
+  const cancelLinked = useCallback(() => {
+    if (!linked) return;
+    setFeature(linked.saved);
+    setFileEditing(false);
+    validation.scheduleValidate();
+  }, [linked, validation]);
 
   /* Chat's Çalıştır: the draft goes into the editor FIRST, then runs. The
      editor is where a scenario lives once it exists -- validated, with the
@@ -333,6 +377,14 @@ export function WorkspaceView({
       ) : (
         <EditorPane
           runFocused={panelOpen && sideTab === "timeline"}
+          file={linked ? {
+            path: linked.path,
+            editing: fileEditing,
+            saving: fileSaving,
+            onEdit: () => setFileEditing(true),
+            onCancel: cancelLinked,
+            onSave: () => void saveLinked(),
+          } : null}
           feature={feature}
           onChange={handleChange}
           textareaRef={textareaRef}
@@ -382,7 +434,7 @@ export function WorkspaceView({
           active={sideTab === "product"}
           users={users}
           products={products}
-          onRun={runRegistered}
+          onOpen={openRegistered}
         />
         <TimelinePanel
           active={sideTab === "timeline"}

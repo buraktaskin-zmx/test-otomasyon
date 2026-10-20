@@ -1,8 +1,12 @@
 @R-AL-010 @needs:none
-Feature: Alici Listesi Islemleri
+Feature: Alıcı Listesi İşlemleri
 
-  Scenario: Islemler panelinde uc secenek bulunur
+  Scenario: İşlemler panelinde üç seçenek bulunur
 
-    Ekrani ac ve hicbir satir secme. Islemler panelini incele.
+    Adımlar:
+    - Alıcı Listesi İşlemleri ekranını aç
+    - Hiçbir satır seçme
+    - İşlemler panelini incele
 
-    Beklenen: Detay, Sil ve Yeni Liste Olustur secenekleri gorunur durumdadir.
+    Beklenen:
+    - Detay, Sil ve Yeni Liste Oluştur seçenekleri görünür durumdadır

@@ -34,6 +34,7 @@ export function EditorPane({
   onApplyFix,
   multiBar,
   runFocused,
+  file,
 }: {
   feature: string;
   onChange: (value: string) => void;
@@ -51,6 +52,16 @@ export function EditorPane({
   multiBar?: ReactNode;
   /** The Çalıştır panel is open: an empty editor asks for a scenario to test. */
   runFocused: boolean;
+  /** Set when the editor holds a registered scenario opened with "Git":
+   *  read-only until Düzenle, and Kaydet writes the file back. */
+  file?: {
+    path: string;
+    editing: boolean;
+    saving: boolean;
+    onEdit: () => void;
+    onCancel: () => void;
+    onSave: () => void;
+  } | null;
 }) {
   /* On by default, and switchable: colouring is a reading aid, and a reading
      aid that cannot be turned off is a liability the first time it is wrong
@@ -72,18 +83,39 @@ export function EditorPane({
         validateDisabled={false}
         runDisabled={runDisabled}
         extra={
-          <button
-            id="btnColour"
-            className="btn btn-ghost"
-            type="button"
-            aria-pressed={coloured}
-            title={coloured ? "Renklendirmeyi kapat" : "Renklendirmeyi aç"}
-            onClick={() => setColoured((on) => !on)}
-          >
-            Renk
-          </button>
+          <>
+            {file ? (
+              file.editing ? (
+                <>
+                  <button className="btn btn-ghost" type="button" disabled={file.saving}
+                          onClick={file.onCancel}>
+                    Vazgeç
+                  </button>
+                  <button className="btn btn-primary" type="button" disabled={file.saving}
+                          onClick={file.onSave}>
+                    {file.saving ? "Kaydediliyor…" : "Kaydet"}
+                  </button>
+                </>
+              ) : (
+                <button className="btn btn-ghost" type="button" onClick={file.onEdit}>
+                  Düzenle
+                </button>
+              )
+            ) : null}
+            <button
+              id="btnColour"
+              className="btn btn-ghost"
+              type="button"
+              aria-pressed={coloured}
+              title={coloured ? "Renklendirmeyi kapat" : "Renklendirmeyi aç"}
+              onClick={() => setColoured((on) => !on)}
+            >
+              Renk
+            </button>
+          </>
         }
       />
+      {file ? <div className="editor-file"><code>{file.path}</code></div> : null}
       {multiBar ?? null}
       <div className="editor-wrap">
         <Gutter ref={gutterRef} text={feature} badLines={badLines} />
@@ -92,7 +124,8 @@ export function EditorPane({
             being an ordinary child of .editor-wrap and paints its own text. */}
         <div className={"editor-stack" + (coloured ? " is-coloured" : "")}>
           {coloured ? <Highlight text={feature} ref={highlightRef} /> : null}
-          <GherkinEditor ref={textareaRef} value={feature} onChange={onChange} onScroll={onScroll} />
+          <GherkinEditor ref={textareaRef} value={feature} onChange={onChange} onScroll={onScroll}
+                         readOnly={file ? !file.editing : false} />
           {feature.trim() ? null : (
             <div className="editor-empty" aria-hidden="true">
               {runFocused ? (

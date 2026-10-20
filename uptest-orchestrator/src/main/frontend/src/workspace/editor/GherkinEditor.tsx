@@ -5,13 +5,14 @@ import { forwardRef } from "react";
  *  hooks/useEditorOperations.ts, which owns this ref. */
 export const GherkinEditor = forwardRef<
   HTMLTextAreaElement,
-  { value: string; onChange: (value: string) => void; onScroll: () => void }
->(function GherkinEditor({ value, onChange, onScroll }, ref) {
+  { value: string; onChange: (value: string) => void; onScroll: () => void; readOnly?: boolean }
+>(function GherkinEditor({ value, onChange, onScroll, readOnly }, ref) {
   return (
     <textarea
       ref={ref}
       id="editor"
       className="editor"
+      readOnly={readOnly}
       spellCheck={false}
       autoComplete="off"
       aria-label="Gherkin senaryo düzenleyici"

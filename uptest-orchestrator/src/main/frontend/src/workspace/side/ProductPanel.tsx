@@ -8,6 +8,7 @@ import type { useProducts } from "../../hooks/useProducts";
 import type { useTestUsers } from "../../hooks/useTestUsers";
 import { BROWSER_CLOSED, addScreen, createMenu, explore } from "../../api/endpoints";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
+import { docAsText, readDoc } from "../../lib/scenarioProse";
 import { useToast } from "../../ui/Toast";
 import type { Origin, RunLogin } from "../../api/types";
 
@@ -38,15 +39,16 @@ export function ProductPanel({
   active,
   products,
   users,
-  onRun,
+  onOpen,
 }: {
   active: boolean;
   products: ReturnType<typeof useProducts>;
   users: ReturnType<typeof useTestUsers>;
-  /** Hands a registered scenario to the ordinary run path, under the login
-   *  picked above it. The registry does not grow a second way to start a run
-   *  -- there is one gate, and it re-validates. */
-  onRun: (feature: string, origin: Origin, login?: RunLogin) => void;
+  /** "Git": opens a registered scenario in the Çalıştır editor, with the
+   *  login picked above it and the file it came from, so it can be edited,
+   *  saved back and run there. */
+  onOpen: (feature: string, origin: Origin, login: RunLogin | undefined,
+           file: { app: string; product: string; path: string }) => void;
 }) {
   const [selection, setSelection] = useState<TreeSelection | null>(null);
 
@@ -156,8 +158,10 @@ export function ProductPanel({
         : `"${screenName}" ekranına git.`,
       "Sonra şu senaryoyu uygula:",
       "",
-      scenario.title,
-      scenario.description,
+      (() => {
+        const doc = readDoc(scenario.feature);
+        return doc ? docAsText(doc) : scenario.title + "\n" + scenario.description;
+      })(),
     ].join("\n");
 
     setAiAnswer("");
@@ -318,7 +322,7 @@ export function ProductPanel({
                   detail={products.scenario}
                   busy={products.scenarioBusy}
                   onBack={() => setSelection({ ...selection, path: null })}
-                  onRun={(feature) => onRun(
+                  onOpen={(feature) => onOpen(
                     feature,
                     {
                       app: selection.app,
@@ -329,6 +333,7 @@ export function ProductPanel({
                     chosenUser
                       ? { cif: chosenUser.cif, userid: chosenUser.userid }
                       : undefined,
+                    { app: selection.app, product: selection.product, path: selection.path! },
                   )}
                   onAiRun={() => aiRun.run()}
                   aiBusy={aiRun.busy}
