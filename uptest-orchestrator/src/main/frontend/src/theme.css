@@ -142,6 +142,8 @@ body {
 
 .rail-bottom { margin-top: auto; }
 
+.sd-answer { white-space: pre-wrap; margin-top: var(--space-2); }
+
 .rail-label {
     flex: 1 1 auto;
     min-width: 0;

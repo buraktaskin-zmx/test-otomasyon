@@ -21,11 +21,19 @@ export function ScenarioDetail({
   busy,
   onBack,
   onRun,
+  onAiRun,
+  aiBusy,
+  aiAnswer,
 }: {
   detail: Detail | null;
   busy: boolean;
   onBack: () => void;
   onRun: (feature: string) => void;
+  /** Hands the prose to the browsing agent -- the same call as Ekran Keşfi's
+   *  Serbest Gözlem. */
+  onAiRun: () => void;
+  aiBusy: boolean;
+  aiAnswer: string;
 }) {
   if (!detail) {
     return <p className="registry-empty">{busy ? "Okunuyor…" : "Senaryo okunamadı."}</p>;
@@ -81,10 +89,11 @@ export function ScenarioDetail({
             <button
               type="button"
               className="btn btn-ghost"
-              disabled
-              title="Ajanın giriş bilgilerine ihtiyacı var — henüz bağlanmadı"
+              disabled={aiBusy}
+              title="Ajan tarayıcıyı sürerek bu senaryoyu uygular ve ne gördüğünü anlatır"
+              onClick={onAiRun}
             >
-              AI ile çalıştır
+              {aiBusy ? "Ajan çalışıyor…" : "AI ile çalıştır"}
             </button>
           </header>
 
@@ -114,6 +123,15 @@ export function ScenarioDetail({
               Doğruladığı kurallar:{" "}
               {detail.rules.map((rule) => rule.id).join(", ")}
             </p>
+          ) : null}
+
+          {aiBusy ? (
+            <p className="sd-note">Tarayıcı sürülüyor, bu birkaç dakika sürebilir…</p>
+          ) : aiAnswer ? (
+            <>
+              <span className="sd-pane-title">AJANIN ANLATTIĞI</span>
+              <pre className="sd-code sd-answer">{aiAnswer}</pre>
+            </>
           ) : null}
         </section>
       </div>

@@ -9,6 +9,7 @@ import { ExploreToolsDiagnostic } from "./ExploreToolsDiagnostic";
 import type { useExploreTools } from "../../hooks/useExploreTools";
 import type { useTestUsers } from "../../hooks/useTestUsers";
 import { UserPicker } from "../../users/UserPicker";
+import { TEST_SMS_CODE } from "./ProductPanel";
 
 type AgentEndpoint = "explore" | "catalog";
 
@@ -48,7 +49,7 @@ export function AgentPanel({
   const cif = chosen?.cif ?? "";
   const userId = chosen?.userid ?? "";
   const password = chosen?.password ?? "";
-  const [smsCode, setSmsCode] = useState("");
+  const [smsCode, setSmsCode] = useState(TEST_SMS_CODE);
   const [mainMenu, setMainMenu] = useState("");
   const [instruction, setInstruction] = useState("");
 

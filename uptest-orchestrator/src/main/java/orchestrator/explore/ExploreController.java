@@ -446,7 +446,7 @@ public class ExploreController {
         String instruction = compose(body);
         try {
             String answer = client.prompt()
-                    .system(SYSTEM)
+                    .system(SYSTEM + ANSWER_RULES)
                     .user(instruction)
                     .tools(toolsFor(null, instruction, new LinkedHashSet<>()))
                     .call()
@@ -732,6 +732,26 @@ public class ExploreController {
         }
         return found;
     }
+
+    /**
+     * Added on top of SYSTEM for the free-text endpoint, which both Ekran
+     * Keşfi's Serbest Gözlem and a scenario's "AI ile çalıştır" call. The
+     * answer is read by an analyst checking one scenario, so it has to be
+     * about that scenario and scannable, not a narrative of the walk.
+     */
+    private static final String ANSWER_RULES = """
+
+            HOW TO WRITE YOUR FINAL ANSWER
+            - Write it in TURKISH.
+            - Write it as a numbered list, one item per step of the instruction:
+              what you did, and what the screen showed. Short sentences.
+            - Answer ONLY what the instruction asked. Do not describe menus,
+              pages or fields the instruction did not mention.
+            - If the instruction states an expected result, end with one line
+              "Sonuç: BEKLENDİĞİ GİBİ" or "Sonuç: BEKLENDİĞİ GİBİ DEĞİL",
+              followed by the reason in one sentence.
+            - If you could not finish, say at which step and why.
+            """;
 
     /**
      * Added on top of SYSTEM for the catalog endpoint. The uncertainty rule is

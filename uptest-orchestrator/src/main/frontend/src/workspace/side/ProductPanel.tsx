@@ -6,7 +6,20 @@ import { ScenarioDetail } from "../../product/ScenarioDetail";
 import { ScenarioTable } from "../../product/ScenarioTable";
 import type { useProducts } from "../../hooks/useProducts";
 import type { useTestUsers } from "../../hooks/useTestUsers";
+import { explore } from "../../api/endpoints";
+import { useAsyncAction } from "../../hooks/useAsyncAction";
+import { useToast } from "../../ui/Toast";
 import type { Origin, RunLogin } from "../../api/types";
+
+/** Where the agent logs in, per application -- the same pages NGC.java and
+ *  NGI.java open. */
+const LOGIN_URL: Record<string, string> = {
+  ngc: "https://ifctest.yapikredi.com.tr/ngc/indexNgc.do",
+  ngi: "https://intest.yapikredi.com.tr/ngi/passResetEnter.do",
+};
+
+/** The test environment's fixed Akıllı SMS code. */
+export const TEST_SMS_CODE = "34020";
 
 /*
   Kayıtlı Senaryolar — ürün > ekran > senaryo kütüğü.
@@ -108,6 +121,50 @@ export function ProductPanel({
   const rows = selection?.flow
     ? (registry?.scenarios ?? []).filter((row) => row.flow === selection.flow)
     : registry?.scenarios ?? [];
+
+  /* AI ile çalıştır: the same POST /explore as Ekran Keşfi's Serbest Gözlem.
+     What that panel asks a person to type -- address, login, main menu, which
+     screen -- is already known here from the tree, so only the scenario's own
+     prose is left for the instruction. */
+  const toast = useToast();
+  const [aiAnswer, setAiAnswer] = useState("");
+  useEffect(() => setAiAnswer(""), [selection?.path]);
+
+  const aiRun = useAsyncAction(async () => {
+    const scenario = products.scenario;
+    if (!selection || !scenario) return;
+    if (!chosenUser) {
+      toast("Önce yukarıdan bir CIF seçin — ajan onunla giriş yapar", true);
+      return;
+    }
+    const screenName = screen?.name || selection.flow || "";
+    const category = registry?.category ?? "";
+    const text = [
+      category
+        ? `${category} menüsü altındaki "${screenName}" ekranına git.`
+        : `"${screenName}" ekranına git.`,
+      "Sonra şu senaryoyu uygula:",
+      "",
+      scenario.title,
+      scenario.description,
+    ].join("\n");
+
+    setAiAnswer("");
+    const result = await explore({
+      text,
+      url: LOGIN_URL[selection.app.toLowerCase()],
+      cif: chosenUser.cif,
+      userId: chosenUser.userid,
+      password: chosenUser.password,
+      smsCode: TEST_SMS_CODE,
+      mainMenu: category ? category.toLocaleUpperCase("tr-TR") : undefined,
+    });
+    if (!result.ok) {
+      toast("Ajan çalıştırılamadı: " + result.error, true);
+      return;
+    }
+    setAiAnswer(result.body.answer);
+  });
 
   return (
     <div id="side-product" className={"side-panel product-panel" + (active ? " is-active" : "")}>
@@ -246,6 +303,9 @@ export function ProductPanel({
                       ? { cif: chosenUser.cif, userid: chosenUser.userid }
                       : undefined,
                   )}
+                  onAiRun={() => aiRun.run()}
+                  aiBusy={aiRun.busy}
+                  aiAnswer={aiAnswer}
                 />
               ) : (
                 <ScenarioTable
