@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { explore, exploreForCatalog, saveCatalog } from "../../api/endpoints";
+import { BROWSER_CLOSED, explore, exploreForCatalog, saveCatalog } from "../../api/endpoints";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
 import { catalogNameFromYaml, slug } from "../../lib/slug";
 import { useToast } from "../../ui/Toast";
@@ -45,6 +45,7 @@ export function AgentPanel({
   const [instruction, setInstruction] = useState("");
 
   const [pending, setPending] = useState<AgentEndpoint | null>(null);
+  const [closed, setClosed] = useState(false);
   const [output, setOutput] = useState("");
   const [problems, setProblems] = useState<string[] | null>(null);
   const [isCatalog, setIsCatalog] = useState(false);
@@ -77,6 +78,7 @@ export function AgentPanel({
     }
     setOutput("");
     setProblems(null);
+    setClosed(false);
     setPending(endpoint);
 
     const request = {
@@ -109,6 +111,10 @@ export function AgentPanel({
       } else {
         const result = await explore(request);
         if (!result.ok) {
+          if (result.error === BROWSER_CLOSED) {
+            setClosed(true);
+            return;
+          }
           toast("Ekran keşfi başarısız: " + result.error, true);
           return;
         }
@@ -259,6 +265,10 @@ export function AgentPanel({
                 </div>
               ) : null}
             </>
+          ) : closed ? (
+            <p className="agent-empty browser-closed">
+              <span aria-hidden="true">✗</span> Beklenmedik şekilde kapandı
+            </p>
           ) : (
             <p className="agent-empty">
               Keşif bitince YAML katalog ya da gözlem raporu burada görünür.

@@ -4,6 +4,8 @@ import orchestrator.catalog.CatalogService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -16,14 +18,14 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * Reads product context out to the UI. Read-only on purpose.
+ * Reads product context out to the UI.
  *
- * Rules live in the repository, where git gives review, history and a diff for
- * free, and where a reviewer can refuse a change. A browser-side editor would
- * make them free text arriving over HTTP — the uncontrolled channel
- * {@code TestRunEntity} already documents and {@code ChatSessionStore} already
- * declines to persist. That is a later decision with its own answer, not a
- * thing to get for free by adding a POST here.
+ * Rules, test data and product.yaml stay read-only: they live in the
+ * repository, where git gives review and history and a reviewer can refuse a
+ * change. Scenario files are the one exception, by the analysts' request: the
+ * detail view edits an EXISTING .feature in place ({@link #saveScenario}). The
+ * edit still lands in the working tree, so it reaches the repository only
+ * through an ordinary commit.
  */
 @RestController
 @RequestMapping("/api/v1/products")
@@ -133,6 +135,28 @@ public class ProductController {
             body.putAll(row(card, model));
         }
         return ResponseEntity.ok(body);
+    }
+
+    public record ScenarioEdit(String feature) {
+    }
+
+    /**
+     * Saves an edit made in the scenario detail view, then answers exactly as
+     * the GET does so the view re-renders from the file as written.
+     *
+     * Overwrite only -- see ScenarioLibrary.write for why it never creates a
+     * file and refuses text that no longer parses.
+     */
+    @PutMapping("/{app}/{product}/scenario")
+    public ResponseEntity<?> saveScenario(@PathVariable String app, @PathVariable String product,
+                                          @RequestParam String path,
+                                          @RequestBody ScenarioEdit body) {
+        String refused = products.saveScenario(app, product, path,
+                body == null ? null : body.feature());
+        if (refused != null) {
+            return ResponseEntity.badRequest().body(Map.of("error", refused));
+        }
+        return scenario(app, product, path);
     }
 
     /**

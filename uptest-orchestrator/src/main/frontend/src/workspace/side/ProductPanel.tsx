@@ -6,7 +6,7 @@ import { ScenarioDetail } from "../../product/ScenarioDetail";
 import { ScenarioTable } from "../../product/ScenarioTable";
 import type { useProducts } from "../../hooks/useProducts";
 import type { useTestUsers } from "../../hooks/useTestUsers";
-import { explore } from "../../api/endpoints";
+import { BROWSER_CLOSED, explore } from "../../api/endpoints";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
 import { useToast } from "../../ui/Toast";
 import type { Origin, RunLogin } from "../../api/types";
@@ -57,6 +57,13 @@ export function ProductPanel({
      a user once and walking a screen's fifty rows is the whole point. */
   const [loginId, setLoginId] = useState("");
   const chosenUser = loginId ? users.byId(loginId) : null;
+
+  /* Always a saved user: the list has no "use the scenario's own login"
+     entry, so the first user is chosen until the analyst picks another. */
+  useEffect(() => {
+    const first = users.users[0];
+    if (!chosenUser && first) setLoginId(first.id);
+  }, [chosenUser, users.users]);
 
   /* Which tree nodes are open. Kept apart from `selection` because the first
      version expanded by selecting and so could never close anything -- with
@@ -128,7 +135,11 @@ export function ProductPanel({
      prose is left for the instruction. */
   const toast = useToast();
   const [aiAnswer, setAiAnswer] = useState("");
-  useEffect(() => setAiAnswer(""), [selection?.path]);
+  const [aiClosed, setAiClosed] = useState(false);
+  useEffect(() => {
+    setAiAnswer("");
+    setAiClosed(false);
+  }, [selection?.path]);
 
   const aiRun = useAsyncAction(async () => {
     const scenario = products.scenario;
@@ -150,6 +161,7 @@ export function ProductPanel({
     ].join("\n");
 
     setAiAnswer("");
+    setAiClosed(false);
     const result = await explore({
       text,
       url: LOGIN_URL[selection.app.toLowerCase()],
@@ -160,6 +172,10 @@ export function ProductPanel({
       mainMenu: category ? category.toLocaleUpperCase("tr-TR") : undefined,
     });
     if (!result.ok) {
+      if (result.error === BROWSER_CLOSED) {
+        setAiClosed(true);
+        return;
+      }
       toast("Ajan çalıştırılamadı: " + result.error, true);
       return;
     }
@@ -225,11 +241,9 @@ export function ProductPanel({
                     value={loginId}
                     onChange={(event) => setLoginId(event.target.value)}
                   >
-                    <option value="">
-                      {users.users.length === 0
-                        ? "(kayıtlı kullanıcı yok)"
-                        : "senaryodaki giriş"}
-                    </option>
+                    {users.users.length === 0 ? (
+                      <option value="">(kayıtlı kullanıcı yok)</option>
+                    ) : null}
                     {users.users.map((user) => (
                       <option key={user.id} value={user.id}>
                         {user.cif}
@@ -306,6 +320,14 @@ export function ProductPanel({
                   onAiRun={() => aiRun.run()}
                   aiBusy={aiRun.busy}
                   aiAnswer={aiAnswer}
+                  aiClosed={aiClosed}
+                  onSave={async (feature) => {
+                    const result = await products.saveScenario(
+                      selection.app, selection.product, selection.path!, feature);
+                    toast(result.ok ? "Senaryo kaydedildi" : "Kaydedilemedi: " + result.error,
+                      !result.ok);
+                    return result.ok;
+                  }}
                 />
               ) : (
                 <ScenarioTable

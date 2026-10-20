@@ -25,6 +25,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -249,7 +250,8 @@ public class ExploreController {
      *                    answers by calling them; null for the prose endpoint
      * @param instruction the analyst's text, read for off-limits controls
      */
-    private Object[] toolsFor(CatalogSink sink, String instruction, Set<String> pending) {
+    private Object[] toolsFor(CatalogSink sink, String instruction, Set<String> pending,
+                              AtomicBoolean aborted) {
         List<ToolCallback> usable = new ArrayList<>(Arrays.stream(tools.getToolCallbacks())
                 .filter(callback -> !WITHHELD.contains(callback.getToolDefinition().name()))
                 .toList());
@@ -267,7 +269,8 @@ public class ExploreController {
                     .toolObjects(ours).build().getToolCallbacks()));
         }
 
-        return BudgetedTool.wrap(usable, budget, sink, forbidden(instruction), pending, instruction);
+        return BudgetedTool.wrap(usable, budget, sink, forbidden(instruction), pending, instruction,
+                aborted);
     }
 
     /**
@@ -428,6 +431,13 @@ public class ExploreController {
         return out.append(body.text().trim()).toString();
     }
 
+    /** 409 with a fixed code the UI recognises, so it can say what happened. */
+    private static ResponseEntity<?> browserClosed() {
+        return ResponseEntity.status(409).body(Map.of(
+                "error", "BROWSER_CLOSED",
+                "detail", "Tarayıcı beklenmedik şekilde kapandı"));
+    }
+
     private static void append(StringBuilder out, String label, String value) {
         if (present(value)) {
             out.append("- ").append(label).append(" = ").append(value.trim()).append('\n');
@@ -444,15 +454,29 @@ public class ExploreController {
             return ResponseEntity.badRequest().body(Map.of("error", "text is required"));
         }
         String instruction = compose(body);
+        AtomicBoolean aborted = new AtomicBoolean();
         try {
             String answer = client.prompt()
                     .system(SYSTEM + ANSWER_RULES)
                     .user(instruction)
-                    .tools(toolsFor(null, instruction, new LinkedHashSet<>()))
+                    .tools(toolsFor(null, instruction, new LinkedHashSet<>(), aborted))
                     .call()
                     .content();
+            // Belt and braces: should the framework ever turn BrowserClosed
+            // into a tool result, the flag still says the walk was cut short.
+            if (aborted.get()) {
+                return browserClosed();
+            }
             return ResponseEntity.ok(Map.of("answer", answer));
         } catch (Exception e) {
+            for (Throwable cause = e; cause != null; cause = cause.getCause()) {
+                if (cause instanceof BudgetedTool.BrowserClosed || aborted.get()) {
+                    return browserClosed();
+                }
+                if (cause.getCause() == cause) {
+                    break;
+                }
+            }
             // The model, the MCP server and the browser are three separate
             // processes; any of them can be the one that failed. Report the
             // root cause rather than a 500 page that names none of them.
@@ -511,7 +535,7 @@ public class ExploreController {
             String spoken = client.prompt()
                     .system(SYSTEM + CATALOG_RULES + schema)
                     .user(instruction)
-                    .tools(toolsFor(sink, instruction, skipped))
+                    .tools(toolsFor(sink, instruction, skipped, new AtomicBoolean()))
                     .call()
                     .content();
 

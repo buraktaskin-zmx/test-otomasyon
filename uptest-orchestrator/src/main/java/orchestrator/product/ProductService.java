@@ -150,6 +150,16 @@ public class ProductService {
                 .map(folder -> ScenarioLibrary.text(folder, path));
     }
 
+    /** @return null when written, otherwise why not (see ScenarioLibrary.write). */
+    public String saveScenario(String app, String product, String path, String text) {
+        if (path == null || path.isBlank() || text == null || text.isBlank()) {
+            return "Senaryo yolu ve metni gerekli";
+        }
+        return folder(app, product)
+                .map(folder -> ScenarioLibrary.write(folder, path, text))
+                .orElse("Ürün bulunamadı: " + app + "/" + product);
+    }
+
     public Path root() {
         return root;
     }

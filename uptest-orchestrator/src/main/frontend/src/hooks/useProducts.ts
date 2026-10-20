@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { getProduct, getProductScenarios, getProducts, getScenario } from "../api/endpoints";
+import {
+  getProduct, getProductScenarios, getProducts, getScenario, saveScenarioFile,
+} from "../api/endpoints";
 import type {
   ProductDetail,
   ProductRegistry,
@@ -141,9 +143,23 @@ export function useProducts() {
 
   const closeScenario = useCallback(() => setScenario(null), []);
 
+  /** Writes the file, shows it as written, and re-reads the product's table
+   *  so a changed title or description is not stale there. */
+  const saveScenario = useCallback(
+    async (app: string, product: string, path: string, feature: string) => {
+      const result = await saveScenarioFile(app, product, path, feature);
+      if (result.ok) {
+        setScenario(result.body);
+        void openRegistry(app, product);
+      }
+      return result;
+    },
+    [openRegistry],
+  );
+
   return {
     products, loaded, reload, open, detail, problem,
     openRegistry, registry, registryBusy,
-    scenario, scenarioBusy, openScenario, closeScenario,
+    scenario, scenarioBusy, openScenario, closeScenario, saveScenario,
   };
 }

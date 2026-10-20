@@ -262,6 +262,34 @@ public final class ScenarioLibrary {
         }
     }
 
+    /**
+     * Overwrites an EXISTING scenario file. Never creates one: a path that does
+     * not already name a .feature under scenarios/ is refused, so a browser
+     * cannot drop a new file anywhere, inside the folder or out of it.
+     *
+     * @return null when written, otherwise why not
+     */
+    public static String write(Path productFolder, String relative, String text) {
+        Path root = productFolder.resolve(SCENARIOS_DIR).normalize();
+        Path file = root.resolve(relative).normalize();
+        if (!file.startsWith(root) || !Files.isRegularFile(file)
+                || !file.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".feature")) {
+            return "Senaryo bulunamadı: " + relative;
+        }
+        // A file that no longer parses would vanish from the table as a
+        // broken row, so it is refused here, where the edit is still open.
+        String problem = parse(relative, "", text).problem();
+        if (problem != null) {
+            return "Gherkin okunamadı: " + problem;
+        }
+        try {
+            Files.writeString(file, text, StandardCharsets.UTF_8);
+            return null;
+        } catch (IOException e) {
+            throw new UncheckedIOException("Cannot write " + file, e);
+        }
+    }
+
     /** A Gherkin description is indented free text; the table wants one line. */
     private static String collapse(String description) {
         return description == null ? "" : description.replaceAll("\\s+", " ").trim();

@@ -1,10 +1,3 @@
-# Senaryo DOGAL DILLE yazilir; ajan tarayiciyi surerek uygular.
-# Gherkin adimlari ayni senaryonun DETERMINISTIK TEKRARIDIR ve sonradan
-# yazilir -- adimi olmayan bir dosya "0 adim" gorunur, ve bu durustur:
-# "AI ile calistir" bugun kosar, "Kayitli adimlarla calistir" henuz kosmaz.
-#
-# Devam'da durur, Onay'a basmaz: kayit olusturmaz.
-
 @R-YL-002 @R-YL-006 @needs:FIRMA_TEST
 Feature: Alici Listesi Islemleri
 

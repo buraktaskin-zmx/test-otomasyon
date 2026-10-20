@@ -182,6 +182,18 @@ export const getScenario = (app: string, product: string, path: string) =>
       + encodeURIComponent(product) + "/scenario?path=" + encodeURIComponent(path),
   );
 
+/** ExploreController's error code when the operator closed the agent's browser. */
+export const BROWSER_CLOSED = "BROWSER_CLOSED";
+
+/** Overwrites an existing scenario file; answers like getScenario. */
+export const saveScenarioFile = (app: string, product: string, path: string, feature: string) =>
+  api<ScenarioDetail>(
+    "PUT",
+    "/api/v1/products/" + encodeURIComponent(app) + "/"
+      + encodeURIComponent(product) + "/scenario?path=" + encodeURIComponent(path),
+    { feature },
+  );
+
 export const getProductScenarios = (app: string, product: string) =>
   api<ProductRegistry>(
     "GET",

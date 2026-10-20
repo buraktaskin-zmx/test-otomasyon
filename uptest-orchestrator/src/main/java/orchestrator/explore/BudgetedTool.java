@@ -218,16 +218,33 @@ final class BudgetedTool implements ToolCallback {
     }
 
     /**
+     * Thrown on the PROSE endpoint once the operator has closed the browser.
+     *
+     * Not a ToolExecutionException on purpose: that one is turned back into a
+     * tool result for the model, which would then write an answer about a walk
+     * that was cut short. This one leaves the model loop altogether, so the
+     * request ends at the very next tool call and the UI can say what happened.
+     * The catalog endpoint does not throw it -- a half-walked catalog is still
+     * worth keeping, so there the agent is told to stop and submit instead.
+     */
+    static final class BrowserClosed extends RuntimeException {
+        BrowserClosed() {
+            super("Tarayıcı beklenmedik şekilde kapandı");
+        }
+    }
+
+    /**
      * One budget and one visit history, shared by the tools of a single request.
      *
      * @param pending captions that must be touched; entries are REMOVED as
      *                they are seen, so the caller reads the leftovers
+     * @param aborted set when the browser is found closed; the caller reads it
      */
     static Object[] wrap(List<ToolCallback> callbacks, int budget, CatalogSink sink,
-                         List<String> forbidden, Set<String> pending, String instruction) {
+                         List<String> forbidden, Set<String> pending, String instruction,
+                         AtomicBoolean aborted) {
         AtomicInteger remaining = new AtomicInteger(budget);
         Set<String> visited = new HashSet<>();
-        AtomicBoolean aborted = new AtomicBoolean();
         List<String> lowered = forbidden.stream().map(BudgetedTool::fold).toList();
         String folded = fold(instruction == null ? "" : instruction);
         return callbacks.stream()
@@ -276,18 +293,30 @@ final class BudgetedTool implements ToolCallback {
         if (refusal != null) {
             return refusal;
         }
+        String result;
         try {
-            return trim(watch(invoke.get()));
+            result = watch(invoke.get());
+        } catch (BrowserClosed closed) {
+            throw closed;
         } catch (RuntimeException failed) {
             watch(String.valueOf(failed.getMessage()));
             if (aborted.get()) {
                 // Answer rather than rethrow: a thrown tool is one the model
                 // retries, and retrying is exactly how it kept reopening the
                 // browser after it had been shut.
-                return CLOSED;
+                return closed();
             }
             throw failed;
         }
+        return aborted.get() ? closed() : trim(result);
+    }
+
+    /** The prose endpoint ends the request; the catalog endpoint asks for an answer. */
+    private String closed() {
+        if (sink == null) {
+            throw new BrowserClosed();
+        }
+        return CLOSED;
     }
 
     /**
@@ -413,7 +442,7 @@ final class BudgetedTool implements ToolCallback {
         // and the one refusal that must not be spent out of a budget or argued
         // with — the next call would simply open a new window.
         if (aborted.get()) {
-            return CLOSED;
+            return closed();
         }
         // Checked first, and without spending budget: once the catalog is in,
         // nothing the agent does next can improve it, and everything it does

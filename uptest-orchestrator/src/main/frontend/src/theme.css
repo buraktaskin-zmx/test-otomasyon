@@ -144,6 +144,21 @@ body {
 
 .sd-answer { white-space: pre-wrap; margin-top: var(--space-2); }
 
+/* The operator shut the agent's browser mid-run. */
+.browser-closed {
+    color: var(--fail, #c62828);
+    font-weight: 600;
+}
+
+.browser-closed span { margin-right: 4px; }
+
+.sd-edit {
+    min-height: 320px;
+    margin-top: var(--space-2);
+    font: 13px/1.6 var(--mono);
+    resize: vertical;
+}
+
 /* A generation form (AI Üret, Çoklu Üret) is taller than a short screen and
    never shrinks, so without this its bottom -- the Üret button -- was cut
    off with no scrollbar to reach it. */
