@@ -4,6 +4,7 @@ import orchestrator.catalog.CatalogService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -55,6 +56,40 @@ public class ProductController {
         return ResponseEntity.ok(Map.of(
                 "root", products.root().toString(),
                 "products", rows));
+    }
+
+    public record NewProduct(String app, String name) {
+    }
+
+    /** A new ana menü (see ProductService.createProduct); answers with its summary row. */
+    @PostMapping
+    public ResponseEntity<?> create(@RequestBody NewProduct body) {
+        ProductService.Created created = products.createProduct(
+                body == null ? null : body.app(), body == null ? null : body.name());
+        if (created.refused() != null) {
+            return ResponseEntity.badRequest().body(Map.of("error", created.refused()));
+        }
+        return products.load(body.app(), created.key())
+                .<ResponseEntity<?>>map(model -> ResponseEntity.status(201)
+                        .body(summary(model, catalogs.list())))
+                .orElseGet(() -> ResponseEntity.status(500).body(Map.of(
+                        "error", "Ana menü oluşturuldu ama okunamadı",
+                        "detail", products.diagnose(body.app(), created.key()))));
+    }
+
+    public record NewScreen(String name) {
+    }
+
+    /** "+ Ekran ekle": declares a screen on this product (see ProductService.addScreen). */
+    @PostMapping("/{app}/{product}/screens")
+    public ResponseEntity<?> addScreen(@PathVariable String app, @PathVariable String product,
+                                       @RequestBody NewScreen body) {
+        ProductService.Created created = products.addScreen(app, product,
+                body == null ? null : body.name());
+        if (created.refused() != null) {
+            return ResponseEntity.badRequest().body(Map.of("error", created.refused()));
+        }
+        return ResponseEntity.status(201).body(Map.of("flow", created.key()));
     }
 
     /** One product in full: its rules, its free text, and what it is missing. */

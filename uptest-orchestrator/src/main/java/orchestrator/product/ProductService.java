@@ -164,6 +164,179 @@ public class ProductService {
         return ScenarioLibrary.write(folder.get(), path, text);
     }
 
+    /** The created product's key, or why it was refused. Exactly one is non-null. */
+    public record Created(String key, String refused) {
+    }
+
+    /**
+     * A new "ana menü": a product folder whose product.yaml carries the name as
+     * its category, with no flows yet and an empty scenarios/ folder.
+     *
+     * A category has no file of its own -- it exists because a product names
+     * it -- so this is the smallest thing that makes one appear in the tree.
+     * The folder name is derived here, never taken from the request, so a
+     * browser cannot choose a path.
+     */
+    public Created createProduct(String app, String name) {
+        String cleanApp = safe(app);
+        if (!cleanApp.equals("ngc") && !cleanApp.equals("ngi")) {
+            return new Created(null, "Uygulama NGC ya da NGI olmalı");
+        }
+        String cleanName = name == null ? "" : name.trim().replaceAll("\\s+", " ");
+        if (cleanName.isEmpty() || cleanName.length() > 60) {
+            return new Created(null, "Ana menü adı 1-60 karakter olmalı");
+        }
+        String key = slug(cleanName);
+        if (key.isEmpty() || !SAFE_NAME.matcher(key).matches()) {
+            return new Created(null, "Bu addan klasör adı çıkarılamadı: " + cleanName);
+        }
+        Locale tr = Locale.forLanguageTag("tr-TR");
+        boolean taken = list().stream().anyMatch(product ->
+                product.category().toLowerCase(tr).equals(cleanName.toLowerCase(tr)));
+        Path folder = root.resolve(cleanApp).resolve(key).normalize();
+        if (taken || Files.exists(folder)) {
+            return new Created(null, "Bu ana menü zaten var: " + cleanName);
+        }
+        String quoted = "\"" + cleanName.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+        String yaml = "app: " + cleanApp + "\n"
+                + "product: " + key + "\n"
+                + "name: " + quoted + "\n"
+                + "category: " + quoted + "\n"
+                + "flows: []\n";
+        try {
+            Files.createDirectories(folder.resolve("scenarios"));
+            Files.writeString(folder.resolve(PRODUCT_FILE), yaml, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Cannot create product " + folder, e);
+        }
+        return new Created(key, null);
+    }
+
+    /**
+     * Declares a new screen on a product: appended to {@code flows:} and to
+     * {@code screen_names:}, with an empty scenarios/&lt;flow&gt;/ folder.
+     *
+     * Edited as TEXT, not re-dumped through SnakeYAML: product.yaml is written
+     * by hand and its comments carry the screen notes ("E1 — sorgulama, ana
+     * ekran"); a dump would erase every one of them. The result is parsed
+     * again and the old text restored if the new flow did not come out.
+     *
+     * @return the created flow, or why it was refused
+     */
+    public Created addScreen(String app, String product, String name) {
+        Optional<Path> folder = folder(app, product);
+        if (folder.isEmpty()) {
+            return new Created(null, "Ana menü bulunamadı: " + app + "/" + product);
+        }
+        String cleanName = name == null ? "" : name.trim().replaceAll("\\s+", " ");
+        if (cleanName.isEmpty() || cleanName.length() > 60) {
+            return new Created(null, "Ekran adı 1-60 karakter olmalı");
+        }
+        String flow = slug(cleanName);
+        if (flow.isEmpty() || !SAFE_NAME.matcher(flow).matches()) {
+            return new Created(null, "Bu addan ekran adı çıkarılamadı: " + cleanName);
+        }
+        ProductModel model = load(app, product).orElse(null);
+        if (model == null) {
+            return new Created(null, "product.yaml okunamadı");
+        }
+        if (model.flows().contains(flow)) {
+            return new Created(null, "Bu ekran zaten var: " + cleanName);
+        }
+
+        Path file = folder.get().resolve(PRODUCT_FILE);
+        String before = text(file);
+        String after = withScreen(before, flow, cleanName);
+        try {
+            Files.writeString(file, after, StandardCharsets.UTF_8);
+            boolean written = load(app, product).map(m -> m.flows().contains(flow)).orElse(false);
+            if (!written) {
+                Files.writeString(file, before, StandardCharsets.UTF_8);
+                return new Created(null, "product.yaml beklenmedik biçimde, ekran eklenemedi");
+            }
+            Files.createDirectories(folder.get().resolve("scenarios").resolve(flow));
+        } catch (IOException e) {
+            throw new UncheckedIOException("Cannot add screen to " + file, e);
+        }
+        return new Created(flow, null);
+    }
+
+    /** product.yaml text with one more flow and its display name. */
+    static String withScreen(String yaml, String flow, String name) {
+        String nl = yaml.contains("\r\n") ? "\r\n" : "\n";
+        String quoted = "\"" + name.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+        List<String> lines = new ArrayList<>(List.of(yaml.split("\\r?\\n", -1)));
+
+        int flows = indexOfKey(lines, "flows:");
+        if (flows < 0) {
+            lines.add("flows:");
+            lines.add("  - " + flow);
+        } else if (lines.get(flows).trim().equals("flows: []")) {
+            lines.set(flows, "flows:");
+            lines.add(flows + 1, "  - " + flow);
+        } else {
+            lines.add(endOfBlock(lines, flows), "  - " + flow);
+        }
+
+        int names = indexOfKey(lines, "screen_names:");
+        if (names < 0) {
+            while (!lines.isEmpty() && lines.get(lines.size() - 1).isBlank()) {
+                lines.remove(lines.size() - 1);
+            }
+            lines.add("");
+            lines.add("screen_names:");
+            lines.add("  " + flow + ": " + quoted);
+            lines.add("");
+        } else {
+            lines.add(endOfBlock(lines, names), "  " + flow + ": " + quoted);
+        }
+        return String.join(nl, lines);
+    }
+
+    private static int indexOfKey(List<String> lines, String key) {
+        for (int i = 0; i < lines.size(); i++) {
+            if (lines.get(i).startsWith(key)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /** The line after the last indented entry under a top-level key. */
+    private static int endOfBlock(List<String> lines, int key) {
+        int end = key + 1;
+        for (int i = key + 1; i < lines.size(); i++) {
+            String line = lines.get(i);
+            if (line.isBlank() || line.trim().startsWith("#")) {
+                continue;
+            }
+            if (!Character.isWhitespace(line.charAt(0))) {
+                break;
+            }
+            end = i + 1;
+        }
+        return end;
+    }
+
+    /** Turkish-aware ASCII fold for a folder name: "Nakit Yönetimi" -> "nakit-yonetimi". */
+    static String slug(String text) {
+        String lower = text.toLowerCase(Locale.forLanguageTag("tr-TR"));
+        StringBuilder out = new StringBuilder();
+        for (char c : lower.toCharArray()) {
+            out.append(switch (c) {
+                case 'ç' -> 'c';
+                case 'ğ' -> 'g';
+                case 'ı' -> 'i';
+                case 'ö' -> 'o';
+                case 'ş' -> 's';
+                case 'ü' -> 'u';
+                default -> (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ? c : '-';
+            });
+        }
+        String folded = out.toString().replaceAll("-+", "-").replaceAll("^-|-$", "");
+        return folded.length() > 64 ? folded.substring(0, 64) : folded;
+    }
+
     public Path root() {
         return root;
     }

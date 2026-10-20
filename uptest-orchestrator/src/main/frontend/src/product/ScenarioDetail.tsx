@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { readinessLabel } from "./readiness";
 import { tokenizeGherkinLine } from "../lib/gherkin";
 import { plainSteps } from "../lib/plainTurkish";
 import { joinTags, readProse, splitTags, writeProse } from "../lib/scenarioProse";
@@ -57,7 +56,6 @@ export function ScenarioDetail({
   }
 
   const steps = plainSteps(detail.feature);
-  const state = readinessLabel(detail.readiness, detail.needsNone);
   const hasGherkin = detail.stepCount > 0;
   const prose = readProse(detail.feature);
   // Tag lines are hidden in the view and the editor, and put back on save.
@@ -196,14 +194,16 @@ export function ScenarioDetail({
               <h4 className="sd-plain-title">{detail.title}</h4>
 
               <ol className="sd-plain">
+                {/* The precondition exactly as the file writes it -- the text
+                    the Ön koşul field edits, never the @needs readiness tag. */}
                 <li>
-                  Ön koşul:{" "}
-                  {detail.needs.length === 0
-                    ? state.word
-                    : detail.needs.map((need) => need.label || need.id).join(", ")}{" "}
-                  <span className={"sd-badge is-" + state.kind}>{state.word}</span>
+                  {prose?.precondition
+                    ? prose.label + " " + prose.precondition
+                    : "Ön koşul: yok"}
                 </li>
-                {detail.description ? <li>{detail.description}</li> : null}
+                {(prose ? prose.body : detail.description) ? (
+                  <li>{prose ? prose.body.replace(/\s+/g, " ") : detail.description}</li>
+                ) : null}
                 {/* Translated from the REAL steps, not from the prose: when a
                     scenario has a deterministic replay, what it actually does is
                     what should be read. */}

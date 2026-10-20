@@ -6,7 +6,7 @@ import { ScenarioDetail } from "../../product/ScenarioDetail";
 import { ScenarioTable } from "../../product/ScenarioTable";
 import type { useProducts } from "../../hooks/useProducts";
 import type { useTestUsers } from "../../hooks/useTestUsers";
-import { BROWSER_CLOSED, explore } from "../../api/endpoints";
+import { BROWSER_CLOSED, addScreen, createMenu, explore } from "../../api/endpoints";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
 import { useToast } from "../../ui/Toast";
 import type { Origin, RunLogin } from "../../api/types";
@@ -198,6 +198,23 @@ export function ProductPanel({
           onSelect={setSelection}
           expanded={expanded}
           onToggle={toggle}
+          onCreateMenu={async (name, app) => {
+            const result = await createMenu(app, name);
+            if (!result.ok) return result.error;
+            await products.reload();
+            // Opened straight away, so its "+ Ekran ekle" is right there.
+            setExpanded((was) => new Set(was).add(categoryKey(result.body.category ?? name)));
+            toast(name + " eklendi");
+            return null;
+          }}
+          onAddScreen={async (app, product, name) => {
+            const result = await addScreen(app, product, name);
+            if (!result.ok) return result.error;
+            await products.openRegistry(app, product);
+            setSelection({ app, product, flow: result.body.flow, path: null });
+            toast(name + " eklendi");
+            return null;
+          }}
         />
 
         <section className="registry-main">

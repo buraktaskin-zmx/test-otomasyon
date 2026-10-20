@@ -13,12 +13,14 @@ description: >
   Alıcı listesi, firmanın bir kez kurup her ay tekrar kullandığı
   TCKN / hesap no / tutar üçlülerinden oluşan bir şablondur.
 
+# Kayıtlı Senaryolar ağacı buradaki her ekranı gösterir. Yorum satırındakiler
+# gizlendi (2026-10-20); geri getirmek için başındaki "# " kaldırılır.
 flows:
   - alici-listesi-islemleri      # E1 — sorgulama, ana ekran
-  - yeni-liste-olustur           # E5 — 2 adımlı sihirbaz
-  - alici-listesi-sil            # E4 — onay ekranı
-  - alici-listesi-detay          # E2 — kayıt yönetimi
-  - alici-listesinden-yukleme    # E3 — ödemeye yükleme (kural seti henüz yazılmadı)
+  # - yeni-liste-olustur           # E5 — 2 adımlı sihirbaz
+  # - alici-listesi-sil            # E4 — onay ekranı
+  # - alici-listesi-detay          # E2 — kayıt yönetimi
+  # - alici-listesinden-yukleme    # E3 — ödemeye yükleme (kural seti henüz yazılmadı)
 
 # Kayıtlı Senaryolar ağacında gösterilen ad. Yazılmayan ekran flow adıyla görünür.
 screen_names:

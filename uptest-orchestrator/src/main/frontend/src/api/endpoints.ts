@@ -36,6 +36,7 @@ import type {
   VocabularyRefreshResponse,
   VocabularyResponse,
 } from "./types";
+import type { ProductSummary } from "./types";
 
 /*
   All 24 orchestrator endpoints, named once, each a thin wrapper around api().
@@ -180,6 +181,18 @@ export const getScenario = (app: string, product: string, path: string) =>
     "GET",
     "/api/v1/products/" + encodeURIComponent(app) + "/"
       + encodeURIComponent(product) + "/scenario?path=" + encodeURIComponent(path),
+  );
+
+/** "+ Ana menü": a new product folder whose category is `name`. */
+export const createMenu = (app: string, name: string) =>
+  api<ProductSummary>("POST", "/api/v1/products", { app, name });
+
+/** "+ Ekran ekle": declares a screen on a product; answers with its flow. */
+export const addScreen = (app: string, product: string, name: string) =>
+  api<{ flow: string }>(
+    "POST",
+    "/api/v1/products/" + encodeURIComponent(app) + "/" + encodeURIComponent(product) + "/screens",
+    { name },
   );
 
 /** ExploreController's error code when the operator closed the agent's browser. */

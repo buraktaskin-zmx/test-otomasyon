@@ -31,6 +31,8 @@ export interface Prose {
   /** The "Ön koşul: …" paragraph's text, without its label; "" when none. */
   precondition: string;
   body: string;
+  /** The label as the file spells it ("On kosul:"); read-only, for display. */
+  label?: string;
 }
 
 // The label is matched loosely: the files are written in ASCII ("On kosul").
@@ -69,8 +71,8 @@ export function readProse(feature: string): Prose | null {
     .map((line) => line.trim())
     .join("\n")
     .trim();
-  const { precondition, body } = splitPrecondition(text);
-  return { title: at.title, precondition, body };
+  const { label, precondition, body } = splitPrecondition(text);
+  return { title: at.title, precondition, body, label };
 }
 
 export function writeProse(feature: string, prose: Prose): string {
