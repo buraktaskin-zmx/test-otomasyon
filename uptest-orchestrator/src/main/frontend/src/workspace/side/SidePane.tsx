@@ -115,12 +115,13 @@ export function SideRail({
 }) {
   const tabs: ReadonlyArray<{ id: SideTab; label: string }> = [
     { id: "product", label: "Kayıtlı Senaryolar" },
-    { id: "users", label: "Test Kullanıcıları" },
-    { id: "timeline", label: "Kayıtlı adımlarla çalıştır" },
     { id: "chat", label: "Chat" },
     { id: "suggest", label: "AI Üret" },
     { id: "multi", label: "Çoklu Üret" },
     ...(agentVisible ? ([{ id: "agent", label: "Ekran Keşfi" }] as const) : []),
+    { id: "timeline", label: "Çalıştır" },
+    // Last, and pushed to the bottom by CSS: set up once, rarely revisited.
+    { id: "users", label: "Test Kullanıcıları" },
   ];
 
   /* Icon only, unlike every other rail item. The label is not dropped to
@@ -152,7 +153,9 @@ export function SideRail({
           <button
             key={tab.id}
             type="button"
-            className={"rail-item" + (selected ? " is-active" : "")}
+            className={"rail-item"
+              + (tab.id === "users" ? " rail-bottom" : "")
+              + (selected ? " is-active" : "")}
             role="tab"
             aria-selected={selected}
             // A click while closed means "show me this", not "select

@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { PanelHead } from "./PanelHead";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
 import { useToast } from "../../ui/Toast";
 import type { useTestUsers } from "../../hooks/useTestUsers";
@@ -40,8 +39,15 @@ export function UsersPanel({
   users: ReturnType<typeof useTestUsers>;
 }) {
   const [form, setForm] = useState(EMPTY);
+  // The form is hidden until asked for: "+ Yeni kullanıcı" or a row click.
+  const [open, setOpen] = useState(false);
   const toast = useToast();
   const editing = form.id !== "";
+
+  const close = () => {
+    setForm(EMPTY);
+    setOpen(false);
+  };
 
   const set = (field: keyof typeof EMPTY) =>
     (event: React.ChangeEvent<HTMLInputElement>) =>
@@ -57,33 +63,33 @@ export function UsersPanel({
       toast("Kaydedilemedi: " + result.error, true);
       return;
     }
-    setForm(EMPTY);
     toast(editing ? "Giriş güncellendi" : "Giriş kaydedildi");
+    close();
   });
 
-  const edit = (user: TestUser) => setForm({
-    id: user.id, name: user.name, cif: user.cif, userid: user.userid,
-    password: user.password, role: user.role, note: user.note,
-  });
+  const edit = (user: TestUser) => {
+    setForm({
+      id: user.id, name: user.name, cif: user.cif, userid: user.userid,
+      password: user.password, role: user.role, note: user.note,
+    });
+    setOpen(true);
+  };
 
   const remove = async () => {
     const result = await users.remove(form.id);
     toast(result.ok ? "Giriş silindi" : "Silinemedi: " + result.error, !result.ok);
-    if (result.ok) setForm(EMPTY);
+    if (result.ok) close();
   };
 
   return (
     <div id="side-users" className={"side-panel users-panel" + (active ? " is-active" : "")}>
-      <PanelHead title="Test Kullanıcıları">
-        <span className="users-count">{users.users.length} kayıt</span>
-      </PanelHead>
-
       <div className="users-body">
         <section className="users-list">
+          <h2 className="users-title">Test Kullanıcıları</h2>
           {!users.loaded ? null : users.users.length === 0 ? (
             <p className="registry-empty">
-              Henüz kayıtlı giriş yok. Sağdaki formdan ekleyin — Firma / Müşteri
-              kodu dışındaki her alan opsiyoneldir.
+              Henüz kayıtlı giriş yok. Sağdaki <b>+ Yeni kullanıcı</b> ile ekleyin —
+              Firma/Müşteri dışındaki her alan opsiyoneldir.
             </p>
           ) : (
             <div className="registry-scroll">
@@ -91,8 +97,8 @@ export function UsersPanel({
                 <thead>
                   <tr>
                     <th>İsim</th>
-                    <th>Firma / Müşteri</th>
-                    <th>Kullanıcı kodu</th>
+                    <th>Firma/Müşteri</th>
+                    <th>Kullanıcı Kodu</th>
                     <th>Rol</th>
                     <th>Açıklama</th>
                   </tr>
@@ -119,6 +125,12 @@ export function UsersPanel({
         </section>
 
         <aside className="users-form">
+          {!open ? (
+            <button className="btn btn-primary users-new" type="button"
+                    onClick={() => { setForm(EMPTY); setOpen(true); }}>
+              + Yeni kullanıcı
+            </button>
+          ) : (
           <div className="users-card">
             <h3 className="users-card-title">{editing ? "DÜZENLE" : "YENİ OLUŞTUR"}</h3>
 
@@ -127,12 +139,12 @@ export function UsersPanel({
                      onChange={set("name")} placeholder="MAKER_01" />
             </Field>
 
-            <Field id="userCif" label="Firma / Müşteri">
+            <Field id="userCif" label="Firma/Müşteri">
               <input id="userCif" className="search" value={form.cif}
                      onChange={set("cif")} placeholder="LH01600254" />
             </Field>
 
-            <Field id="userUserid" label="Kullanıcı kodu">
+            <Field id="userUserid" label="Kullanıcı Kodu">
               <input id="userUserid" className="search" value={form.userid}
                      onChange={set("userid")} placeholder="1081" />
             </Field>
@@ -155,7 +167,7 @@ export function UsersPanel({
             <div className="users-card-actions">
               {editing ? (
                 <>
-                  <button className="btn btn-ghost" type="button" onClick={() => setForm(EMPTY)}>
+                  <button className="btn btn-ghost" type="button" onClick={close}>
                     Vazgeç
                   </button>
                   <button className="btn btn-ghost" type="button" onClick={() => void remove()}>
@@ -169,13 +181,7 @@ export function UsersPanel({
               </button>
             </div>
           </div>
-
-          <p className="suggest-hint">
-            Bunlar test ortamı bilgileridir, <code>{users.file || "testdata/users.yaml"}</code>{" "}
-            dosyasına yazılır ve elle de düzenlenebilir. Yalnızca Firma / Müşteri kodu
-            zorunlu. Rol bugün serbest metindir — doğru girişi gözle seçmek için var,
-            senaryolar henüz role göre kullanıcı istemiyor.
-          </p>
+          )}
         </aside>
       </div>
     </div>

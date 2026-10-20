@@ -406,8 +406,6 @@ export function WorkspaceView({
           run={runPoll.run}
           artifacts={artifacts}
           onStop={() => void runPoll.stop()}
-          onRun={() => void handleRunClick()}
-          runDisabled={runDisabled}
           steps={vocabulary.steps}
           vocabularyLoaded={vocabulary.loaded}
           vocabularyFailed={vocabulary.failed}

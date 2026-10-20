@@ -140,6 +140,8 @@ body {
 
 .rail-icon { flex: 0 0 auto; }
 
+.rail-bottom { margin-top: auto; }
+
 .rail-label {
     flex: 1 1 auto;
     min-width: 0;
@@ -1232,11 +1234,6 @@ body {
 
 .users-panel { overflow: hidden; }
 
-.users-count {
-    font-size: var(--text-xs);
-    color: var(--text-faint);
-}
-
 .users-body {
     display: flex;
     flex: 1 1 auto;
@@ -1261,7 +1258,17 @@ body {
     overflow: auto;
     padding: var(--space-4);
     border-left: 1px solid var(--border-soft);
+    background: var(--surface-2);
 }
+
+.users-title {
+    margin: 0 0 var(--space-3);
+    font-size: var(--text-lg, 18px);
+    font-weight: 700;
+    color: var(--text);
+}
+
+.users-new { width: 100%; justify-content: center; }
 
 .users-card {
     border: 1px solid var(--border);
@@ -1295,7 +1302,7 @@ body {
 
 .users-card-actions {
     display: flex;
-    justify-content: flex-end;
+    justify-content: center;
     gap: var(--space-2);
     margin-top: var(--space-3);
 }

@@ -19,10 +19,7 @@ export type RunTab = "vocab" | "timeline";
   active tab is owned by the parent rather than kept here: a panel cannot
   switch itself from a decision taken somewhere else.
 
-  Çalıştır stays, and only on the timeline half. It is the one place you
-  reach for it while already looking at the last run; the editor header keeps
-  its own copy for when you are reading the scenario. Both call the same
-  handler.
+  No Çalıştır here: the editor header's button is the one place a run starts.
 */
 export function TimelinePanel({
   active,
@@ -31,8 +28,6 @@ export function TimelinePanel({
   run,
   artifacts,
   onStop,
-  onRun,
-  runDisabled,
   steps,
   vocabularyLoaded,
   vocabularyFailed,
@@ -44,8 +39,6 @@ export function TimelinePanel({
   run: RunDetail | null;
   artifacts: Artifact[] | null;
   onStop: () => void;
-  onRun: () => void;
-  runDisabled: boolean;
   steps: VocabularyStep[];
   vocabularyLoaded: boolean;
   vocabularyFailed: boolean;
@@ -76,20 +69,6 @@ export function TimelinePanel({
             Zaman Çizelgesi
           </button>
         </div>
-
-        {/* Its own id: #btnRun belongs to the editor header and a duplicate
-            would break both for anything selecting by id. */}
-        {onVocab ? null : (
-          <button
-            id="btnRunPanel"
-            className="btn btn-primary"
-            type="button"
-            onClick={onRun}
-            disabled={runDisabled}
-          >
-            Çalıştır
-          </button>
-        )}
       </PanelHead>
 
       {onVocab ? (
