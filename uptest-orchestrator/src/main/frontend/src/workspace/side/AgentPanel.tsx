@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { PanelHead } from "./PanelHead";
 import { explore, exploreForCatalog, saveCatalog } from "../../api/endpoints";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
 import { catalogNameFromYaml, slug } from "../../lib/slug";
@@ -9,23 +8,22 @@ import { ExploreToolsDiagnostic } from "./ExploreToolsDiagnostic";
 import type { useExploreTools } from "../../hooks/useExploreTools";
 import type { useTestUsers } from "../../hooks/useTestUsers";
 import { UserPicker } from "../../users/UserPicker";
-import { TEST_SMS_CODE } from "./ProductPanel";
+import { LOGIN_URL, TEST_SMS_CODE } from "./ProductPanel";
 
 type AgentEndpoint = "explore" | "catalog";
 
 /*
-  index.html:201-251 + app.js:950-1082. Both buttons share ONE busy flag
-  (app.js disables btnAgentExplore and btnAgentCatalog together, because
-  runAgent() is the single function both call) -- useAsyncAction's generic
-  "one action at a time" guard is reused here with the endpoint choice as
-  its argument, rather than two separate hook instances that could race.
+  Ekran Keşfi -- form left, result right, in the wide panel.
 
-  Credentials (#agentPassword, #agentSms) live ONLY in this component's
-  local state -- never lifted to a context, never logged by anything this
-  app controls. They do still leave the browser (ExploreController.compose
-  writes them into the model's instruction text, and the orchestrator's own
-  BudgetedTool.trace prints tool-call arguments to its console -- a
-  pre-existing server-side issue, not something this component can fix).
+  Both buttons share ONE busy flag: useAsyncAction's "one action at a time"
+  guard takes the endpoint as its argument, rather than two hook instances
+  that could drive the browser twice.
+
+  Credentials live ONLY in this component's local state -- never lifted to a
+  context, never logged by anything this app controls. They do still leave
+  the browser (ExploreController.compose writes them into the model's
+  instruction text, and BudgetedTool.trace prints tool-call arguments to the
+  orchestrator's console -- a pre-existing server-side issue).
 */
 export function AgentPanel({
   active,
@@ -38,21 +36,15 @@ export function AgentPanel({
   users: ReturnType<typeof useTestUsers>;
   onCatalogSaved: (name: string) => void;
 }) {
-  const [url, setUrl] = useState("https://ifctest.yapikredi.com.tr/ngc/indexNgc.do");
-  /* Credentials come from a saved login. This panel typed a PASSWORD on
-     every walk, which is the field a person gets wrong most and the one
-     whose mistake costs a full browser launch to discover. The SMS code
-     stays typed: it is single-use by definition and there is nothing to
-     save. */
+  /* The address comes from the application, the login from a saved user and
+     the SMS code is the test environment's fixed one -- so the only thing
+     left to type is what to do after logging in. */
+  const [app, setApp] = useState("ngc");
   const [loginId, setLoginId] = useState("");
   const chosen = loginId ? users.byId(loginId) : null;
-  const cif = chosen?.cif ?? "";
-  const userId = chosen?.userid ?? "";
-  const password = chosen?.password ?? "";
-  const [smsCode, setSmsCode] = useState(TEST_SMS_CODE);
-  const [mainMenu, setMainMenu] = useState("");
   const [instruction, setInstruction] = useState("");
 
+  const [pending, setPending] = useState<AgentEndpoint | null>(null);
   const [output, setOutput] = useState("");
   const [problems, setProblems] = useState<string[] | null>(null);
   const [isCatalog, setIsCatalog] = useState(false);
@@ -85,205 +77,195 @@ export function AgentPanel({
     }
     setOutput("");
     setProblems(null);
+    setPending(endpoint);
 
-    const request = { text: instruction, url, cif, userId, password, smsCode, mainMenu };
+    const request = {
+      text: instruction,
+      url: LOGIN_URL[app],
+      cif: chosen?.cif ?? "",
+      userId: chosen?.userid ?? "",
+      password: chosen?.password ?? "",
+      smsCode: TEST_SMS_CODE,
+    };
 
-    // Kept as two separate branches (not merged into one `result` variable
-    // via a ternary) ON PURPOSE: explore() and exploreForCatalog() return
-    // different success body shapes, and TypeScript cannot narrow a union
-    // produced by a ternary against a condition checked afterwards.
-    if (endpoint === "catalog") {
-      const result = await exploreForCatalog(request);
-      if (!result.ok) {
-        toast("Ekran keşfi başarısız: " + result.error, true);
-        return;
+    try {
+      // Two branches ON PURPOSE: explore() and exploreForCatalog() return
+      // different success bodies, and a ternary-built union cannot be
+      // narrowed against a condition checked afterwards.
+      if (endpoint === "catalog") {
+        const result = await exploreForCatalog(request);
+        if (!result.ok) {
+          toast("Ekran keşfi başarısız: " + result.error, true);
+          return;
+        }
+        setOutput(result.body.catalog);
+        setProblems(result.body.problems);
+        setIsCatalog(true);
+        const guess = catalogNameFromYaml(result.body.catalog);
+        // Only fills EMPTY boxes -- only the analyst knows whether this is a
+        // new screen or a better walk of one already stored.
+        if (guess.app && !saveApp.trim()) setSaveApp(guess.app);
+        if (guess.flow && !saveFlow.trim()) setSaveFlow(guess.flow);
+      } else {
+        const result = await explore(request);
+        if (!result.ok) {
+          toast("Ekran keşfi başarısız: " + result.error, true);
+          return;
+        }
+        setOutput(result.body.answer);
+        setProblems(null);
+        setIsCatalog(false);
       }
-      setOutput(result.body.catalog);
-      setProblems(result.body.problems);
-      setIsCatalog(true);
-      const guess = catalogNameFromYaml(result.body.catalog);
-      // Only fills EMPTY boxes -- the analyst can always overwrite either,
-      // and only they know whether this is a new screen or a better walk
-      // of one already stored (app.js:703-716).
-      if (guess.app && !saveApp.trim()) setSaveApp(guess.app);
-      if (guess.flow && !saveFlow.trim()) setSaveFlow(guess.flow);
-    } else {
-      const result = await explore(request);
-      if (!result.ok) {
-        toast("Ekran keşfi başarısız: " + result.error, true);
-        return;
-      }
-      setOutput(result.body.answer);
-      setProblems([]);
-      setIsCatalog(false);
+    } finally {
+      setPending(null);
     }
   });
 
   const busy = run.busy;
 
   return (
-    <div id="side-agent" className={"side-panel" + (active ? " is-active" : "")}>
-      <PanelHead title="Ekran Keşfi" />
-      <div className="suggest-form">
-        <label className="suggest-label" htmlFor="agentUrl">
-          Adres
-        </label>
-        <input
-          id="agentUrl"
-          className="search"
-          type="text"
-          autoComplete="off"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-        />
-        <UserPicker
-          idPrefix="agent"
-          users={users}
-          value={loginId}
-          onChange={setLoginId}
-          needsUserid={false}
-          disabled={busy}
-        />
-        <label className="suggest-label" htmlFor="agentSms">
-          Akıllı SMS kodu <span className="suggest-optional">(opsiyonel)</span>
-        </label>
-        <input
-          id="agentSms"
-          className="search"
-          type="text"
-          autoComplete="off"
-          placeholder="SMS ekranı gelmiyorsa boş bırakın"
-          value={smsCode}
-          onChange={(e) => setSmsCode(e.target.value)}
-        />
-        <label className="suggest-label" htmlFor="agentMainMenu">
-          Ana menü <span className="suggest-optional">(opsiyonel)</span>
-        </label>
-        <input
-          id="agentMainMenu"
-          className="search"
-          type="text"
-          autoComplete="off"
-          placeholder="Örn: NAKİT YÖNETİMİ"
-          value={mainMenu}
-          onChange={(e) => setMainMenu(e.target.value)}
-        />
-        <label className="suggest-label" htmlFor="agentInstruction">
-          Ne yapsın?
-        </label>
-        <textarea
-          id="agentInstruction"
-          className="search suggest-intent"
-          rows={10}
-          placeholder={
-            "Girişi yukarıdaki alanlar hallediyor — buraya sadece giriş SONRASINI yazın.\n" +
-            "Örn: Online DBS İşlemleri'ne git, FORD DBS ODEMELERI satırını seç, Fatura Oluştur'a " +
-            "tıkla ve formdaki alanları incele. Devam/Onay'a basma."
-          }
-          value={instruction}
-          onChange={(e) => setInstruction(e.target.value)}
-        />
-        <div className="agent-actions">
-          <button
-            id="btnAgentExplore"
-            className="btn btn-ghost"
-            type="button"
+    <div id="side-agent" className={"side-panel agent-panel" + (active ? " is-active" : "")}>
+      <div className="agent-body">
+        <section className="agent-form">
+          <label className="suggest-label" htmlFor="agentApp">Uygulama</label>
+          <select
+            id="agentApp"
+            className="search"
+            value={app}
             disabled={busy}
-            onClick={() => run.run("explore")}
+            onChange={(e) => setApp(e.target.value)}
           >
-            Serbest Gözlem
-          </button>
-          <button
-            id="btnAgentCatalog"
-            className="btn btn-primary"
-            type="button"
-            disabled={busy}
-            onClick={() => run.run("catalog")}
-          >
-            YAML Katalog Çıkar
-          </button>
-        </div>
-        <p className="suggest-hint">
-          Gerçek bir tarayıcı sürülür ve her adımdan önce sayfa okunur. <b>Serbest Gözlem</b> düzyazı
-          bir cevap verir; <b>YAML Katalog Çıkar</b> aynı gezintinin sonunda <code>SCHEMA.md</code>
-          biçiminde ekranın YAML kataloğunu döndürür. Taslak, emin olmadığı satırları <code># emin degil</code> ile işaretler —
-          özellikle <code>type</code> alanını ölçülmüş bir taramayla karşılaştırın. Onay/Devam gibi
-          kayıt oluşturan düğmelere basmamasını açıkça yazın.
-        </p>
-      </div>
-
-      <div id="agentStatus" className="suggest-status">
-        {busy ? (
-          <div className="s-line">tarayıcı sürülüyor, bu birkaç dakika sürebilir…</div>
-        ) : problems === null ? null : problems.length > 0 ? (
-          <>
-            <div className="s-line">Taslakta {problems.length} sorun var:</div>
-            {problems.map((p, i) => (
-              <div className="s-line" key={i}>
-                • {p}
-              </div>
+            {Object.keys(LOGIN_URL).map((key) => (
+              <option key={key} value={key}>{key.toUpperCase()} ({key})</option>
             ))}
-          </>
-        ) : (
-          <div className="s-line">Tamamlandı — mekanik kontrollerden temiz geçti.</div>
-        )}
-      </div>
+          </select>
 
-      <textarea
-        id="agentOutput"
-        className="search discover-output"
-        spellCheck={false}
-        rows={14}
-        placeholder="Gözlem ya da YAML burada görünecek."
-        value={output}
-        onChange={(e) => setOutput(e.target.value)}
-      />
+          <UserPicker
+            idPrefix="agent"
+            users={users}
+            value={loginId}
+            onChange={setLoginId}
+            needsUserid={app === "ngc"}
+            disabled={busy}
+          />
 
-      {isCatalog && output ? (
-        <div id="agentSaveRow" className="agent-save">
-          <div className="agent-save-names">
-            <input
-              id="agentSaveApp"
-              className="search"
-              type="text"
-              autoComplete="off"
-              placeholder="ngc"
-              aria-label="Uygulama"
-              value={saveApp}
-              onChange={(e) => setSaveApp(e.target.value)}
-            />
-            <span className="agent-save-sep">/</span>
-            <input
-              id="agentSaveFlow"
-              className="search"
-              type="text"
-              autoComplete="off"
-              placeholder="banko-odeme-talebi"
-              aria-label="Akış"
-              value={saveFlow}
-              onChange={(e) => setSaveFlow(slug(e.target.value))}
-            />
-            <span className="agent-save-sep">.yaml</span>
+          <label className="suggest-label" htmlFor="agentInstruction">Ne yapsın?</label>
+          <textarea
+            id="agentInstruction"
+            className="search suggest-intent"
+            rows={8}
+            placeholder={
+              "Giriş otomatik yapılır — buraya sadece giriş SONRASINI yazın.\n" +
+              "Örn: Online DBS İşlemleri'ne git, FORD DBS ODEMELERI satırını seç, Fatura Oluştur'a " +
+              "tıkla ve formdaki alanları incele. Devam/Onay'a basma."
+            }
+            value={instruction}
+            onChange={(e) => setInstruction(e.target.value)}
+          />
+
+          <div className="agent-actions">
+            <button
+              id="btnAgentExplore"
+              className="btn btn-ghost"
+              type="button"
+              disabled={busy}
+              onClick={() => run.run("explore")}
+            >
+              {pending === "explore" ? "Çalışıyor…" : "Serbest Gözlem"}
+            </button>
+            <button
+              id="btnAgentCatalog"
+              className="btn btn-primary"
+              type="button"
+              disabled={busy}
+              onClick={() => run.run("catalog")}
+            >
+              {pending === "catalog" ? "Çalışıyor…" : "YAML Katalog Çıkar"}
+            </button>
           </div>
-          <button
-            id="btnAgentSave"
-            className="btn btn-primary"
-            type="button"
-            disabled={save.busy}
-            onClick={() => save.run()}
-          >
-            Kataloğu Kaydet
-          </button>
-        </div>
-      ) : null}
 
-      {tools.loaded && tools.count === 0 ? (
-        <EmptyState title="MCP tarayıcı sağlamıyor">
-          Ajan araçları yayınlanmıyor — <code>uptest.explore.enabled</code> açık ama MCP sunucusu
-          hiç araç döndürmedi.
-        </EmptyState>
-      ) : null}
-      <ExploreToolsDiagnostic loaded={tools.loaded} count={tools.count} tools={tools.tools} />
+          {tools.loaded && tools.count === 0 ? (
+            <EmptyState title="MCP tarayıcı sağlamıyor">
+              Ajan araçları yayınlanmıyor — <code>uptest.explore.enabled</code> açık ama MCP
+              sunucusu hiç araç döndürmedi.
+            </EmptyState>
+          ) : null}
+          <ExploreToolsDiagnostic loaded={tools.loaded} count={tools.count} tools={tools.tools} />
+        </section>
+
+        <section className="agent-result">
+          <div className="agent-result-head">
+            <h3 className="users-card-title">EKRAN KEŞFİ</h3>
+            <p className="agent-result-sub">
+              Tarayıcıyı gezip ekranı okur ve katalog taslağı üretir. Kaydetmeden önce
+              sorunları gözden geçirin.
+            </p>
+          </div>
+
+          {output ? (
+            <>
+              {problems && problems.length > 0 ? (
+                <div className="suggest-status">
+                  <div className="s-line">Taslakta {problems.length} sorun var:</div>
+                  {problems.map((p, i) => (
+                    <div className="s-line" key={i}>• {p}</div>
+                  ))}
+                </div>
+              ) : null}
+
+              <textarea
+                id="agentOutput"
+                className="search discover-output agent-output"
+                spellCheck={false}
+                value={output}
+                onChange={(e) => setOutput(e.target.value)}
+              />
+
+              {isCatalog ? (
+                <div id="agentSaveRow" className="agent-save">
+                  <div className="agent-save-names">
+                    <input
+                      id="agentSaveApp"
+                      className="search"
+                      type="text"
+                      autoComplete="off"
+                      placeholder="ngc"
+                      aria-label="Uygulama"
+                      value={saveApp}
+                      onChange={(e) => setSaveApp(e.target.value)}
+                    />
+                    <span className="agent-save-sep">/</span>
+                    <input
+                      id="agentSaveFlow"
+                      className="search"
+                      type="text"
+                      autoComplete="off"
+                      placeholder="banko-odeme-talebi"
+                      aria-label="Akış"
+                      value={saveFlow}
+                      onChange={(e) => setSaveFlow(slug(e.target.value))}
+                    />
+                    <span className="agent-save-sep">.yaml</span>
+                  </div>
+                  <button
+                    id="btnAgentSave"
+                    className="btn btn-primary"
+                    type="button"
+                    disabled={save.busy}
+                    onClick={() => save.run()}
+                  >
+                    Kataloğu Kaydet
+                  </button>
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <p className="agent-empty">
+              Keşif bitince YAML katalog ya da gözlem raporu burada görünür.
+            </p>
+          )}
+        </section>
+      </div>
     </div>
   );
 }

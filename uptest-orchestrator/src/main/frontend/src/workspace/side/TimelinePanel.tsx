@@ -47,8 +47,8 @@ export function TimelinePanel({
   const onVocab = tab === "vocab";
 
   return (
-    <div id="side-timeline" className={"side-panel" + (active ? " is-active" : "")}>
-      <PanelHead title={onVocab ? "Adım Sözlüğü" : "Zaman Çizelgesi"}>
+    <div id="side-timeline" className={"side-panel timeline-panel" + (active ? " is-active" : "")}>
+      <PanelHead title="ÇALIŞTIR">
         <div className="run-tabs" role="tablist">
           <button
             type="button"
@@ -84,9 +84,21 @@ export function TimelinePanel({
             Koşu sırasında adımlar canlı akar. Başarısız adım kendi hata günlüğünü
             açar; çıktılar altta.
           </p>
-          <RunHeader run={run} onStop={onStop} />
-          <StepList steps={run?.steps ?? []} currentStepIndex={run?.currentStepIndex ?? null} />
-          {run ? <RunFooter runId={run.runId} steps={run.steps ?? []} artifacts={artifacts} /> : null}
+          {run ? (
+            <>
+              <RunHeader run={run} onStop={onStop} />
+              <StepList steps={run.steps ?? []} currentStepIndex={run.currentStepIndex ?? null} />
+              <RunFooter runId={run.runId} steps={run.steps ?? []} artifacts={artifacts} />
+            </>
+          ) : (
+            <div className="run-empty">
+              <span className="run-empty-ring" aria-hidden="true" />
+              <p className="run-empty-title">Henüz çalıştırılmadı</p>
+              <p className="run-empty-text">
+                Çalıştır'a bastığınızda adımlar burada canlı akar.
+              </p>
+            </div>
+          )}
         </>
       )}
     </div>

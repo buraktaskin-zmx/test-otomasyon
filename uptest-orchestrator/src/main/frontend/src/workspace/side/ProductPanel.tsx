@@ -13,7 +13,7 @@ import type { Origin, RunLogin } from "../../api/types";
 
 /** Where the agent logs in, per application -- the same pages NGC.java and
  *  NGI.java open. */
-const LOGIN_URL: Record<string, string> = {
+export const LOGIN_URL: Record<string, string> = {
   ngc: "https://ifctest.yapikredi.com.tr/ngc/indexNgc.do",
   ngi: "https://intest.yapikredi.com.tr/ngi/passResetEnter.do",
 };

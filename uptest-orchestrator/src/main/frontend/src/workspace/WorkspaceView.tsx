@@ -319,7 +319,8 @@ export function WorkspaceView({
      Each of the three is READ far more than the editor is while it is
      open, which is the test -- not how much markup it happens to have. */
   const wideMode = panelOpen
-    && (sideTab === "chat" || sideTab === "product" || sideTab === "users");
+    && (sideTab === "chat" || sideTab === "product" || sideTab === "users"
+      || sideTab === "agent");
 
   const liveRun = runPoll.run?.status === "RUNNING";
   const agentVisible = !tools.loaded || tools.available;
