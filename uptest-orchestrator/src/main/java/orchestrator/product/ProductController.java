@@ -154,6 +154,7 @@ public class ProductController {
         for (String flow : flows) {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("flow", flow);
+            row.put("name", product.screenName(flow));
             row.put("catalog", knownCatalogs.contains(prefix + flow) ? prefix + flow : null);
             row.put("declared", product.flows().contains(flow));
             row.put("scenarioCount", cards.stream().filter(c -> flow.equals(c.flow())).count());

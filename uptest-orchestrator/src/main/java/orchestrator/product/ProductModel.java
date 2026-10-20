@@ -61,6 +61,7 @@ public final class ProductModel {
     private final String category;
     private final String description;
     private final List<String> flows;
+    private final Map<String, String> screenNames;
     private final Map<String, DataAlias> aliases;
     private final Map<String, Rule> byId;
     private final List<String> duplicateIds;
@@ -70,7 +71,8 @@ public final class ProductModel {
     private final String knownIssues;
 
     private ProductModel(String app, String key, String name, String category, String description,
-                         List<String> flows, Map<String, DataAlias> aliases,
+                         List<String> flows, Map<String, String> screenNames,
+                         Map<String, DataAlias> aliases,
                          Map<String, Rule> byId, List<String> duplicateIds,
                          String stateMachine, String roles, String openQuestions,
                          String knownIssues) {
@@ -80,6 +82,7 @@ public final class ProductModel {
         this.category = category;
         this.description = description;
         this.flows = flows;
+        this.screenNames = screenNames;
         this.aliases = aliases;
         this.byId = byId;
         this.duplicateIds = duplicateIds;
@@ -145,6 +148,11 @@ public final class ProductModel {
     /** The flows this product claims, as catalog names without the app prefix. */
     public List<String> flows() {
         return flows;
+    }
+
+    /** The screen's human name from {@code screen_names:}, or the flow itself. */
+    public String screenName(String flow) {
+        return screenNames.getOrDefault(flow, flow);
     }
 
     public List<Rule> rules() {
@@ -240,6 +248,7 @@ public final class ProductModel {
                 text(document.get("category")),
                 text(document.get("description")),
                 strings(document.get("flows")),
+                names(document.get("screen_names")),
                 readAliases(sources.testDataYaml()),
                 readRules(sources.rulesYaml(), duplicates),
                 List.copyOf(duplicates),
@@ -411,6 +420,19 @@ public final class ProductModel {
             return List.of();
         }
         return items.stream().map(ProductModel::text).filter(s -> !s.isEmpty()).toList();
+    }
+
+    private static Map<String, String> names(Object value) {
+        if (!(value instanceof Map<?, ?> entries)) {
+            return Map.of();
+        }
+        Map<String, String> names = new LinkedHashMap<>();
+        entries.forEach((flow, name) -> {
+            if (!text(flow).isEmpty() && !text(name).isEmpty()) {
+                names.put(text(flow), text(name));
+            }
+        });
+        return names;
     }
 
     private static String oneLine(String message) {

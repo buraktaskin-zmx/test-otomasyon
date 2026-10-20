@@ -372,6 +372,8 @@ export interface ScenarioDetail extends RegisteredScenario {
  *  declare, which is only visible because both sources are merged. */
 export interface ProductScreen {
   flow: string;
+  /** product.yaml `screen_names:`, falling back to `flow`. */
+  name: string;
   catalog: string | null;
   declared: boolean;
   scenarioCount: number;

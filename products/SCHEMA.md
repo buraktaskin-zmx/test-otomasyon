@@ -55,6 +55,8 @@ description: >
 flows:                        # catalog names, without the app prefix
   - maas-odeme-olustur        # → catalogs/ngc/maas-odeme-olustur.yaml
   - maas-odeme-onay
+screen_names:                  # optional: the screen's name in the tree
+  maas-odeme-olustur: "Maaş Ödeme Oluştur"
 ```
 
 | Key | Required | Read by |
@@ -64,6 +66,7 @@ flows:                        # catalog names, without the app prefix
 | `category` | no | the tree's top level; blank products bucket under "Sınıflandırılmamış" |
 | `description` | no | the product overview. Display only, never the prompt |
 | `flows` | no | the picker's screen filter, and the missing-catalog report |
+| `screen_names` | no | flow → display name in the Kayıtlı Senaryolar tree and table title; a flow left out shows as itself |
 
 `category` is deliberately NOT derived from `app`. NGC and NGI are
 **applications**; Ödemeler and Hesap İşlemleri are **business areas** that cut

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { PanelHead } from "./PanelHead";
-import { ProductTree } from "../../product/ProductTree";
+import { ProductTree, categoryKey } from "../../product/ProductTree";
 import type { TreeSelection } from "../../product/ProductTree";
 import { ScenarioDetail } from "../../product/ScenarioDetail";
 import { ScenarioTable } from "../../product/ScenarioTable";
@@ -75,6 +75,20 @@ export function ProductPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selection?.app, selection?.product]);
 
+  /* The tree lists SCREENS straight under a category, and a product's
+     screens are only known once its registry is read -- so opening a
+     category reads every product in it. */
+  useEffect(() => {
+    for (const product of products.products) {
+      const name = product.category?.trim() ?? "";
+      const open = !name || expanded.has(categoryKey(name));
+      if (open && !products.registry(product.app, product.product)) {
+        void products.openRegistry(product.app, product.product);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [products.products, expanded]);
+
   /* Changing screen closes whatever scenario was open. Without this the
      detail view would survive into a screen the file does not belong to,
      and the breadcrumb above it would be lying. */
@@ -116,7 +130,7 @@ export function ProductPanel({
         <section className="registry-main">
           {selection === null ? (
             <p className="registry-empty">
-              Soldan bir ürün ya da ekran seçin. Ekran seçtiğinizde o ekrana kayıtlı
+              Soldan bir ekran seçin. Ekran seçtiğinizde o ekrana kayıtlı
               senaryolar, bağlı oldukları kurallar ve koşmak için gereken veri listelenir.
             </p>
           ) : (
@@ -135,7 +149,7 @@ export function ProductPanel({
 
               <div className="registry-titlebar">
                 <h2 className="registry-title">
-                  {selection.flow ?? registry?.name ?? selection.product}
+                  {screen?.name || selection.flow || registry?.name || selection.product}
                 </h2>
 
                 {/* The login sits ABOVE the scenario, beside the screen it
