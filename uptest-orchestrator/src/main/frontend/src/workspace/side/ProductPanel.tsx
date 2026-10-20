@@ -211,12 +211,8 @@ export function ProductPanel({
               <div className="registry-crumbs">
                 {registry?.category ? <span>{registry.category}</span> : null}
                 <span>{registry?.name ?? selection.product}</span>
-                {screen ? (
-                  <span className="is-file">
-                    {screen.catalog
-                      ? "catalogs/" + screen.catalog + ".yaml"
-                      : "katalog yok"}
-                  </span>
+                {screen?.catalog ? (
+                  <span className="is-file">{"catalogs/" + screen.catalog + ".yaml"}</span>
                 ) : null}
               </div>
 

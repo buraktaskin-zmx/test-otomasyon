@@ -155,9 +155,13 @@ public class ProductService {
         if (path == null || path.isBlank() || text == null || text.isBlank()) {
             return "Senaryo yolu ve metni gerekli";
         }
-        return folder(app, product)
-                .map(folder -> ScenarioLibrary.write(folder, path, text))
-                .orElse("Ürün bulunamadı: " + app + "/" + product);
+        // Not Optional.map: write() answers null on SUCCESS, and map turns a
+        // null into "absent" -- every good save was reported as a missing product.
+        Optional<Path> folder = folder(app, product);
+        if (folder.isEmpty()) {
+            return "Ürün bulunamadı: " + app + "/" + product;
+        }
+        return ScenarioLibrary.write(folder.get(), path, text);
     }
 
     public Path root() {

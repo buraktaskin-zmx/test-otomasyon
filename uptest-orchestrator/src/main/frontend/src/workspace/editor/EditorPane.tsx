@@ -33,6 +33,7 @@ export function EditorPane({
   onGoToLine,
   onApplyFix,
   multiBar,
+  runFocused,
 }: {
   feature: string;
   onChange: (value: string) => void;
@@ -48,6 +49,8 @@ export function EditorPane({
   onGoToLine: (line: number) => void;
   onApplyFix: (line: number, fix: string) => void;
   multiBar?: ReactNode;
+  /** The Çalıştır panel is open: an empty editor asks for a scenario to test. */
+  runFocused: boolean;
 }) {
   /* On by default, and switchable: colouring is a reading aid, and a reading
      aid that cannot be turned off is a liability the first time it is wrong
@@ -92,11 +95,22 @@ export function EditorPane({
           <GherkinEditor ref={textareaRef} value={feature} onChange={onChange} onScroll={onScroll} />
           {feature.trim() ? null : (
             <div className="editor-empty" aria-hidden="true">
-              <p className="run-empty-title">Senaryolar burada görünecek</p>
-              <p className="run-empty-text">
-                Soldan <b>AI ile Senaryo Üret</b> ile üretin ya da bir senaryoyu buraya
-                yazın veya yapıştırın.
-              </p>
+              {runFocused ? (
+                <>
+                  <p className="run-empty-title">Test edilecek senaryoyu buraya ekleyin</p>
+                  <p className="run-empty-text">
+                    Senaryoyu yazın ya da yapıştırın, sonra <b>Çalıştır</b>'a basın.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="run-empty-title">Senaryolar burada görünecek</p>
+                  <p className="run-empty-text">
+                    Soldan <b>AI ile Senaryo Üret</b> ile üretin ya da bir senaryoyu buraya
+                    yazın veya yapıştırın.
+                  </p>
+                </>
+              )}
             </div>
           )}
         </div>

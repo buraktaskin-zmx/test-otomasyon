@@ -159,6 +159,8 @@ body {
     resize: vertical;
 }
 
+.sd-edit.sd-edit-short { min-height: 72px; }
+
 /* A generation form (AI Üret, Çoklu Üret) is taller than a short screen and
    never shrinks, so without this its bottom -- the Üret button -- was cut
    off with no scrollbar to reach it. */

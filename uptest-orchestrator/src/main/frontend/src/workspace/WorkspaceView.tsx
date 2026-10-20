@@ -332,6 +332,7 @@ export function WorkspaceView({
         </div>
       ) : (
         <EditorPane
+          runFocused={panelOpen && sideTab === "timeline"}
           feature={feature}
           onChange={handleChange}
           textareaRef={textareaRef}

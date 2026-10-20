@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { readinessLabel } from "./readiness";
 import { tokenizeGherkinLine } from "../lib/gherkin";
 import { plainSteps } from "../lib/plainTurkish";
-import { readProse, writeProse } from "../lib/scenarioProse";
+import { joinTags, readProse, splitTags, writeProse } from "../lib/scenarioProse";
 import type { ScenarioDetail as Detail } from "../api/types";
 
 /*
@@ -46,6 +46,7 @@ export function ScenarioDetail({
   const [editing, setEditing] = useState<"gherkin" | "prose" | null>(null);
   const [draft, setDraft] = useState("");
   const [titleDraft, setTitleDraft] = useState("");
+  const [preDraft, setPreDraft] = useState("");
   const [saving, setSaving] = useState(false);
 
   // Another scenario opened: any half-finished edit belongs to the old one.
@@ -59,22 +60,25 @@ export function ScenarioDetail({
   const state = readinessLabel(detail.readiness, detail.needsNone);
   const hasGherkin = detail.stepCount > 0;
   const prose = readProse(detail.feature);
+  // Tag lines are hidden in the view and the editor, and put back on save.
+  const { tags, body: shown } = splitTags(detail.feature);
 
   const editGherkin = () => {
-    setDraft(detail.feature);
+    setDraft(shown);
     setEditing("gherkin");
   };
 
   const editProse = () => {
     setTitleDraft(prose?.title ?? detail.title);
+    setPreDraft(prose?.precondition ?? "");
     setDraft(prose?.body ?? "");
     setEditing("prose");
   };
 
   const save = async () => {
     const feature = editing === "prose"
-      ? writeProse(detail.feature, { title: titleDraft, body: draft })
-      : draft;
+      ? writeProse(detail.feature, { title: titleDraft, precondition: preDraft, body: draft })
+      : joinTags(tags, draft);
     setSaving(true);
     const ok = await onSave(feature);
     setSaving(false);
@@ -139,7 +143,7 @@ export function ScenarioDetail({
               onChange={(event) => setDraft(event.target.value)}
             />
           ) : (
-            <Gherkin text={detail.feature} />
+            <Gherkin text={shown} />
           )}
         </section>
 
@@ -164,16 +168,26 @@ export function ScenarioDetail({
 
           {editing === "prose" ? (
             <>
+              <label className="suggest-label" htmlFor="sdTitle">Başlık</label>
               <input
+                id="sdTitle"
                 className="search"
                 value={titleDraft}
-                aria-label="Senaryo başlığı"
                 onChange={(event) => setTitleDraft(event.target.value)}
               />
+              <label className="suggest-label" htmlFor="sdPre">Ön koşul</label>
               <textarea
+                id="sdPre"
+                className="search sd-edit sd-edit-short"
+                value={preDraft}
+                placeholder="Örn: ilgili firma verisi bulunabilmeli ve Döviz Cinsi TL seçilebilmeli"
+                onChange={(event) => setPreDraft(event.target.value)}
+              />
+              <label className="suggest-label" htmlFor="sdBody">Senaryo</label>
+              <textarea
+                id="sdBody"
                 className="search sd-edit"
                 value={draft}
-                aria-label="Senaryo metni"
                 onChange={(event) => setDraft(event.target.value)}
               />
             </>
@@ -200,12 +214,6 @@ export function ScenarioDetail({
                 ))}
               </ol>
 
-              {detail.rules.length > 0 ? (
-                <p className="sd-note">
-                  Doğruladığı kurallar:{" "}
-                  {detail.rules.map((rule) => rule.id).join(", ")}
-                </p>
-              ) : null}
             </>
           )}
 
