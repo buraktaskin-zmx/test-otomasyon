@@ -25,7 +25,8 @@ import { useRunPoll } from "../hooks/useRunPoll";
 import { useValidation } from "../hooks/useValidation";
 import { useToast } from "../ui/Toast";
 import type { Origin, RunLogin, ValidationResult } from "../api/types";
-import { joinTags, splitTags } from "../lib/scenarioProse";
+import { splitTags } from "../lib/scenarioProse";
+import { loginStepFor, withLogin } from "../lib/loginLine";
 import type { useVocabulary } from "../hooks/useVocabulary";
 
 /*
@@ -215,10 +216,10 @@ export function WorkspaceView({
   /* ----------------------- a registered file ("Git") ---------------------- */
 
   /* Set while the editor holds a scenario opened from Kayıtlı Senaryolar.
-     `saved` is the text as on disk (tag lines removed, see splitTags), so
-     Vazgeç can go back to it; `tags` are put back on Kaydet. Anything else
-     that replaces the editor's text clears this -- a Kaydet must never write
-     a different scenario over the file. */
+     `saved` is the text as on disk (tag lines removed, see splitTags); the
+     editor returns to it when the Çalıştır panel is left. Nothing on this
+     screen writes the file. Anything else that replaces the editor's text
+     clears this. */
   const [linked, setLinked] = useState<{
     app: string;
     product: string;
@@ -228,7 +229,6 @@ export function WorkspaceView({
     login?: RunLogin;
   } | null>(null);
   const [fileEditing, setFileEditing] = useState(false);
-  const [fileSaving, setFileSaving] = useState(false);
 
   const handleGenerated = useCallback(
     (generatedFeature: string, generatedOrigin: Origin) => {
@@ -275,10 +275,23 @@ export function WorkspaceView({
     [runPoll, validation, toast, showPanel],
   );
 
-  // A registered scenario runs under the login picked beside it in the registry.
+  /* The CIF the editor's scenario runs under. Choosing one rewrites the
+     scenario's login line in the editor (see lib/loginLine); like every
+     change on this screen it is not written to the file. */
+  const [loginId, setLoginId] = useState("");
+  const chosenUser = loginId ? users.byId(loginId) : null;
+  useEffect(() => {
+    const first = users.users[0];
+    if (!chosenUser && first) setLoginId(first.id);
+  }, [chosenUser, users.users]);
+
+  const runLogin: RunLogin | undefined = chosenUser
+    ? { cif: chosenUser.cif, userid: chosenUser.userid }
+    : undefined;
+
   const handleRunClick = useCallback(
-    () => runWith(feature, resolvedOrigin, linked?.login),
-    [runWith, feature, resolvedOrigin, linked],
+    () => runWith(feature, resolvedOrigin, runLogin),
+    [runWith, feature, resolvedOrigin, runLogin],
   );
 
   /**
@@ -300,33 +313,64 @@ export function WorkspaceView({
       const { tags, body } = splitTags(text);
       handleGenerated(body, where);
       setLinked({ ...file, tags, saved: body, login });
+      setSessionText(body);
+      // The registry's CIF comes along, so the dropdown starts on it.
+      const match = login
+        ? users.users.find((u) => u.cif === login.cif && u.userid === login.userid)
+        : undefined;
+      if (match) setLoginId(match.id);
       showPanel("timeline");
       setRunTab("timeline");
     },
-    [handleGenerated, showPanel],
+    [handleGenerated, showPanel, users.users],
   );
 
-  const saveLinked = useCallback(async () => {
-    if (!linked) return;
-    setFileSaving(true);
-    const result = await products.saveScenario(
-      linked.app, linked.product, linked.path, joinTags(linked.tags, feature));
-    setFileSaving(false);
-    if (!result.ok) {
-      toast("Kaydedilemedi: " + result.error, true);
-      return;
-    }
-    setLinked({ ...linked, saved: feature });
+  /* Çalıştır's Kaydet is for THIS SCREEN ONLY: nothing is written to disk.
+     The file is changed from Kayıtlı Senaryolar; here an analyst tries a
+     variation and runs it. `sessionText` is what Kaydet last kept, so Vazgeç
+     goes back to it; `linked.saved` stays the file as read, and leaving the
+     Çalıştır panel brings that back. */
+  const [sessionText, setSessionText] = useState("");
+
+  const saveLinked = useCallback(() => {
+    setSessionText(feature);
     setFileEditing(false);
-    toast("Senaryo kaydedildi");
-  }, [linked, products, feature, toast]);
+    toast("Bu ekranda kaydedildi — dosya değişmedi");
+  }, [feature, toast]);
+
+  const changeLogin = useCallback((id: string) => {
+    setLoginId(id);
+    const user = users.byId(id);
+    if (!user) return;
+    const app = resolvedOrigin.app || linked?.app || "";
+    const next = withLogin(feature, loginStepFor(app, user.cif, user.userid));
+    if (next === feature) return;
+    setFeature(next);
+    if (!fileEditing) setSessionText(next);
+    validation.scheduleValidate();
+  }, [users, resolvedOrigin.app, linked, feature, validation, fileEditing]);
 
   const cancelLinked = useCallback(() => {
     if (!linked) return;
-    setFeature(linked.saved);
+    setFeature(sessionText);
     setFileEditing(false);
     validation.scheduleValidate();
-  }, [linked, validation]);
+  }, [linked, sessionText, validation]);
+
+  // Leaving the Çalıştır panel drops every change made on it -- the CIF too,
+  // which goes back to the one the scenario was opened with.
+  useEffect(() => {
+    if (sideTab === "timeline" || !linked) return;
+    setFeature(linked.saved);
+    setSessionText(linked.saved);
+    setFileEditing(false);
+    const opened = linked.login
+      ? users.users.find((u) => u.cif === linked.login!.cif && u.userid === linked.login!.userid)
+      : undefined;
+    if (opened) setLoginId(opened.id);
+    validation.scheduleValidate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sideTab]);
 
   /* Chat's Çalıştır: the draft goes into the editor FIRST, then runs. The
      editor is where a scenario lives once it exists -- validated, with the
@@ -380,11 +424,16 @@ export function WorkspaceView({
           file={linked ? {
             path: linked.path,
             editing: fileEditing,
-            saving: fileSaving,
+            saving: false,
             onEdit: () => setFileEditing(true),
             onCancel: cancelLinked,
-            onSave: () => void saveLinked(),
+            onSave: saveLinked,
           } : null}
+          login={{
+            users: users.users.map((u) => ({ id: u.id, label: u.cif + (u.name ? " — " + u.name : "") })),
+            value: loginId,
+            onChange: changeLogin,
+          }}
           feature={feature}
           onChange={handleChange}
           textareaRef={textareaRef}

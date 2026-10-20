@@ -161,6 +161,10 @@ body {
 
 .sd-edit.sd-edit-short { min-height: 72px; }
 
+.sd-edit.sd-edit-medium { min-height: 150px; font-family: inherit; }
+
+.sd-doc-label small { font-weight: 400; text-transform: none; letter-spacing: 0; }
+
 /* Doğal dil: başlık, kural, ön koşul, adımlar, beklenen */
 .sd-doc { display: flex; flex-direction: column; gap: var(--space-3); }
 
@@ -428,6 +432,71 @@ body {
 .editor-stack .editor {
     flex: 1 1 auto;
 }
+
+.editor-login {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+}
+
+.editor-login .search { width: auto; min-width: 180px; font-family: var(--mono); }
+
+/* "+" beside a screen: the new-scenario form */
+.new-scenario { max-width: 760px; display: flex; flex-direction: column; gap: var(--space-3); }
+
+.new-scenario-head { display: flex; align-items: center; gap: var(--space-3); }
+
+.new-scenario-head .run-tabs { margin-left: 0; }
+
+.new-scenario-actions { display: flex; gap: var(--space-2); }
+
+.tree-row.is-screen .tree-plus {
+    flex: 0 0 auto;
+    padding: 0 4px;
+    color: var(--brand);
+    font-weight: 700;
+}
+
+/* "Taşı" on a scenario row */
+.registry td.sc-move { position: relative; width: 1%; white-space: nowrap; }
+
+.sc-move-btn { padding: 4px var(--space-2); }
+
+.sc-move-menu {
+    position: absolute;
+    right: 0;
+    top: calc(100% - 4px);
+    z-index: 20;
+    min-width: 220px;
+    padding: var(--space-1) 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow);
+}
+
+.sc-move-head {
+    padding: var(--space-1) var(--space-3);
+    font-size: var(--text-xs);
+    font-weight: 700;
+    letter-spacing: .05em;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border-soft);
+}
+
+.sc-move-item {
+    display: block;
+    width: 100%;
+    padding: var(--space-2) var(--space-3);
+    text-align: left;
+    font-size: var(--text-sm);
+}
+
+.sc-move-item:hover { background: var(--surface-2); }
+
+.sc-move-empty { padding: var(--space-2) var(--space-3); font-size: var(--text-xs); color: var(--text-faint); }
 
 /* The registered file the editor holds after "Git". */
 .editor-file {

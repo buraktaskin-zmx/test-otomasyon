@@ -1,5 +1,13 @@
+import { useEffect, useState } from "react";
 import { readinessLabel } from "./readiness";
 import type { RegisteredScenario, ScenarioNeed } from "../api/types";
+
+/** A screen a scenario can be moved to. */
+export interface MoveTarget {
+  product: string;
+  flow: string;
+  label: string;
+}
 
 /*
   Kayıtlı senaryolar: hangi kurala bağlı, koşmak için neye ihtiyaç var.
@@ -17,11 +25,26 @@ export function ScenarioTable({
   scenarios,
   busy,
   onOpen,
+  targetsFor,
+  onMove,
 }: {
   scenarios: RegisteredScenario[];
   busy: boolean;
   onOpen: (scenario: RegisteredScenario) => void;
+  /** Every screen this row could go to -- its own screen excluded. */
+  targetsFor: (scenario: RegisteredScenario) => MoveTarget[];
+  onMove: (scenario: RegisteredScenario, target: MoveTarget) => void;
 }) {
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+
+  // A click anywhere else closes the open menu.
+  useEffect(() => {
+    if (!menuFor) return;
+    const close = () => setMenuFor(null);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [menuFor]);
+
   if (scenarios.length === 0) {
     return (
       <p className="registry-empty">
@@ -42,6 +65,7 @@ export function ScenarioTable({
             <th>Kurallar</th>
             <th>Ön koşul</th>
             <th>Açıklama</th>
+            <th aria-label="Taşı" />
           </tr>
         </thead>
         <tbody>
@@ -57,7 +81,9 @@ export function ScenarioTable({
                 </button>
                 <div className="sc-path">
                   {scenario.path}
-                  {scenario.problem ? null : (
+                  {/* Only once there ARE Gherkin steps: "0 adım" on every
+                      natural-language scenario read as an error. */}
+                  {scenario.problem || scenario.stepCount === 0 ? null : (
                     <span className="sc-steps"> · {scenario.stepCount} adım</span>
                   )}
                 </div>
@@ -94,6 +120,43 @@ export function ScenarioTable({
               <td><Precondition scenario={scenario} /></td>
 
               <td className="sc-desc">{scenario.description}</td>
+
+              {/* Clicks here must not open the row underneath. */}
+              <td className="sc-move" onClick={(event) => event.stopPropagation()}>
+                <button
+                  type="button"
+                  className="btn btn-ghost sc-move-btn"
+                  title="Başka bir ekrana taşı"
+                  aria-haspopup="menu"
+                  aria-expanded={menuFor === scenario.path}
+                  onClick={() => setMenuFor(menuFor === scenario.path ? null : scenario.path)}
+                >
+                  ⇄
+                </button>
+                {menuFor === scenario.path ? (
+                  <div className="sc-move-menu" role="menu">
+                    <div className="sc-move-head">TAŞI →</div>
+                    {targetsFor(scenario).length === 0 ? (
+                      <div className="sc-move-empty">Taşınabilecek başka ekran yok</div>
+                    ) : (
+                      targetsFor(scenario).map((target) => (
+                        <button
+                          key={target.product + "/" + target.flow}
+                          type="button"
+                          role="menuitem"
+                          className="sc-move-item unstyled-button"
+                          onClick={() => {
+                            setMenuFor(null);
+                            onMove(scenario, target);
+                          }}
+                        >
+                          {target.label}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                ) : null}
+              </td>
             </tr>
           ))}
         </tbody>

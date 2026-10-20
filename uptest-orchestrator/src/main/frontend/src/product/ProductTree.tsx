@@ -32,6 +32,7 @@ export function ProductTree({
   onToggle,
   onCreateMenu,
   onAddScreen,
+  onNewScenario,
 }: {
   products: ProductSummary[];
   registryOf: (app: string, product: string) => ProductRegistry | null;
@@ -43,6 +44,8 @@ export function ProductTree({
   /** Resolve to null when created, otherwise the reason it was not. */
   onCreateMenu: (name: string, app: string) => Promise<string | null>;
   onAddScreen: (app: string, product: string, name: string) => Promise<string | null>;
+  /** "+" beside a screen: open the new-scenario form for it. */
+  onNewScenario: (screen: TreeSelection) => void;
 }) {
   const groups = groupByCategory(products);
 
@@ -98,19 +101,21 @@ export function ProductTree({
                     && selection?.product === product.product
                     && selection?.flow === screen.flow;
 
+                  // Two buttons in a row, not one: nested buttons are invalid HTML.
                   return (
-                    <button
+                    <div
                       key={product.app + "/" + product.product + "/" + screen.flow}
-                      type="button"
-                      className={"tree-row is-screen unstyled-button"
-                        + (selected ? " is-active" : "")}
-                      onClick={() => onSelect({
-                        app: product.app, product: product.product,
-                        flow: screen.flow, path: null,
-                      })}
+                      className={"tree-row is-screen" + (selected ? " is-active" : "")}
                     >
-                      <span className="tree-caret" aria-hidden="true">▸</span>
-                      <span className="tree-label">
+                      <button
+                        type="button"
+                        className="tree-main unstyled-button"
+                        onClick={() => onSelect({
+                          app: product.app, product: product.product,
+                          flow: screen.flow, path: null,
+                        })}
+                      >
+                        <span className="tree-caret" aria-hidden="true">▸ </span>
                         {screen.name || screen.flow}
                         {screen.declared ? null : (
                           <span className="tree-note"
@@ -118,9 +123,21 @@ export function ProductTree({
                             bildirilmemiş
                           </span>
                         )}
-                      </span>
+                      </button>
                       <span className="tree-count">{screen.scenarioCount}</span>
-                    </button>
+                      <button
+                        type="button"
+                        className="tree-plus unstyled-button"
+                        title="Bu ekrana yeni senaryo ekle"
+                        aria-label={"Yeni senaryo: " + (screen.name || screen.flow)}
+                        onClick={() => onNewScenario({
+                          app: product.app, product: product.product,
+                          flow: screen.flow, path: null,
+                        })}
+                      >
+                        +
+                      </button>
+                    </div>
                   );
                 })
               : null}

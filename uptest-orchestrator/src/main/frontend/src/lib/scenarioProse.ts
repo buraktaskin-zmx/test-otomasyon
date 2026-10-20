@@ -160,7 +160,8 @@ export function writeDoc(feature: string, doc: ScenarioDoc): string {
   const pad = at.indent + "  ";
   const body: string[] = [];
   for (const section of ["preconditions", "steps", "expected"] as Section[]) {
-    const items = doc[section].map((item) => item.trim()).filter(Boolean);
+    // A line typed as "- foo" in a free-text box is still one item, "foo".
+    const items = doc[section].map((item) => item.trim().replace(/^[-•*]\s+/, "")).filter(Boolean);
     if (items.length === 0) continue;
     body.push("", pad + LABEL[section], ...items.map((item) => pad + "- " + item));
   }

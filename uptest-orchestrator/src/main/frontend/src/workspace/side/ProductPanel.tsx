@@ -6,7 +6,11 @@ import { ScenarioDetail } from "../../product/ScenarioDetail";
 import { ScenarioTable } from "../../product/ScenarioTable";
 import type { useProducts } from "../../hooks/useProducts";
 import type { useTestUsers } from "../../hooks/useTestUsers";
-import { BROWSER_CLOSED, addScreen, createMenu, explore } from "../../api/endpoints";
+import {
+  BROWSER_CLOSED, addScreen, createMenu, createScenarioFile, explore, moveScenario,
+} from "../../api/endpoints";
+import type { MoveTarget } from "../../product/ScenarioTable";
+import { NewScenario } from "../../product/NewScenario";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
 import { docAsText, readDoc } from "../../lib/scenarioProse";
 import { useToast } from "../../ui/Toast";
@@ -51,6 +55,11 @@ export function ProductPanel({
            file: { app: string; product: string; path: string }) => void;
 }) {
   const [selection, setSelection] = useState<TreeSelection | null>(null);
+  // "+" beside a screen: the main area shows the new-scenario form for it.
+  const [creating, setCreating] = useState(false);
+  useEffect(() => {
+    if (selection?.path) setCreating(false);
+  }, [selection?.path]);
 
   /* The login this screen's scenarios run under. It belongs to the PANEL,
      not to the scenario: a file in products/ is written once and run by
@@ -99,17 +108,53 @@ export function ProductPanel({
 
   /* The tree lists SCREENS straight under a category, and a product's
      screens are only known once its registry is read -- so opening a
-     category reads every product in it. */
+     category reads every product in it. A selected screen reads every
+     product of its app too: "Taşı" lists their screens by name. */
   useEffect(() => {
     for (const product of products.products) {
       const name = product.category?.trim() ?? "";
-      const open = !name || expanded.has(categoryKey(name));
+      const open = !name || expanded.has(categoryKey(name))
+        || product.app === selection?.app;
       if (open && !products.registry(product.app, product.product)) {
         void products.openRegistry(product.app, product.product);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [products.products, expanded]);
+  }, [products.products, expanded, selection?.app]);
+
+  /** Declared screens of every product of this app, the row's own excluded. */
+  const targetsFor = (row: { flow: string }): MoveTarget[] => {
+    if (!selection) return [];
+    return products.products
+      .filter((product) => product.app === selection.app)
+      .flatMap((product) => {
+        const reg = products.registry(product.app, product.product);
+        const screens = reg
+          ? reg.screens.filter((s) => s.declared).map((s) => ({ flow: s.flow, name: s.name || s.flow }))
+          : product.flows.map((flow) => ({ flow, name: flow }));
+        return screens.map((s) => ({
+          product: product.product,
+          flow: s.flow,
+          label: s.name + (product.product === selection.product ? "" : " · " + product.name),
+        }));
+      })
+      .filter((t) => !(t.product === selection.product && t.flow === row.flow));
+  };
+
+  const moveTo = async (row: { path: string }, target: MoveTarget) => {
+    if (!selection) return;
+    const result = await moveScenario(
+      selection.app, selection.product, row.path, target.product, target.flow);
+    if (!result.ok) {
+      toast("Taşınamadı: " + result.error, true);
+      return;
+    }
+    await products.openRegistry(selection.app, selection.product);
+    if (target.product !== selection.product) {
+      void products.openRegistry(selection.app, target.product);
+    }
+    toast("Senaryo " + target.label + " ekranına taşındı");
+  };
 
   /* Changing screen closes whatever scenario was open. Without this the
      detail view would survive into a screen the file does not belong to,
@@ -199,7 +244,14 @@ export function ProductPanel({
           products={products.products}
           registryOf={products.registry}
           selection={selection}
-          onSelect={setSelection}
+          onSelect={(next) => {
+            setCreating(false);
+            setSelection(next);
+          }}
+          onNewScenario={(screen) => {
+            setSelection(screen);
+            setCreating(true);
+          }}
           expanded={expanded}
           onToggle={toggle}
           onCreateMenu={async (name, app) => {
@@ -317,7 +369,25 @@ export function ProductPanel({
                     files. This panel is read-only BECAUSE they live in git,
                     so an IDE already shows them with history and a diff --
                     rendering them here bought a second, worse reader. */}
-              {selection.path ? (
+              {creating && selection.flow ? (
+                <NewScenario
+                  screen={screen?.name || selection.flow}
+                  onCancel={() => setCreating(false)}
+                  onSave={async (feature) => {
+                    const result = await createScenarioFile(
+                      selection.app, selection.product, selection.flow!, feature);
+                    if (!result.ok) {
+                      toast("Kaydedilemedi: " + result.error, true);
+                      return false;
+                    }
+                    await products.openRegistry(selection.app, selection.product);
+                    toast("Senaryo oluşturuldu");
+                    setCreating(false);
+                    setSelection({ ...selection, path: result.body.path });
+                    return true;
+                  }}
+                />
+              ) : selection.path ? (
                 <ScenarioDetail
                   detail={products.scenario}
                   busy={products.scenarioBusy}
@@ -353,6 +423,8 @@ export function ProductPanel({
                   busy={busy}
                   onOpen={(scenario) =>
                     setSelection({ ...selection, flow: scenario.flow, path: scenario.path })}
+                  targetsFor={targetsFor}
+                  onMove={(scenario, target) => void moveTo(scenario, target)}
                 />
               )}
             </>

@@ -99,8 +99,6 @@ export function ScenarioDetail({
       </button>
     );
 
-  const setField = <K extends keyof ScenarioDoc>(key: K, value: ScenarioDoc[K]) =>
-    setDocDraft((was) => (was ? { ...was, [key]: value } : was));
 
   return (
     <div className="sd">
@@ -162,26 +160,7 @@ export function ScenarioDetail({
           </header>
 
           {editing === "prose" && docDraft ? (
-            <div className="sd-doc">
-              <label className="sd-doc-label" htmlFor="sdTitle">Başlık</label>
-              <input
-                id="sdTitle"
-                className="search"
-                value={docDraft.title}
-                onChange={(event) => setField("title", event.target.value)}
-              />
-              <ListEditor label="Kural" items={docDraft.rules} placeholder="R-YL-006"
-                          onChange={(items) => setField("rules", items)} />
-              <ListEditor label="Ön koşul" items={docDraft.preconditions}
-                          placeholder="İlgili firma verisi bulunabilmeli"
-                          onChange={(items) => setField("preconditions", items)} />
-              <ListEditor label="Adımlar" items={docDraft.steps}
-                          placeholder="Alıcı Listesi İşlemleri ekranını aç"
-                          onChange={(items) => setField("steps", items)} />
-              <ListEditor label="Beklenen" items={docDraft.expected}
-                          placeholder="İşlem Bilgileri ekranı görünür"
-                          onChange={(items) => setField("expected", items)} />
-            </div>
+            <DocEditor doc={docDraft} onChange={setDocDraft} />
           ) : doc ? (
             <div className="sd-doc">
               <h4 className="sd-plain-title">{doc.title}</h4>
@@ -237,6 +216,66 @@ function DocList({
       ) : (
         <ul className="sd-plain">{items.map((item, i) => <li key={i}>{item}</li>)}</ul>
       )}
+    </div>
+  );
+}
+
+/** The five natural-language fields, editable. Shared by Düzenle and "+ yeni senaryo". */
+export function DocEditor({
+  doc,
+  onChange,
+}: {
+  doc: ScenarioDoc;
+  onChange: (doc: ScenarioDoc) => void;
+}) {
+  const set = <K extends keyof ScenarioDoc>(key: K, value: ScenarioDoc[K]) =>
+    onChange({ ...doc, [key]: value });
+  return (
+    <div className="sd-doc">
+      <label className="sd-doc-label" htmlFor="sdTitle">Başlık</label>
+      <input
+        id="sdTitle"
+        className="search"
+        value={doc.title}
+        placeholder="Yeni liste bilgileri onay özetinde görünür"
+        onChange={(event) => set("title", event.target.value)}
+      />
+      <ListEditor label="Kural" items={doc.rules} placeholder="R-YL-006"
+                  onChange={(items) => set("rules", items)} />
+      <ListEditor label="Ön koşul" items={doc.preconditions}
+                  placeholder="İlgili firma verisi bulunabilmeli"
+                  onChange={(items) => set("preconditions", items)} />
+      <TextEditor label="Adımlar" items={doc.steps}
+                  placeholder={"Alıcı Listesi İşlemleri ekranını aç\nİşlemler panelinden Yeni Liste Oluştur'a tıkla"}
+                  onChange={(items) => set("steps", items)} />
+      <TextEditor label="Beklenen" items={doc.expected}
+                  placeholder={"İşlem Bilgileri ekranı görünür\nDöviz Cinsi: TL"}
+                  onChange={(items) => set("expected", items)} />
+    </div>
+  );
+}
+
+/** Free text, one item per line. Blank lines are dropped when the file is written. */
+function TextEditor({
+  label,
+  items,
+  placeholder,
+  onChange,
+}: {
+  label: string;
+  items: string[];
+  placeholder: string;
+  onChange: (items: string[]) => void;
+}) {
+  return (
+    <div className="sd-doc-block">
+      <span className="sd-doc-label">{label} <small>(her satır bir madde)</small></span>
+      <textarea
+        className="search sd-edit sd-edit-medium"
+        value={items.join("\n")}
+        placeholder={placeholder}
+        onChange={(event) => onChange(event.target.value.split("\n"))}
+      />
     </div>
   );
 }

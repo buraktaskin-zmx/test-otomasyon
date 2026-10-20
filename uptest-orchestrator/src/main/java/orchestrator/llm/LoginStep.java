@@ -72,10 +72,22 @@ public final class LoginStep {
 
         // Indent the login like the steps around it, not like the title.
         String indent = title.group(1) + "  ";
-        return withoutLogin.substring(0, title.end())
+
+        // Before the FIRST STEP, not straight under the title: a registered
+        // scenario carries its natural-language description (Ön koşul /
+        // Adımlar / Beklenen) between the two, and Gherkin refuses free text
+        // after a step -- grafting the login above it made every such file
+        // unparseable the moment it was run. With no description the first
+        // step IS the next line, so generated drafts land exactly as before.
+        Matcher step = FIRST_STEP.matcher(withoutLogin);
+        int at = step.find(title.end()) ? step.start() : title.end();
+        return withoutLogin.substring(0, at)
                 + indent + loginStep + "\n"
-                + withoutLogin.substring(title.end());
+                + withoutLogin.substring(at);
     }
+
+    private static final Pattern FIRST_STEP =
+            Pattern.compile("(?m)^[ \\t]*(?:Given|When|Then|And|But|\\*)[ \\t]");
 
     private static boolean isBlank(String value) {
         return value == null || value.isBlank();

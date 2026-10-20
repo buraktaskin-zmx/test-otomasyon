@@ -80,6 +80,37 @@ public class ProductController {
     public record NewScreen(String name) {
     }
 
+    public record MoveTarget(String product, String flow) {
+    }
+
+    public record NewScenario(String flow, String feature) {
+    }
+
+    /** "+" beside a screen: a new scenario file there (see ProductService.createScenario). */
+    @PostMapping("/{app}/{product}/scenarios")
+    public ResponseEntity<?> createScenario(@PathVariable String app, @PathVariable String product,
+                                            @RequestBody NewScenario body) {
+        ProductService.Created created = products.createScenario(app, product,
+                body == null ? null : body.flow(), body == null ? null : body.feature());
+        if (created.refused() != null) {
+            return ResponseEntity.badRequest().body(Map.of("error", created.refused()));
+        }
+        return ResponseEntity.status(201).body(Map.of("path", created.key()));
+    }
+
+    /** "Taşı": moves a scenario to another declared screen of the same app. */
+    @PostMapping("/{app}/{product}/scenario/move")
+    public ResponseEntity<?> moveScenario(@PathVariable String app, @PathVariable String product,
+                                          @RequestParam String path,
+                                          @RequestBody MoveTarget body) {
+        ProductService.Created moved = products.moveScenario(app, product, path,
+                body == null ? null : body.product(), body == null ? null : body.flow());
+        if (moved.refused() != null) {
+            return ResponseEntity.badRequest().body(Map.of("error", moved.refused()));
+        }
+        return ResponseEntity.ok(Map.of("path", moved.key()));
+    }
+
     /** "+ Ekran ekle": declares a screen on this product (see ProductService.addScreen). */
     @PostMapping("/{app}/{product}/screens")
     public ResponseEntity<?> addScreen(@PathVariable String app, @PathVariable String product,

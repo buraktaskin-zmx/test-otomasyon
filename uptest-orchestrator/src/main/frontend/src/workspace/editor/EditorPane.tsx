@@ -35,6 +35,7 @@ export function EditorPane({
   multiBar,
   runFocused,
   file,
+  login,
 }: {
   feature: string;
   onChange: (value: string) => void;
@@ -62,6 +63,12 @@ export function EditorPane({
     onCancel: () => void;
     onSave: () => void;
   } | null;
+  /** The login the scenario runs under; choosing one rewrites its login line. */
+  login?: {
+    users: Array<{ id: string; label: string }>;
+    value: string;
+    onChange: (id: string) => void;
+  };
 }) {
   /* On by default, and switchable: colouring is a reading aid, and a reading
      aid that cannot be turned off is a liability the first time it is wrong
@@ -84,6 +91,23 @@ export function EditorPane({
         runDisabled={runDisabled}
         extra={
           <>
+            {login ? (
+              <label className="editor-login">
+                <span>CIF</span>
+                <select
+                  className="search"
+                  value={login.value}
+                  onChange={(event) => login.onChange(event.target.value)}
+                >
+                  {login.users.length === 0 ? (
+                    <option value="">(kayıtlı kullanıcı yok)</option>
+                  ) : null}
+                  {login.users.map((user) => (
+                    <option key={user.id} value={user.id}>{user.label}</option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
             {file ? (
               file.editing ? (
                 <>

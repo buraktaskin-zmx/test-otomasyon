@@ -261,6 +261,106 @@ public class ProductService {
         return new Created(flow, null);
     }
 
+    /**
+     * Moves a scenario file to another screen -- of this product or of another
+     * product of the SAME application, since a scenario logs into one app.
+     *
+     * The target must be a DECLARED screen: the tree lists those, so a move
+     * anywhere else would make the file vanish from the screen. Never
+     * overwrites: a file of the same name already there is a refusal.
+     *
+     * @return the moved file's path relative to the TARGET product's scenarios/
+     */
+    public Created moveScenario(String app, String product, String path,
+                                String toProduct, String toFlow) {
+        Optional<Path> from = folder(app, product);
+        Optional<Path> to = folder(app, toProduct);
+        if (from.isEmpty() || to.isEmpty()) {
+            return new Created(null, "Ürün bulunamadı");
+        }
+        if (toFlow == null || !SAFE_NAME.matcher(toFlow).matches()) {
+            return new Created(null, "Geçersiz ekran: " + toFlow);
+        }
+        boolean declared = load(app, toProduct).map(m -> m.flows().contains(toFlow)).orElse(false);
+        if (!declared) {
+            return new Created(null, "Ekran tanımlı değil: " + toFlow);
+        }
+
+        Path sourceRoot = from.get().resolve("scenarios").normalize();
+        Path source = sourceRoot.resolve(path == null ? "" : path).normalize();
+        if (!source.startsWith(sourceRoot) || !Files.isRegularFile(source)
+                || !source.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".feature")) {
+            return new Created(null, "Senaryo bulunamadı: " + path);
+        }
+        Path targetDir = to.get().resolve("scenarios").resolve(toFlow).normalize();
+        Path target = targetDir.resolve(source.getFileName().toString());
+        if (target.equals(source)) {
+            return new Created(null, "Senaryo zaten bu ekranda");
+        }
+        if (Files.exists(target)) {
+            return new Created(null, "Hedef ekranda aynı adlı bir dosya var: " + source.getFileName());
+        }
+        try {
+            Files.createDirectories(targetDir);
+            Files.move(source, target);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Cannot move " + source + " to " + target, e);
+        }
+        return new Created(toFlow + "/" + source.getFileName(), null);
+    }
+
+    /**
+     * A NEW scenario file on a declared screen, named by the server:
+     * the next two-digit number in that folder plus the title's slug
+     * ("10-yeni-liste-iptal.feature"). Refuses text that does not parse, and
+     * never overwrites -- a name collision is a refusal, not a replacement.
+     *
+     * @return the new file's path relative to the product's scenarios/
+     */
+    public Created createScenario(String app, String product, String flow, String text) {
+        Optional<Path> folder = folder(app, product);
+        if (folder.isEmpty()) {
+            return new Created(null, "Ürün bulunamadı: " + app + "/" + product);
+        }
+        if (flow == null || !SAFE_NAME.matcher(flow).matches()
+                || !load(app, product).map(m -> m.flows().contains(flow)).orElse(false)) {
+            return new Created(null, "Ekran tanımlı değil: " + flow);
+        }
+        if (text == null || text.isBlank()) {
+            return new Created(null, "Senaryo metni boş");
+        }
+        ScenarioCard card = ScenarioLibrary.parse("yeni.feature", flow, text);
+        if (card.problem() != null) {
+            return new Created(null, "Gherkin okunamadı: " + card.problem());
+        }
+        String name = slug(card.title());
+        if (name.isEmpty()) {
+            return new Created(null, "Senaryo adı gerekli");
+        }
+
+        Path dir = folder.get().resolve("scenarios").resolve(flow).normalize();
+        int next = 1;
+        try {
+            Files.createDirectories(dir);
+            try (Stream<Path> files = Files.list(dir)) {
+                next = files.map(p -> p.getFileName().toString())
+                        .filter(n -> n.matches("\\d+-.*\\.feature"))
+                        .mapToInt(n -> Integer.parseInt(n.substring(0, n.indexOf('-'))))
+                        .max().orElse(0) + 1;
+            }
+            String fileName = String.format("%02d-%s.feature",
+                    next, name.length() > 50 ? name.substring(0, 50) : name);
+            Path file = dir.resolve(fileName);
+            if (Files.exists(file)) {
+                return new Created(null, "Bu adla bir dosya zaten var: " + fileName);
+            }
+            Files.writeString(file, text, StandardCharsets.UTF_8);
+            return new Created(flow + "/" + fileName, null);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Cannot create scenario under " + dir, e);
+        }
+    }
+
     /** product.yaml text with one more flow and its display name. */
     static String withScreen(String yaml, String flow, String name) {
         String nl = yaml.contains("\r\n") ? "\r\n" : "\n";

@@ -195,6 +195,24 @@ export const addScreen = (app: string, product: string, name: string) =>
     { name },
   );
 
+/** "+" beside a screen: a new scenario file there; answers with its path. */
+export const createScenarioFile = (app: string, product: string, flow: string, feature: string) =>
+  api<{ path: string }>(
+    "POST",
+    "/api/v1/products/" + encodeURIComponent(app) + "/" + encodeURIComponent(product) + "/scenarios",
+    { flow, feature },
+  );
+
+/** "Taşı": moves a scenario to another declared screen of the same app. */
+export const moveScenario = (app: string, product: string, path: string,
+                             toProduct: string, toFlow: string) =>
+  api<{ path: string }>(
+    "POST",
+    "/api/v1/products/" + encodeURIComponent(app) + "/" + encodeURIComponent(product)
+      + "/scenario/move?path=" + encodeURIComponent(path),
+    { product: toProduct, flow: toFlow },
+  );
+
 /** ExploreController's error code when the operator closed the agent's browser. */
 export const BROWSER_CLOSED = "BROWSER_CLOSED";
 
