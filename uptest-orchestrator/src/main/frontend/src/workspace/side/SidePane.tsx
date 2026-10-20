@@ -14,7 +14,7 @@ import type { ReactNode } from "react";
   .is-active, exactly as the tab strip did.
 */
 
-export type SideTab = "product" | "users" | "timeline" | "chat" | "suggest" | "multi" | "agent";
+export type SideTab = "product" | "users" | "timeline" | "chat" | "suggest" | "agent";
 
 /*
   Inline SVG, 16px, stroke-based.
@@ -75,13 +75,6 @@ const ICONS: Record<SideTab, ReactNode> = {
       <path d="M8 2.2 9.3 6.1 13.2 7.4 9.3 8.7 8 12.6 6.7 8.7 2.8 7.4 6.7 6.1z" />
     </Icon>
   ),
-  // A batch: stacked documents.
-  multi: (
-    <Icon>
-      <rect x="2.5" y="2.5" width="8" height="8" rx="1.2" />
-      <path d="M5.5 13.5h7a1 1 0 0 0 1-1v-7" />
-    </Icon>
-  ),
   // The agent: a browser window it drives.
   agent: (
     <Icon>
@@ -116,8 +109,7 @@ export function SideRail({
   const tabs: ReadonlyArray<{ id: SideTab; label: string }> = [
     { id: "product", label: "Kayıtlı Senaryolar" },
     { id: "chat", label: "Chat" },
-    { id: "suggest", label: "AI Üret" },
-    { id: "multi", label: "Çoklu Üret" },
+    { id: "suggest", label: "AI ile Senaryo Üret" },
     ...(agentVisible ? ([{ id: "agent", label: "Ekran Keşfi" }] as const) : []),
     { id: "timeline", label: "Çalıştır" },
     // Last, and pushed to the bottom by CSS: set up once, rarely revisited.

@@ -3,7 +3,6 @@ import { EditorPane } from "./editor/EditorPane";
 import { EditorPaneHead } from "./editor/EditorPaneHead";
 import { MultiBar } from "./multi/MultiBar";
 import { MultiList } from "./multi/MultiList";
-import { MultiPanel } from "./multi/MultiPanel";
 import type { Draft } from "./multi/draft";
 import { AgentPanel } from "./side/AgentPanel";
 import { ProductPanel } from "./side/ProductPanel";
@@ -28,22 +27,6 @@ import { useToast } from "../ui/Toast";
 import type { Origin, RunLogin, ValidationResult } from "../api/types";
 import type { useVocabulary } from "../hooks/useVocabulary";
 
-/* app.js:18-31, verbatim. */
-const SAMPLE = [
-  "Feature: Banko Ödeme Talebi",
-  "",
-  "  Scenario: Kullanıcı Banko ekranından ödeme talep eder",
-  '    Given login with cif "DI00002018" and userid "3014"',
-  '    And navigate to "NAKİT YÖNETİMİ" "Ödeme Oluştur / Talep Et"',
-  '    And click "Ödeme Talep Et"',
-  '    And enter "TCKN / VKN" "21203030786"',
-  '    And enter amount "Ödeme Tutarı" "1250,55"',
-  '    And select account "0006 7010 0000 0003 4322" from "Alıcı Hesabı"',
-  '    And click "Devam"',
-  '    Then verify the "Ödeme Tutarı" has amount "1250,55"',
-  "",
-].join("\n");
-
 /*
   Owns the editor text, origin pinning, validation, the current run, and the
   Çoklu Üret draft batch -- every piece of state more than one side panel
@@ -62,7 +45,8 @@ export function WorkspaceView({
   active: boolean;
   vocabulary: ReturnType<typeof useVocabulary>;
 }) {
-  const [feature, setFeature] = useState(SAMPLE);
+  // Starts empty: the editor shows where results will appear until there is one.
+  const [feature, setFeature] = useState("");
   const [sideTab, setSideTab] = useState<SideTab>("timeline");
   /* Which half of the run panel shows. Owned here rather than inside the
      panel because the two forced switches below have to set it: a panel
@@ -109,7 +93,6 @@ export function WorkspaceView({
   /* ------------------------------ Çoklu Üret ------------------------------ */
 
   const [drafts, setDrafts] = useState<Draft[]>([]);
-  const [multiNotes, setMultiNotes] = useState<string[]>([]);
   const [activeDraft, setActiveDraft] = useState<number | null>(null);
   const activeDraftRef = useRef<number | null>(null);
   const draftsRef = useRef<Draft[]>(drafts);
@@ -196,14 +179,14 @@ export function WorkspaceView({
      scenario, no list to go back to (app.js:914-922). */
   const clearBatch = useCallback(() => {
     setDrafts([]);
-    setMultiNotes([]);
     activeDraftRef.current = null;
     setActiveDraft(null);
   }, []);
 
-  const handleBatchGenerated = useCallback((newDrafts: Draft[], notes: string[]) => {
+  /* The planner's notes (e.g. "no max_length in the catalog for …") are not
+     shown: the analyst asked not to have them above the list. */
+  const handleBatchGenerated = useCallback((newDrafts: Draft[]) => {
     setDrafts(newDrafts);
-    setMultiNotes(notes);
     activeDraftRef.current = null;
     setActiveDraft(null);
   }, []);
@@ -345,7 +328,7 @@ export function WorkspaceView({
             validateDisabled
             runDisabled
           />
-          <MultiList drafts={drafts} notes={multiNotes} onOpen={openDraft} />
+          <MultiList drafts={drafts} onOpen={openDraft} />
         </div>
       ) : (
         <EditorPane
@@ -419,14 +402,6 @@ export function WorkspaceView({
           users={users}
           preselect={lastSavedCatalog}
           onGenerated={handleGenerated}
-          onFallbackChange={setFallbackOrigin}
-        />
-        <MultiPanel
-          active={sideTab === "multi"}
-          catalogs={catalogs.catalogs}
-          products={products}
-          users={users}
-          preselect={lastSavedCatalog}
           onBatchGenerated={handleBatchGenerated}
           onFallbackChange={setFallbackOrigin}
         />

@@ -149,6 +149,33 @@ body {
    off with no scrollbar to reach it. */
 .side-panel:has(> .suggest-form) { overflow-y: auto; }
 
+/* "Çoklu üret" -- a checkbox with its explanation beside it, as one card. */
+.multi-toggle {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+}
+
+.multi-toggle:has(input:checked) {
+    border-color: var(--brand);
+    background: var(--brand-tint);
+}
+
+.multi-toggle input { margin-top: 3px; accent-color: var(--brand); }
+
+.multi-toggle span { display: flex; flex-direction: column; gap: 2px; }
+
+.multi-toggle small {
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    color: var(--text-muted);
+}
+
 /* ----- Ekran Keşfi: form left, result right ----- */
 
 .agent-panel { overflow: hidden; }
@@ -357,6 +384,21 @@ body {
 .editor-stack .editor {
     flex: 1 1 auto;
 }
+
+/* Over an empty editor; clicks pass through so typing still works. */
+.editor-empty {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-1);
+    text-align: center;
+    pointer-events: none;
+}
+
+.editor-empty .run-empty-text { max-width: 280px; }
 
 .editor-stack.is-coloured .editor,
 .editor-highlight {

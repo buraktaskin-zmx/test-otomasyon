@@ -90,6 +90,15 @@ export function EditorPane({
         <div className={"editor-stack" + (coloured ? " is-coloured" : "")}>
           {coloured ? <Highlight text={feature} ref={highlightRef} /> : null}
           <GherkinEditor ref={textareaRef} value={feature} onChange={onChange} onScroll={onScroll} />
+          {feature.trim() ? null : (
+            <div className="editor-empty" aria-hidden="true">
+              <p className="run-empty-title">Senaryolar burada görünecek</p>
+              <p className="run-empty-text">
+                Soldan <b>AI ile Senaryo Üret</b> ile üretin ya da bir senaryoyu buraya
+                yazın veya yapıştırın.
+              </p>
+            </div>
+          )}
         </div>
       </div>
       <ValidationPanel

@@ -30,7 +30,7 @@ export function DepthChoiceGroup({ value, onChange }: { value: Depth; onChange: 
         <span>
           <b>Sonuna kadar — Onay'a bas</b>
           <small className="choice-warn">
-            ⚠ Her senaryo test bankasında <b>gerçek bir kayıt</b> oluşturur.
+            ⚠ Senaryolar test ortamında gerçek kayıt oluşturur, günceller veya siler.
           </small>
         </span>
       </label>
