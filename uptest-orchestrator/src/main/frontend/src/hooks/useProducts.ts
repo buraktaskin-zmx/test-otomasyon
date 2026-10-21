@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  getProduct, getProductScenarios, getProducts, getScenario, saveScenarioFile,
+  getProduct, getProductScenarios, getProducts, getScenario, saveScenarioEdit,
 } from "../api/endpoints";
 import type {
   ProductDetail,
   ProductRegistry,
   ProductSummary,
   ScenarioDetail,
+  ScenarioEdit,
 } from "../api/types";
 
 /*
@@ -88,12 +89,10 @@ export function useProducts() {
   const [loadingRegistry, setLoadingRegistry] = useState("");
 
   /**
-   * Deliberately NOT cached the way `details` is.
-   *
-   * A .feature file is edited in an IDE while this screen is open, so the
-   * table has to re-read on every visit; a step count from five minutes ago
-   * is the kind of wrong that nobody notices. The previous answer is kept in
-   * state only so the rows do not blank out while the new one is in flight.
+   * Deliberately NOT cached the way `details` is: another analyst may have
+   * saved a scenario since, and a step count from five minutes ago is the
+   * kind of wrong that nobody notices. The previous answer is kept in state
+   * only so the rows do not blank out while the new one is in flight.
    */
   const openRegistry = useCallback(
     async (app: string, product: string): Promise<ProductRegistry | null> => {
@@ -143,11 +142,11 @@ export function useProducts() {
 
   const closeScenario = useCallback(() => setScenario(null), []);
 
-  /** Writes the file, shows it as written, and re-reads the product's table
-   *  so a changed title or description is not stale there. */
+  /** Saves to the database, shows it as saved, and re-reads the product's
+   *  table so a changed title or description is not stale there. */
   const saveScenario = useCallback(
-    async (app: string, product: string, path: string, feature: string) => {
-      const result = await saveScenarioFile(app, product, path, feature);
+    async (app: string, product: string, path: string, edit: ScenarioEdit) => {
+      const result = await saveScenarioEdit(app, product, path, edit);
       if (result.ok) {
         setScenario(result.body);
         void openRegistry(app, product);

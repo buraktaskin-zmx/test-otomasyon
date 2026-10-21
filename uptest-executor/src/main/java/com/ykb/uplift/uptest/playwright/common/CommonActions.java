@@ -1164,9 +1164,17 @@ public class CommonActions {
     public CommonActions verifyFieldEquals(String label, String expectedText) {
         Locator container = findValueElement(label);
         Locator inputFields = container.locator("input");
+        // A Select2 dropdown's container holds its SEARCH box -- v3's
+        // "select2-input", always empty -- so the input branch below read ""
+        // on a field showing "Seçiniz". The value a person reads is the chosen
+        // text: ".select2-chosen" on v3, ".select2-selection__rendered" on v4.
+        Locator select2Shown = container.locator(".select2-chosen, .select2-selection__rendered");
 
         try {
-            if (inputFields.count() > 0) {
+            if (select2Shown.count() > 0) {
+                assertThat(select2Shown.first()).hasText(expectedText.trim(),
+                        new LocatorAssertions.HasTextOptions().setTimeout(VERIFY_TIMEOUT_MS));
+            } else if (inputFields.count() > 0) {
                 // Entry screen: input field. Auto-wait until non-empty, then read.
                 assertThat(inputFields.first()).hasValue(expectedText.trim(),
                         new LocatorAssertions.HasValueOptions().setTimeout(VERIFY_TIMEOUT_MS));

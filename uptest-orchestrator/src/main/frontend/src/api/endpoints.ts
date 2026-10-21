@@ -22,6 +22,7 @@ import type {
   ProductsResponse,
   SaveUserRequest,
   ScenarioDetail,
+  ScenarioEdit,
   TestUser,
   TestUsersResponse,
   RunDetail,
@@ -216,14 +217,21 @@ export const moveScenario = (app: string, product: string, path: string,
 /** ExploreController's error code when the operator closed the agent's browser. */
 export const BROWSER_CLOSED = "BROWSER_CLOSED";
 
-/** Overwrites an existing scenario file; answers like getScenario. */
-export const saveScenarioFile = (app: string, product: string, path: string, feature: string) =>
+/** Saves an edit to a scenario in the database; answers like getScenario.
+ *  409 when someone else saved it first. */
+export const saveScenarioEdit = (app: string, product: string, path: string, edit: ScenarioEdit) =>
   api<ScenarioDetail>(
     "PUT",
     "/api/v1/products/" + encodeURIComponent(app) + "/"
       + encodeURIComponent(product) + "/scenario?path=" + encodeURIComponent(path),
-    { feature },
+    edit,
   );
+
+/** Writes every scenario out as .feature files under products/. Never deletes;
+ *  files the database no longer has come back in `notInDatabase`. */
+export const exportScenarios = () =>
+  api<{ written: number; unchanged: number; notInDatabase: string[] }>(
+    "POST", "/api/v1/products/export");
 
 export const getProductScenarios = (app: string, product: string) =>
   api<ProductRegistry>(

@@ -1,21 +1,22 @@
 import { useEffect, useState } from "react";
 import { tokenizeGherkinLine } from "../lib/gherkin";
-import { joinTags, readDoc, splitTags, writeDoc } from "../lib/scenarioProse";
 import type { ScenarioDoc } from "../lib/scenarioProse";
-import type { ScenarioDetail as Detail } from "../api/types";
+import type { ScenarioDetail as Detail, ScenarioEdit } from "../api/types";
 
 /*
   Bir senaryo, iki dilde.
 
   Solda GHERKIN: çalışan hâli. Sağda DOĞAL DİL: okunan hâli, beş alan --
-  başlık, kural, ön koşul, adımlar, beklenen (bkz. lib/scenarioProse).
+  başlık, kural, ön koşul, adımlar, beklenen.
 
   İkisi aynı şeyin iki yazımı değil, iki AYRI çalıştırma yolu. Senaryo doğal
   dille yazılır ve ajan onu tarayıcıyı sürerek uygular; Gherkin aynı senaryonun
   DETERMINISTIK TEKRARI olarak sonradan yazılır.
 
-  Her iki yarının kendi Düzenle / Kaydet düğmesi var ve ikisi de AYNI .feature
-  dosyasını yazar.
+  İkisi veritabanında ayrı alanlarda durur ve her yarının Kaydet'i yalnızca
+  kendi alanlarını gönderir: Gherkin kutusuna yapıştırılan tam bir dosya
+  doğal dil tarafına dokunamaz. `version` da gider; o arada başkası
+  kaydettiyse sunucu 409 ile reddeder.
 */
 export function ScenarioDetail({
   detail,
@@ -40,8 +41,8 @@ export function ScenarioDetail({
   aiAnswer: string;
   /** The operator closed the agent's browser mid-run. */
   aiClosed: boolean;
-  /** Writes the whole file; resolves to true when it was saved. */
-  onSave: (feature: string) => Promise<boolean>;
+  /** Saves the fields sent; resolves to true when it was saved. */
+  onSave: (edit: ScenarioEdit) => Promise<boolean>;
 }) {
   const [editing, setEditing] = useState<"gherkin" | "prose" | null>(null);
   const [draft, setDraft] = useState("");
@@ -55,9 +56,8 @@ export function ScenarioDetail({
     return <p className="registry-empty">{busy ? "Okunuyor…" : "Senaryo okunamadı."}</p>;
   }
 
-  const doc = readDoc(detail.feature);
-  // Tag lines are hidden in the Gherkin view and editor, and put back on save.
-  const { tags, body: shown } = splitTags(detail.feature);
+  const doc: ScenarioDoc = detail.doc;
+  const shown = detail.gherkin;
 
   const editGherkin = () => {
     setDraft(shown);
@@ -65,17 +65,16 @@ export function ScenarioDetail({
   };
 
   const editProse = () => {
-    if (!doc) return;
     setDocDraft({ ...doc });
     setEditing("prose");
   };
 
   const save = async () => {
-    const feature = editing === "prose" && docDraft
-      ? writeDoc(detail.feature, docDraft)
-      : joinTags(tags, draft);
+    const edit: ScenarioEdit = editing === "prose" && docDraft
+      ? { ...docDraft, version: detail.version }
+      : { gherkin: draft, version: detail.version };
     setSaving(true);
-    const ok = await onSave(feature);
+    const ok = await onSave(edit);
     setSaving(false);
     if (ok) setEditing(null);
   };
@@ -145,7 +144,7 @@ export function ScenarioDetail({
           <header className="sd-pane-head">
             <span className="sd-pane-title">DOĞAL DİL</span>
             <span className="sd-pane-gap" />
-            {doc ? editButton("prose", editProse) : null}
+            {editButton("prose", editProse)}
             {editing === "prose" ? null : (
               <button
                 type="button"
@@ -161,7 +160,7 @@ export function ScenarioDetail({
 
           {editing === "prose" && docDraft ? (
             <DocEditor doc={docDraft} onChange={setDocDraft} />
-          ) : doc ? (
+          ) : (
             <div className="sd-doc">
               <h4 className="sd-plain-title">{doc.title}</h4>
               <DocList label="Kural" items={doc.rules} chips />
@@ -169,8 +168,6 @@ export function ScenarioDetail({
               <DocList label="Adımlar" items={doc.steps} numbered />
               <DocList label="Beklenen" items={doc.expected} />
             </div>
-          ) : (
-            <p className="sd-note">Bu dosyada bir Scenario bulunamadı.</p>
           )}
 
           {aiBusy ? (

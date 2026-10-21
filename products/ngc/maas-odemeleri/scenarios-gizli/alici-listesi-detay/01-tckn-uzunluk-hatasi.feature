@@ -1,11 +1,3 @@
-# İkinci ekranın klasörü. Klasör adı EKRANDIR: alici-listesi-detay, yani
-# katalog adı da o olmalı. Uyuşmazlık gizlenmez — Ürünler ekranı kimsenin
-# ilan etmediği bir klasörü "bildirilmemiş" olarak listeler.
-#
-# @needs:LISTE_DOLU -> cozum: seed, engel: S-18. Yani ön koşul "seed"
-# görünmez, "eksik" görünür: S-18 cevaplanmadan bu senaryo koşamaz, aliasın
-# üretilebilir olması bunu değiştirmez.
-
 @R-KE-001 @needs:MAKER_01 @needs:LISTE_DOLU @mutating
 Feature: Alıcı Listesi Detay
 

@@ -21,12 +21,11 @@ import java.util.Map;
 /**
  * Reads product context out to the UI.
  *
- * Rules, test data and product.yaml stay read-only: they live in the
- * repository, where git gives review and history and a reviewer can refuse a
- * change. Scenario files are the one exception, by the analysts' request: the
- * detail view edits an EXISTING .feature in place ({@link #saveScenario}). The
- * edit still lands in the working tree, so it reaches the repository only
- * through an ordinary commit.
+ * The Kayıtlı Senaryolar tree -- ana menü, screens, scenarios -- lives in the
+ * database and is edited here ({@link #saveScenario} and the POSTs). Rules
+ * and test data stay read-only files: they live in the repository, where git
+ * gives review and history. {@link #export} writes the scenarios back out as
+ * .feature files when they should be committed.
  */
 @RestController
 @RequestMapping("/api/v1/products")
@@ -144,12 +143,9 @@ public class ProductController {
      * One product's registered scenarios, with everything the Ürünler table
      * shows in its five columns.
      *
-     * Nothing here is stored: the rows are the .feature files on disk, the
-     * rule chips are their {@code @R-...} tags, the precondition is their
-     * {@code @data:...} tag resolved against test-data.yaml, and the last run
-     * is a join against the history. A registry file listing the same
-     * scenarios would be a second source of truth, and this codebase has
-     * already paid for one of those.
+     * The rows are the scenarios in the database, the rule chips their rules,
+     * and the precondition their {@code @needs:...} resolved against
+     * test-data.yaml.
      */
     @GetMapping("/{app}/{product}/scenarios")
     public ResponseEntity<?> scenarios(@PathVariable String app, @PathVariable String product) {
@@ -170,12 +166,10 @@ public class ProductController {
     }
 
     /**
-     * One scenario's Gherkin, for the detail view behind a table row.
+     * One scenario, for the detail view behind a table row.
      *
-     * The path travels as a query parameter rather than as path segments:
-     * it contains slashes, and a wildcard mapping would also have to defend
-     * against the encoded ones. {@code ScenarioLibrary.text} still checks
-     * containment, because a path from a browser is never trusted.
+     * The path ({@code <screen>/<file name>}) travels as a query parameter
+     * rather than as path segments because it contains a slash.
      */
     @GetMapping("/{app}/{product}/scenario")
     public ResponseEntity<?> scenario(@PathVariable String app, @PathVariable String product,
@@ -185,44 +179,79 @@ public class ProductController {
             return ResponseEntity.status(404).body(Map.of(
                     "error", "Ürün bulunamadı: " + app + "/" + product));
         }
-        String text = products.scenarioText(app, product, path).orElse(null);
-        if (text == null) {
+        ScenarioStore.Stored stored = products.scenario(app, product, path).orElse(null);
+        if (stored == null) {
             return ResponseEntity.status(404).body(Map.of(
                     "error", "Senaryo bulunamadı: " + path));
         }
-        ScenarioCard card = products.scenarios(app, product).stream()
-                .filter(candidate -> candidate.path().equals(path))
-                .findFirst().orElse(null);
-
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("path", path);
-        body.put("feature", text);
-        if (card != null) {
-            body.putAll(row(card, model));
-        }
-        return ResponseEntity.ok(body);
-    }
-
-    public record ScenarioEdit(String feature) {
+        return ResponseEntity.ok(detail(stored, model));
     }
 
     /**
-     * Saves an edit made in the scenario detail view, then answers exactly as
-     * the GET does so the view re-renders from the file as written.
+     * The row, plus the scenario both ways: its fields as stored (the detail
+     * view edits these) and composed into one .feature (what a run is given).
+     * {@code version} goes back with an edit, so a save over someone else's
+     * newer one is refused instead of silently overwriting it.
+     */
+    private static Map<String, Object> detail(ScenarioStore.Stored stored, ProductModel model) {
+        ScenarioFields fields = stored.fields();
+        String feature = FeatureComposer.compose(fields);
+        ScenarioCard card = ScenarioLibrary.parse(stored.path(), stored.flow(), feature);
+
+        Map<String, Object> doc = new LinkedHashMap<>();
+        doc.put("title", fields.title());
+        doc.put("rules", fields.rules());
+        doc.put("preconditions", fields.preconditions());
+        doc.put("steps", fields.steps());
+        doc.put("expected", fields.expected());
+
+        Map<String, Object> body = new LinkedHashMap<>(row(card, model));
+        body.put("path", stored.path());
+        body.put("feature", feature);
+        body.put("gherkin", fields.gherkin());
+        body.put("doc", doc);
+        body.put("version", stored.version());
+        return body;
+    }
+
+    /**
+     * Saves an edit made in the scenario detail view -- to the database, not
+     * to a file -- then answers exactly as the GET does.
      *
-     * Overwrite only -- see ScenarioLibrary.write for why it never creates a
-     * file and refuses text that no longer parses.
+     * 409 when the scenario changed since the editor opened it: the analyst
+     * reloads and redoes the edit, rather than one of two saves vanishing.
      */
     @PutMapping("/{app}/{product}/scenario")
     public ResponseEntity<?> saveScenario(@PathVariable String app, @PathVariable String product,
                                           @RequestParam String path,
-                                          @RequestBody ScenarioEdit body) {
-        String refused = products.saveScenario(app, product, path,
-                body == null ? null : body.feature());
-        if (refused != null) {
-            return ResponseEntity.badRequest().body(Map.of("error", refused));
+                                          @RequestBody ProductService.ScenarioEdit body) {
+        ProductService.SaveResult result = products.saveScenario(app, product, path, body);
+        if (result.conflict()) {
+            return ResponseEntity.status(409).body(Map.of("error", result.refused()));
         }
-        return scenario(app, product, path);
+        if (result.refused() != null) {
+            return ResponseEntity.badRequest().body(Map.of("error", result.refused()));
+        }
+        ProductModel model = products.load(app, product).orElse(null);
+        if (model == null) {
+            return ResponseEntity.status(404).body(Map.of(
+                    "error", "Ürün bulunamadı: " + app + "/" + product));
+        }
+        return ResponseEntity.ok(detail(result.saved(), model));
+    }
+
+    /**
+     * Writes every scenario in the database out as .feature files under
+     * products/, so they can be committed. Never deletes: a file the database
+     * no longer has is listed in {@code notInDatabase} for a person to decide.
+     */
+    @PostMapping("/export")
+    public ResponseEntity<?> export() {
+        ProductService.Exported exported = products.export();
+        return ResponseEntity.ok(Map.of(
+                "written", exported.written(),
+                "unchanged", exported.unchanged(),
+                "notInDatabase", exported.notInDatabase()));
     }
 
     /**

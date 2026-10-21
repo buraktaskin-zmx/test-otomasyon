@@ -336,12 +336,10 @@ export interface ScenarioNeed {
   blockedBy: string;
 }
 
-/** One row of the Kayıtlı Senaryolar table. Everything here is DERIVED from the
- *  .feature file and the product's YAML -- there is no registry file
- *  listing scenarios, because a second list of the same names would start
- *  by agreeing and end by disagreeing. */
+/** One row of the Kayıtlı Senaryolar table: a scenario in the database, with
+ *  its rules and needs resolved against the product's YAML. */
 export interface RegisteredScenario {
-  /** Relative to the product's scenarios/ directory, and the row's identity. */
+  /** "<screen>/<file name>" -- the row's identity, and the file an export writes. */
   path: string;
   /** The screen -- the first path segment, i.e. the folder it sits in. */
   flow: string;
@@ -362,9 +360,35 @@ export interface RegisteredScenario {
   readiness: Readiness;
 }
 
-/** GET .../scenario?path= -- the row plus the file itself. */
+/** The natural-language half of a scenario, as the database keeps it. */
+export interface ScenarioDocFields {
+  title: string;
+  rules: string[];
+  preconditions: string[];
+  steps: string[];
+  expected: string[];
+}
+
+/** GET .../scenario?path= -- the row plus the scenario both ways. */
 export interface ScenarioDetail extends RegisteredScenario {
+  /** The whole .feature (tags, description, steps) -- what a run is given. */
   feature: string;
+  /** The Gherkin half alone: Feature, Scenario and steps. */
+  gherkin: string;
+  doc: ScenarioDocFields;
+  /** Sent back with an edit; a stale one is refused with 409. */
+  version: number;
+}
+
+/** PUT .../scenario?path= -- only the fields sent are changed. */
+export interface ScenarioEdit {
+  gherkin?: string;
+  title?: string;
+  rules?: string[];
+  preconditions?: string[];
+  steps?: string[];
+  expected?: string[];
+  version?: number;
 }
 
 /** A screen under a product. `declared: false` means scenarios sit in a

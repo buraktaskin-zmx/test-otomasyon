@@ -8,25 +8,14 @@ Feature: Banko Alacak İskonto Oluşturma
     And click "Alacak İşlemleri"
     And click "Bekleyen Alacaklar"
 
-    # Satır, vade tarihiyle seçiliyor: listedeki bütün satırlarda "TEST UNVANI"
-    # yazdığı için ünvan ayırt etmiyor. Tarih veriye bağlı — liste değişirse
-    # bu satır da değişmeli (ya da `select row at index 1` kullanılmalı).
     And select row "25/12/2026"
     And click "İskonto Oluştur"
 
-    # "Tüm Tutar" ekran açıldığında zaten seçili geliyor, o yüzden ayrıca
-    # tıklanmıyor. "Kısmi Tutar" senaryosu için ayrı bir adım gerekir — bkz. not.
     And click "Devam"
 
-    # Onay ekranında yalnızca veriye bağlı olmayan iki değer doğrulanıyor.
-    # Faiz oranı, faiz tutarı, net tutar ve iskonto tarihi her gün değişir;
-    # onları doğrulamak yarın kendiliğinden kırılan bir test yapar.
     Then verify the "Ödeme Tutarı" has amount "1.000,00"
     And verify the "Vade Tarihi" field equals "25/12/2026"
 
     And click "Onay"
 
-    # Sonuç ekranının metni henüz görülmedi. Bir kez görüp buraya
-    # `verify "<metin>" text is displayed` yazılacak; o adım hem doğrular hem
-    # 15 saniyeye kadar kendiliğinden bekler.
     And wait "15" seconds

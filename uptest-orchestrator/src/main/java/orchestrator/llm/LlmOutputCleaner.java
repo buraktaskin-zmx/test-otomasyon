@@ -56,8 +56,13 @@ public final class LlmOutputCleaner {
         if (start > 0) {
             text = text.substring(start);
         }
+        // No comment lines in any Gherkin file, by the analysts' rule -- a
+        // generated draft is a file the moment it is saved.
+        text = COMMENT_LINE.matcher(text).replaceAll("");
         return text.strip() + "\n";
     }
+
+    private static final Pattern COMMENT_LINE = Pattern.compile("(?m)^[ \\t]*#.*(?:\\R|$)");
 
     private static int indexOfFirstKeyword(String text) {
         Matcher m = Pattern.compile("(?m)^\\s*(Feature|Özellik|@)").matcher(text);

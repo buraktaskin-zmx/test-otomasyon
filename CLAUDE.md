@@ -172,6 +172,16 @@ Elsewhere:
   database and three places in the UI. The product declares its flows rather
   than each catalog naming its product — see the lesson below for why that
   direction is load-bearing.
+- Kayıtlı Senaryolar (ana menü, screens, scenarios): the orchestrator's H2
+  database, tables `MAIN_MENU` / `SCREEN` / `SCENARIO`, touched only by
+  `orchestrator/product/ScenarioStore`. Natural language and Gherkin are
+  separate columns (`ScenarioFields`); `FeatureComposer` rebuilds the .feature
+  a run needs, `ScenarioDocParser` splits one. product.yaml and
+  `products/**/scenarios/*.feature` are read once, at startup, for a product
+  the database does not know yet (`ProductService.importMissing`) — after that
+  the database is the source, and "Dosyaya aktar" (`POST
+  /api/v1/products/export`) writes it back to files for git, never deleting.
+  Rules, test data and the analysts' notes stay files.
 - Screen catalogs for LLM prompting: `catalogs/<app>/<flow>.yaml`; schema in
   `catalogs/SCHEMA.md`
 - Screen discovery (executor): `PW/discovery/` — `CatalogDiscovery` walks a flow

@@ -7,12 +7,12 @@ import { ScenarioTable } from "../../product/ScenarioTable";
 import type { useProducts } from "../../hooks/useProducts";
 import type { useTestUsers } from "../../hooks/useTestUsers";
 import {
-  BROWSER_CLOSED, addScreen, createMenu, createScenarioFile, explore, moveScenario,
+  BROWSER_CLOSED, addScreen, createMenu, createScenarioFile, explore, exportScenarios, moveScenario,
 } from "../../api/endpoints";
 import type { MoveTarget } from "../../product/ScenarioTable";
 import { NewScenario } from "../../product/NewScenario";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
-import { docAsText, readDoc } from "../../lib/scenarioProse";
+import { docAsText } from "../../lib/scenarioProse";
 import { useToast } from "../../ui/Toast";
 import type { Origin, RunLogin } from "../../api/types";
 
@@ -203,10 +203,7 @@ export function ProductPanel({
         : `"${screenName}" ekranına git.`,
       "Sonra şu senaryoyu uygula:",
       "",
-      (() => {
-        const doc = readDoc(scenario.feature);
-        return doc ? docAsText(doc) : scenario.title + "\n" + scenario.description;
-      })(),
+      docAsText(scenario.doc),
     ].join("\n");
 
     setAiAnswer("");
@@ -231,9 +228,31 @@ export function ProductPanel({
     setAiAnswer(result.body.answer);
   });
 
+  /* Senaryolar veritabanında; git'e girmeleri için .feature olarak yazılır.
+     Hiçbir dosya silinmez -- veritabanında artık olmayan dosyalar yalnızca
+     bildirilir, silmek bir insanın kararı. */
+  const exportRun = useAsyncAction(async () => {
+    const result = await exportScenarios();
+    if (!result.ok) {
+      toast("Dışa aktarılamadı: " + result.error, true);
+      return;
+    }
+    const { written, unchanged, notInDatabase } = result.body;
+    toast(written + " dosya yazıldı, " + unchanged + " dosya zaten güncel"
+      + (notInDatabase.length > 0
+        ? ". Veritabanında olmayan " + notInDatabase.length + " dosya silinmedi: "
+          + notInDatabase.join(", ")
+        : ""));
+  });
+
   return (
     <div id="side-product" className={"side-panel product-panel" + (active ? " is-active" : "")}>
       <PanelHead title="Kayıtlı Senaryolar">
+        <button className="btn btn-ghost" type="button" disabled={exportRun.busy}
+                title="Veritabanındaki senaryoları products/ altına .feature dosyası olarak yazar"
+                onClick={() => exportRun.run()}>
+          {exportRun.busy ? "Aktarılıyor…" : "Dosyaya aktar"}
+        </button>
         <button className="btn btn-ghost" type="button" onClick={() => void products.reload()}>
           Yenile
         </button>
@@ -409,9 +428,9 @@ export function ProductPanel({
                   aiBusy={aiRun.busy}
                   aiAnswer={aiAnswer}
                   aiClosed={aiClosed}
-                  onSave={async (feature) => {
+                  onSave={async (edit) => {
                     const result = await products.saveScenario(
-                      selection.app, selection.product, selection.path!, feature);
+                      selection.app, selection.product, selection.path!, edit);
                     toast(result.ok ? "Senaryo kaydedildi" : "Kaydedilemedi: " + result.error,
                       !result.ok);
                     return result.ok;
