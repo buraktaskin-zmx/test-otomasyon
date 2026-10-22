@@ -303,6 +303,10 @@ export interface ScenarioRuleRef {
   known: boolean;
   title: string;
   confirmed: boolean;
+  /** The rule reads differently now than when this scenario was last
+   *  reviewed. NOT set for a rule that was deleted -- `known: false` already
+   *  says that, and two complaints about one fact is one too many. */
+  stale: boolean;
 }
 
 /** Can this scenario run today?
@@ -334,6 +338,8 @@ export interface ScenarioNeed {
   how: string;
   description: string;
   blockedBy: string;
+  /** test-data.yaml defines this alias differently than it did at review time. */
+  stale: boolean;
 }
 
 /** One row of the Kayıtlı Senaryolar table: a scenario in the database, with
@@ -360,6 +366,8 @@ export interface RegisteredScenario {
   readiness: Readiness;
   /** The scenario's own "Ön koşul" items, as written in it. */
   preconditions: string[];
+  /** Any rule or alias this scenario names has moved since it was reviewed. */
+  stale: boolean;
 }
 
 /** The natural-language half of a scenario, as the database keeps it. */
@@ -371,6 +379,43 @@ export interface ScenarioDocFields {
   expected: string[];
 }
 
+/** One field of a rule or alias that reads differently now. */
+export interface SourceFieldChange {
+  /** "description", "status", "messages", or "deger:<liste adı>". */
+  field: string;
+  before: string;
+  after: string;
+}
+
+/** A line of the scenario still carrying a value the rule has dropped. */
+export interface SourceMention {
+  value: string;
+  /** "Ön koşul" | "Adımlar" | "Beklenen" | "Gherkin". */
+  where: string;
+  line: string;
+}
+
+/** A rule or alias that moved since the scenario was last reviewed.
+ *
+ *  Reported, never applied. The same difference means two opposite things:
+ *  the application changed and the rule caught up (the scenario should
+ *  follow), or the rule was written down wrong and has been corrected (the
+ *  scenario should change AND the run should stay red, over a defect that is
+ *  still there). Only a person can tell which. */
+export interface SourceChange {
+  /** "RULE" | "ALIAS". */
+  kind: string;
+  id: string;
+  /** "CHANGED" | "GONE". */
+  state: string;
+  title: string;
+  fields: SourceFieldChange[];
+  /** Values the rule listed then and does not list now. */
+  removed: string[];
+  added: string[];
+  mentions: SourceMention[];
+}
+
 /** GET .../scenario?path= -- the row plus the scenario both ways. */
 export interface ScenarioDetail extends RegisteredScenario {
   /** The whole .feature (tags, description, steps) -- what a run is given. */
@@ -380,6 +425,7 @@ export interface ScenarioDetail extends RegisteredScenario {
   doc: ScenarioDocFields;
   /** Sent back with an edit; a stale one is refused with 409. */
   version: number;
+  changes: SourceChange[];
 }
 
 /** PUT .../scenario?path= -- only the fields sent are changed. */
@@ -391,6 +437,10 @@ export interface ScenarioEdit {
   steps?: string[];
   expected?: string[];
   version?: number;
+  /** The analyst has read what the rules say now: re-stamp and clear the
+   *  badge. Left out, the stamp is untouched -- a save made for some other
+   *  reason must not clear a badge nobody looked at. */
+  reviewed?: boolean;
 }
 
 /** A screen under a product. `declared: false` means scenarios sit in a

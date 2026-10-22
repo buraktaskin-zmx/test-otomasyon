@@ -34,5 +34,14 @@ public class ScenarioImporter {
                     + imported.screens() + " ekran, " + imported.scenarios() + " senaryo");
         }
         imported.skipped().forEach(reason -> System.err.println("[senaryo] aktarılmadı: " + reason));
+
+        // Scenarios that predate stamping -- everything already in a database
+        // built before this feature. Without this the "kural değişti" badge
+        // would only ever work for scenarios written afterwards.
+        int stamped = products.stampUnreviewed();
+        if (stamped > 0) {
+            System.err.println("[senaryo] " + stamped
+                    + " senaryo, kurallarının bugünkü hâline göre damgalandı");
+        }
     }
 }

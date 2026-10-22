@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { tokenizeGherkinLine } from "../lib/gherkin";
 import type { ScenarioDoc } from "../lib/scenarioProse";
-import type { ScenarioDetail as Detail, ScenarioEdit } from "../api/types";
+import type { ScenarioDetail as Detail, ScenarioEdit, SourceChange } from "../api/types";
 
 /*
   Bir senaryo, iki dilde.
@@ -73,6 +73,10 @@ export function ScenarioDetail({
     const edit: ScenarioEdit = editing === "prose" && docDraft
       ? { ...docDraft, version: detail.version }
       : { gherkin: draft, version: detail.version };
+    // Saving with the "kural değişti" banner on screen IS reviewing it: the
+    // analyst read what moved and then wrote. Without the banner the stamp is
+    // left alone, so an unrelated fix cannot clear a badge nobody looked at.
+    if (detail.changes.length > 0) edit.reviewed = true;
     setSaving(true);
     const ok = await onSave(edit);
     setSaving(false);
@@ -107,6 +111,18 @@ export function ScenarioDetail({
         </button>
         <h3 className="sd-title">{detail.title}</h3>
       </div>
+
+      {detail.changes.length > 0 ? (
+        <Changed
+          changes={detail.changes}
+          busy={saving}
+          onReviewed={async () => {
+            setSaving(true);
+            await onSave({ reviewed: true, version: detail.version });
+            setSaving(false);
+          }}
+        />
+      ) : null}
 
       <div className="sd-split">
         {/* ---------------------------- Gherkin ---------------------------- */}
@@ -185,6 +201,110 @@ export function ScenarioDetail({
         </section>
       </div>
     </div>
+  );
+}
+
+/** Turkish names for the field keys the server sends. */
+const FIELD_NAMES: Record<string, string> = {
+  title: "Başlık",
+  status: "Durum",
+  description: "Açıklama",
+  messages: "Mesajlar",
+  label: "Kısa ad",
+  how: "Çözüm",
+  value: "Değer",
+  blockedBy: "Engel",
+};
+
+function fieldName(field: string) {
+  if (field.startsWith("deger:")) return "Değer listesi: " + field.slice("deger:".length);
+  return FIELD_NAMES[field] ?? field;
+}
+
+/**
+ * Ne değişti, ve senaryonun hangi satırına bakılmalı.
+ *
+ * Deliberately shows and does not act. The same difference means two
+ * opposite things -- the application changed and the rule caught up, so the
+ * scenario should follow; or the rule was simply written down wrong and has
+ * been corrected, in which case the scenario should change AND the run
+ * should stay red over a defect that is still there. Rewriting the scenario
+ * from the rule would hide that second case behind a green test, which is
+ * the oracle problem arriving through the back door. So: the difference, the
+ * lines worth looking at, and two ways out that a person chooses between.
+ */
+function Changed({
+  changes,
+  busy,
+  onReviewed,
+}: {
+  changes: SourceChange[];
+  busy: boolean;
+  onReviewed: () => void;
+}) {
+  return (
+    <section className="sd-changed">
+      <header className="sd-changed-head">
+        <span className="sd-changed-title">
+          ⚠ Bu senaryo yazıldıktan sonra dayandığı tanım değişti
+        </span>
+        <button type="button" className="btn btn-ghost" disabled={busy}
+                title="Senaryo olduğu gibi kalsın; yeni hâli okudum. Kural baştan yanlış yazılmışsa doğru çıkış budur: test kırmızı kalmalı, çünkü uygulamadaki hata duruyor"
+                onClick={onReviewed}>
+          {busy ? "Kaydediliyor…" : "Gözden geçirildi"}
+        </button>
+      </header>
+
+      {changes.map((change) => (
+        <div className="sd-change" key={change.kind + change.id}>
+          <div className="sd-change-id">
+            <span className="rule-id">{change.id}</span>
+            {change.title ? <span className="sd-change-name">{change.title}</span> : null}
+            {change.state === "GONE" ? (
+              <span className="sd-change-gone">
+                {change.kind === "RULE"
+                  ? "rules.yaml'dan kaldırılmış"
+                  : "test-data.yaml'dan kaldırılmış"}
+              </span>
+            ) : null}
+          </div>
+
+          {change.removed.length > 0 || change.added.length > 0 ? (
+            <div className="sd-change-values">
+              {change.removed.map((value) => (
+                <span className="sd-value is-removed" key={"-" + value}>− {value}</span>
+              ))}
+              {change.added.map((value) => (
+                <span className="sd-value is-added" key={"+" + value}>+ {value}</span>
+              ))}
+            </div>
+          ) : null}
+
+          {change.fields.map((field) => (
+            <div className="sd-change-field" key={field.field}>
+              <span className="sd-doc-label">{fieldName(field.field)}</span>
+              <pre className="sd-code sd-diff is-before">{field.before || "(boştu)"}</pre>
+              <pre className="sd-code sd-diff is-after">{field.after || "(boş)"}</pre>
+            </div>
+          ))}
+
+          {change.mentions.length > 0 ? (
+            <div className="sd-change-field">
+              <span className="sd-doc-label">Senaryoda hâlâ geçiyor</span>
+              <ul className="sd-plain">
+                {change.mentions.map((mention, index) => (
+                  <li key={index}>
+                    <span className="sd-value is-removed">{mention.value}</span>
+                    {" · " + mention.where + ": "}
+                    <code>{mention.line}</code>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      ))}
+    </section>
   );
 }
 

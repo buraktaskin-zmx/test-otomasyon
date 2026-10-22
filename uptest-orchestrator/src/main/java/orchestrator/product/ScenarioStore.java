@@ -8,7 +8,10 @@ import orchestrator.persistence.ScreenEntity;
 import orchestrator.persistence.ScreenRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -43,7 +46,8 @@ public class ScenarioStore {
     }
 
     public record Stored(UUID id, long version, String flow, String fileName,
-                         ScenarioFields fields, String sourcePath) {
+                         ScenarioFields fields, String sourcePath,
+                         List<SourceSnapshot.Source> reviewed, Instant reviewedAt) {
 
         public String path() {
             return flow + "/" + fileName;
@@ -59,11 +63,15 @@ public class ScenarioStore {
     private final ScreenRepository screens;
     private final ScenarioRepository scenarios;
 
+    /** The Boot-managed Jackson mapper, injected as RunStore's is. */
+    private final ObjectMapper mapper;
+
     public ScenarioStore(MainMenuRepository menus, ScreenRepository screens,
-                         ScenarioRepository scenarios) {
+                         ScenarioRepository scenarios, ObjectMapper mapper) {
         this.menus = menus;
         this.screens = screens;
         this.scenarios = scenarios;
+        this.mapper = mapper;
     }
 
     /* ------------------------------ reading ------------------------------ */
@@ -141,13 +149,22 @@ public class ScenarioStore {
         });
     }
 
-    /** @return the new scenario, or empty when the screen does not exist */
+    /**
+     * @param reviewed what this scenario's rules and aliases say right now,
+     *                 stamped because whoever is writing the scenario is
+     *                 looking at them. Null leaves it unstamped
+     * @return the new scenario, or empty when the screen does not exist
+     */
     @Transactional
     public Optional<Stored> createScenario(String app, String key, String flow, String fileName,
-                                           ScenarioFields fields, String sourcePath) {
+                                           ScenarioFields fields, String sourcePath,
+                                           List<SourceSnapshot.Source> reviewed) {
         return screen(app, key, flow).map(screen -> {
             ScenarioEntity entity = new ScenarioEntity(screen.getId(), fileName, sourcePath);
             write(entity, fields);
+            if (reviewed != null) {
+                entity.setReviewedSources(toJson(reviewed));
+            }
             ScenarioEntity saved = scenarios.save(entity);
             return stored(saved, flow);
         });
@@ -163,10 +180,16 @@ public class ScenarioStore {
      *
      * @param expectedVersion the version the editor started from, or null for
      *                        "whatever is there"; a mismatch is a CONFLICT
+     * @param stamp           given the fields as finally written, what its
+     *                        rules and aliases say right now. Null means
+     *                        LEAVE THE STAMP ALONE -- an unrelated edit must
+     *                        not clear a "this rule changed" badge the analyst
+     *                        has not looked at
      */
     @Transactional
     public Saved save(String app, String key, String path, Long expectedVersion,
-                      Function<ScenarioFields, ScenarioFields> change) {
+                      Function<ScenarioFields, ScenarioFields> change,
+                      Function<ScenarioFields, List<SourceSnapshot.Source>> stamp) {
         Optional<Located> found = locate(app, key, path);
         if (found.isEmpty()) {
             return new Saved(Outcome.NOT_FOUND, null);
@@ -180,9 +203,48 @@ public class ScenarioStore {
             return new Saved(Outcome.SAVED, null);
         }
         write(entity, next);
+        if (stamp != null) {
+            // Stamped from the fields as WRITTEN, not as they were: the edit
+            // may have added or dropped a rule tag.
+            entity.setReviewedSources(toJson(stamp.apply(next)));
+        }
         // Flushed here, not at commit, so the version handed back is the new one.
         ScenarioEntity saved = scenarios.saveAndFlush(entity);
         return new Saved(Outcome.SAVED, stored(saved, found.get().flow));
+    }
+
+    /**
+     * Stamps every scenario of one product that has never been stamped.
+     *
+     * For the database that already existed when this feature arrived:
+     * ddl-auto=update ADDS the two columns and leaves every row null, so
+     * without this nothing would ever go stale for the scenarios that were
+     * there first -- the badge would work only for scenarios written
+     * afterwards, which is the sort of half-on that is worse than off.
+     *
+     * Same reading as the import: the scenarios and the rule file are as
+     * they are right now, and nobody has said they disagree.
+     *
+     * @return how many were stamped
+     */
+    @Transactional
+    public int stampUnreviewed(String app, String key,
+                               Function<ScenarioFields, List<SourceSnapshot.Source>> stamp) {
+        Optional<MainMenuEntity> menu = menus.findByAppAndProductKey(app, key);
+        if (menu.isEmpty()) {
+            return 0;
+        }
+        int stamped = 0;
+        for (ScreenEntity screen : screens.findByMenuIdOrderBySortOrderAscFlowAsc(menu.get().getId())) {
+            for (ScenarioEntity entity : scenarios.findByScreenIdOrderByFileNameAsc(screen.getId())) {
+                if (entity.getReviewedAt() != null) {
+                    continue;
+                }
+                entity.setReviewedSources(toJson(stamp.apply(fieldsOf(entity))));
+                stamped++;
+            }
+        }
+        return stamped;
     }
 
     /**
@@ -242,9 +304,39 @@ public class ScenarioStore {
                 menu.getProductName(), menu.getDescription() == null ? "" : menu.getDescription(), list);
     }
 
-    private static Stored stored(ScenarioEntity entity, String flow) {
+    private Stored stored(ScenarioEntity entity, String flow) {
         return new Stored(entity.getId(), entity.getVersion() == null ? 0 : entity.getVersion(),
-                flow, entity.getFileName(), fieldsOf(entity), entity.getSourcePath());
+                flow, entity.getFileName(), fieldsOf(entity), entity.getSourcePath(),
+                fromJson(entity.getReviewedSources()), entity.getReviewedAt());
+    }
+
+    private static final TypeReference<List<SourceSnapshot.Source>> SOURCES =
+            new TypeReference<>() {
+            };
+
+    private String toJson(List<SourceSnapshot.Source> sources) {
+        return mapper.writeValueAsString(sources == null ? List.of() : sources);
+    }
+
+    /**
+     * An unreadable stamp reads as NO stamp, never as a failure.
+     *
+     * The column is written by this class alone, so a value it cannot parse
+     * means the shape changed under an existing database -- and the honest
+     * answer then is "nobody has reviewed this against the current shape",
+     * which is exactly what an empty list says. Refusing to serve the
+     * scenario would take the whole Kayıtlı Senaryolar screen down over a
+     * badge.
+     */
+    private List<SourceSnapshot.Source> fromJson(String json) {
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        try {
+            return mapper.readValue(json, SOURCES);
+        } catch (RuntimeException unreadable) {
+            return List.of();
+        }
     }
 
     private static ScenarioFields fieldsOf(ScenarioEntity entity) {

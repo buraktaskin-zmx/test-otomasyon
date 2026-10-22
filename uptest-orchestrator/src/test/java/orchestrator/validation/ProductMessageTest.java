@@ -106,6 +106,30 @@ class ProductMessageTest {
     }
 
     @Test
+    @DisplayName("a value the rule FIXES is assertable, an option it does not list is not")
+    void degerlerWidensTheAcceptedSet() {
+        // One step further out than `messages`, and for the same reason: a
+        // dropdown's options are something the screen PRINTS, so a scenario
+        // naming one is quoting a written-down fact. Without this the only
+        // way to test "the list offers these four" is to paste the options
+        // into the intent -- and on a screen with no catalog at all there is
+        // nothing else the check could consult.
+        String asserts = REJECTS_BAD_IBAN.replace(
+                "Geçersiz IBAN numarası girdiniz.", "Son 12 Ay");
+
+        assertThat(validator.validate(asserts, vocabulary(), screen(), null, withValues()).valid())
+                .as("a value the rule lists")
+                .isTrue();
+
+        String invented = REJECTS_BAD_IBAN.replace(
+                "Geçersiz IBAN numarası girdiniz.", "Son 48 Ay");
+
+        assertThat(validator.validate(invented, vocabulary(), screen(), null, withValues()).valid())
+                .as("a value no rule lists")
+                .isFalse();
+    }
+
+    @Test
     @DisplayName("with no success message anywhere, the analyst's own words still earn it")
     void theIntentEscapeSurvives() {
         // Preserved deliberately. Without a success_message the finding is the
@@ -156,6 +180,22 @@ class ProductMessageTest {
                     status: DOĞRULANDI
                     messages:
                       - "Geçersiz IBAN numarası girdiniz."
+                """)).orElseThrow();
+    }
+
+    /** A product whose rule fixes a list of options with {@code degerler:}. */
+    private static ProductModel withValues() {
+        return ProductModel.parse("ngc", "maas-odemeleri", ProductModel.Sources.of("""
+                app: NGC
+                name: "Maaş Ödemeleri"
+                """, """
+                rules:
+                  - id: R-AL-015
+                    title: "Hızlı Tarih Seçim seçenekleri"
+                    status: DOĞRULANDI
+                    degerler:
+                      secenekler: ["Bu Hafta", "Son 1 Ay", "Son 12 Ay"]
+                      varsayilan: "Son 1 Ay"
                 """)).orElseThrow();
     }
 

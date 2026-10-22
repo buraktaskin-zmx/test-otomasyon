@@ -5,6 +5,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -76,7 +77,8 @@ class ProductRulesPromptTest {
     @DisplayName("an unverified rule says so in the prompt")
     void anAssumptionIsLabelled() {
         Rule guess = new Rule("R-MAAS-034", "Kısmi hatalı dosya", Rule.ASSUMPTION,
-                "Hatalı satırlar ayıklanır, kalanı devam eder.", List.of(), List.of(), "");
+                "Hatalı satırlar ayıklanır, kalanı devam eder.", List.of(), List.of(),
+                Map.of(), "");
 
         assertThat(prompts.user(CATALOG, "kısmi hata", null, null, List.of(guess)))
                 .contains("VARSAYIM");
@@ -97,6 +99,6 @@ class ProductRulesPromptTest {
         return new Rule("R-MAAS-010", "IBAN format kontrolü", Rule.CONFIRMED,
                 "Dosyadaki bir satırda IBAN TR ile başlamıyorsa satır reddedilir.",
                 List.of("IBAN"), List.of("Geçersiz IBAN numarası girdiniz."),
-                "Analiz dokümanı v2.3");
+                Map.of(), "Analiz dokümanı v2.3");
     }
 }

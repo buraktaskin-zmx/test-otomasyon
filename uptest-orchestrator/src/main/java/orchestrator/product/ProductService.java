@@ -127,18 +127,32 @@ public class ProductService {
         return registered(app, product).stream().map(Registered::card).toList();
     }
 
-    /** A table row: what the Gherkin parse says, plus the fields as stored. */
-    public record Registered(ScenarioCard card, ScenarioFields fields) {
+    /** A table row: what the Gherkin parse says, plus the scenario as stored. */
+    public record Registered(ScenarioCard card, ScenarioStore.Stored stored) {
+
+        public ScenarioFields fields() {
+            return stored.fields();
+        }
     }
 
-    /** {@link #scenarios}, with each scenario's stored fields beside its card. */
+    /** {@link #scenarios}, with each scenario as stored beside its card. */
     public List<Registered> registered(String app, String product) {
         return store.scenarios(safe(app), product).stream()
                 .map(stored -> new Registered(
                         ScenarioLibrary.parse(stored.path(), stored.flow(),
                                 FeatureComposer.compose(stored.fields())),
-                        stored.fields()))
+                        stored))
                 .toList();
+    }
+
+    /**
+     * What this scenario's rules and aliases say NOW that they did not say
+     * when it was last reviewed. Empty when nothing moved, and empty when
+     * nobody has stamped it — see {@link SourceSnapshot#compare}.
+     */
+    public List<SourceSnapshot.SourceChange> changes(ScenarioStore.Stored stored,
+                                                     ProductModel product) {
+        return SourceSnapshot.compare(stored.reviewed(), stored.fields(), product);
     }
 
     public long scenarioCount(String app, String product) {
@@ -172,11 +186,19 @@ public class ProductService {
      *       {@code expected}: the natural-language half.</li>
      * </ul>
      *
-     * @param version the version the editor started from; a stale one is a conflict
+     * @param version  the version the editor started from; a stale one is a conflict
+     * @param reviewed the analyst has read what this scenario's rules and
+     *                 aliases say now, so re-stamp it and clear the "kural
+     *                 değişti" badge. Absent leaves the stamp alone: a save
+     *                 made for some unrelated reason must not clear a badge
+     *                 nobody looked at. Sent alone, with every content field
+     *                 null, it is the "Gözden geçirildi" button -- the exit
+     *                 for a rule that was simply written down wrong, where
+     *                 the scenario is right and the run SHOULD go red
      */
     public record ScenarioEdit(String feature, String gherkin, String title, List<String> rules,
                                List<String> preconditions, List<String> steps,
-                               List<String> expected, Long version) {
+                               List<String> expected, Long version, Boolean reviewed) {
     }
 
     /** Exactly one of {@code saved} and {@code refused} is non-null. */
@@ -188,6 +210,7 @@ public class ProductService {
             return new SaveResult(null, "Senaryo ve değişiklik gerekli", false);
         }
         String[] refused = new String[1];
+        ProductModel model = load(app, product).orElse(null);
         ScenarioStore.Saved result = store.save(safe(app), product, path, edit.version(), current -> {
             ScenarioFields next = merged(current, edit);
             // Refused here, while the edit is still open: a scenario that no
@@ -198,7 +221,9 @@ public class ProductService {
                 return null;
             }
             return next;
-        });
+        }, Boolean.TRUE.equals(edit.reviewed())
+                ? written -> SourceSnapshot.capture(written, model)
+                : null);
         return switch (result.outcome()) {
             case NOT_FOUND -> new SaveResult(null, "Senaryo bulunamadı: " + path, false);
             case CONFLICT -> new SaveResult(null,
@@ -343,7 +368,11 @@ public class ProductService {
         if (taken.contains(fileName)) {
             return new Created(null, "Bu adla bir senaryo zaten var: " + fileName);
         }
-        return store.createScenario(safe(app), product, flow, fileName, fields, null)
+        // Stamped on creation: whoever is writing this scenario is reading
+        // the rules as they stand, so that IS the reviewed state.
+        List<SourceSnapshot.Source> reviewed =
+                SourceSnapshot.capture(fields, load(app, product).orElse(null));
+        return store.createScenario(safe(app), product, flow, fileName, fields, null, reviewed)
                 .map(stored -> new Created(stored.path(), null))
                 .orElse(new Created(null, "Ekran tanımlı değil: " + flow));
     }
@@ -402,8 +431,14 @@ public class ProductService {
                 for (Path file : features(scenariosDir.resolve(flow))) {
                     String source = root.relativize(file).toString().replace('\\', '/');
                     ScenarioFields fields = ScenarioDocParser.parse(text(file));
+                    // Stamped with rules.yaml AS IT IS IN THIS COMMIT. The
+                    // scenario files and the rule file travelled here
+                    // together, so as far as anyone can know they agree.
+                    // Leaving them unstamped would instead light the "kural
+                    // değişti" badge on every row at first start, and a badge
+                    // that is on for everything says nothing about anything.
                     store.createScenario(app, key, flow, file.getFileName().toString(), fields,
-                            "products/" + source);
+                            "products/" + source, SourceSnapshot.capture(fields, product));
                     scenarios++;
                 }
             }
@@ -412,6 +447,26 @@ public class ProductService {
             }
         }
         return new Imported(menus, screens, scenarios, skipped);
+    }
+
+    /**
+     * Stamps scenarios that were in the database before stamping existed, so
+     * the "kural değişti" badge works for them too. Runs once per scenario:
+     * a stamped one is never touched again.
+     *
+     * @return how many were stamped
+     */
+    public int stampUnreviewed() {
+        int stamped = 0;
+        for (ScenarioStore.Menu menu : store.menus()) {
+            ProductModel product = model(menu).orElse(null);
+            if (product == null) {
+                continue;
+            }
+            stamped += store.stampUnreviewed(menu.app(), menu.key(),
+                    fields -> SourceSnapshot.capture(fields, product));
+        }
+        return stamped;
     }
 
     /** What {@link #export} did. */

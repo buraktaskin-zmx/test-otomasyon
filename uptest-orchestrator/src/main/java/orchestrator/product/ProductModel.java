@@ -3,6 +3,7 @@ package orchestrator.product;
 import org.yaml.snakeyaml.Yaml;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -219,6 +220,22 @@ public final class ProductModel {
     }
 
     /**
+     * Every value every rule fixes in its {@code degerler:} block — dropdown
+     * options, defaults, whatever a rule writes down as literal.
+     *
+     * The same shape and the same reasoning as {@link #messages()}: every
+     * rule's, never only the ticked ones, because the selection shapes the
+     * prompt and must not shape the validator.
+     */
+    public List<String> values() {
+        LinkedHashSet<String> all = new LinkedHashSet<>();
+        for (Rule rule : byId.values()) {
+            all.addAll(rule.allValues());
+        }
+        return List.copyOf(all);
+    }
+
+    /**
      * Reads a product, or gives back nothing when {@code product.yaml} is
      * missing or unreadable.
      *
@@ -351,6 +368,7 @@ public final class ProductModel {
                         text(rule.get("description")),
                         strings(rule.get("fields")),
                         strings(rule.get("messages")),
+                        valueLists(rule.get("degerler")),
                         text(rule.get("source"))));
             }
             return byId;
@@ -413,6 +431,41 @@ public final class ProductModel {
 
     private static String text(Object value) {
         return value == null ? "" : value.toString().trim();
+    }
+
+    /**
+     * A rule's {@code degerler:} block: named lists of literal values.
+     *
+     * Lenient like every other reader here — anything that is not a mapping
+     * costs the values, not the rule. A scalar is wrapped into a one-item
+     * list so that {@code varsayilan: "Son 1 Ay"} and
+     * {@code secenekler: [...]} come out as the same type and no caller has
+     * to ask which one it got.
+     */
+    private static Map<String, List<String>> valueLists(Object value) {
+        if (!(value instanceof Map<?, ?> entries)) {
+            return Map.of();
+        }
+        Map<String, List<String>> lists = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : entries.entrySet()) {
+            String key = text(entry.getKey());
+            if (key.isEmpty()) {
+                continue;
+            }
+            List<String> items;
+            if (entry.getValue() instanceof List<?>) {
+                items = strings(entry.getValue());
+            } else {
+                String single = text(entry.getValue());
+                items = single.isEmpty() ? List.of() : List.of(single);
+            }
+            if (!items.isEmpty()) {
+                lists.put(key, items);
+            }
+        }
+        // Not Map.copyOf: that leaves iteration order unspecified, and these
+        // lists are rendered to a person in the order the analyst wrote them.
+        return Collections.unmodifiableMap(lists);
     }
 
     private static List<String> strings(Object value) {

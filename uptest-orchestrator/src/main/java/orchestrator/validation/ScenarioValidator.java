@@ -379,6 +379,14 @@ public class ScenarioValidator {
         }
         if (product != null) {
             product.messages().stream().filter(m -> !m.isBlank()).forEach(known::add);
+            // And every literal a rule FIXES -- a dropdown's options, a
+            // default. Widened for the same reason `messages` was, one step
+            // further out: a scenario asserting "Son 9 Ay" is quoting a
+            // written-down fact, not inventing a sentence, and on a screen
+            // with no catalog this list is the only thing that says so.
+            // Appended AFTER the messages so `nearest()` keeps suggesting a
+            // real sentence for a paraphrased one.
+            product.values().stream().filter(value -> !value.isBlank()).forEach(known::add);
         }
         return known;
     }

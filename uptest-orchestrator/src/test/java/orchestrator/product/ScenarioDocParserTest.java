@@ -87,7 +87,7 @@ class ScenarioDocParserTest {
     void pastedFileKeepsOnlyItsGherkin() {
         ScenarioFields current = ScenarioDocParser.parse(STRUCTURED);
         ProductService.ScenarioEdit paste = new ProductService.ScenarioEdit(
-                null, STRUCTURED, null, null, null, null, null, null);
+                null, STRUCTURED, null, null, null, null, null, null, null);
 
         ScenarioFields next = ProductService.merged(current, paste);
         String composed = FeatureComposer.compose(next);
@@ -103,7 +103,7 @@ class ScenarioDocParserTest {
     void titleFollowsIntoGherkin() {
         ScenarioFields current = ScenarioDocParser.parse(STRUCTURED);
         ProductService.ScenarioEdit rename = new ProductService.ScenarioEdit(
-                null, null, "Onay özeti doğru", null, null, List.of("Aç"), null, null);
+                null, null, "Onay özeti doğru", null, null, List.of("Aç"), null, null, null);
 
         ScenarioFields next = ProductService.merged(current, rename);
 

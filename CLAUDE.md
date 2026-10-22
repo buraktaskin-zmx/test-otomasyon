@@ -362,14 +362,34 @@ walked, so the product declares its flows and a flow with no catalog on disk
 is the work queue, not an error. Had the binding lived in the catalog, a
 product could not be written at all until someone had walked a screen.
 
-**Only `messages` is enforced**, and it earns the layer its place. Before it,
-`ScenarioValidator.checkMessageIsCatalogued` accepted exactly one asserted
-sentence — the catalog's `success_message` — and its own javadoc recorded the
-cost: *"a negative scenario asserting an error dialog's text is flagged too."*
-For a payments product that is most of the suite, because nearly every rule
-worth writing is a refusal and a catalog has nowhere to record one. The
-accepted set is now `success_message` ∪ every rule's `messages`, which widens
-what counts as catalogued rather than loosening the check.
+**A rule that CHANGES marks the scenarios bound to it, and never rewrites
+them.** A rename or a deletion was always caught, because the binding is an id;
+a reworded `description` or a dropped option was silent, and five scenarios
+went on testing the old wording. `orchestrator/product/SourceSnapshot` stores
+the full text of every rule and alias a scenario names at the moment it was
+last reviewed (`SCENARIO.reviewed_sources`, a copy rather than a hash because
+"what changed" is the half an analyst can act on) and diffs it on every read.
+It reports and stops: the same difference means either "the application changed
+and the rule caught up" (the scenario should follow) or "the rule was written
+down wrong and has been corrected" (the scenario should change AND the run
+should stay red over a defect that is still there), and auto-rewriting hides
+the second one behind a green test. An UNSTAMPED scenario reports nothing — a
+badge that is on for every row says nothing about any of them.
+
+**Only `messages` and `degerler` are enforced**, and they earn the layer its
+place. `degerler:` is named lists of literals a rule fixes (`secenekler`,
+`varsayilan`); the validator accepts them exactly as it accepts `messages`,
+since a dropdown's options are something the screen prints, and on a screen
+with no catalog they are the only thing the check can consult.
+
+Before any of it, `ScenarioValidator.checkMessageIsCatalogued` accepted exactly
+one asserted sentence — the catalog's `success_message` — and its own javadoc
+recorded the cost: *"a negative scenario asserting an error dialog's text is
+flagged too."* For a payments product that is most of the suite, because nearly
+every rule worth writing is a refusal and a catalog has nowhere to record one.
+The accepted set is now `success_message` ∪ every rule's `messages` ∪ every
+rule's `degerler`, which widens what counts as catalogued rather than loosening
+the check.
 
 Everything else — `description`, `flow.md`, `roles.md`, `fields` — steers the
 prompt without the validator having an opinion, exactly as `navigation` and

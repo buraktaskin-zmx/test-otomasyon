@@ -88,6 +88,9 @@ rules:
     fields: ["IBAN", "Alıcı Adı"]
     messages:
       - "Geçersiz IBAN numarası girdiniz."
+    degerler:
+      secenekler: ["Bu Hafta", "Son 1 Ay", "Son 12 Ay"]
+      varsayilan: "Son 1 Ay"
     source: "Analiz dokümanı v2.3, bölüm 4.1"
 ```
 
@@ -99,6 +102,7 @@ rules:
 | `description` | no | Goes into the prompt, folded onto one line |
 | `fields` | no | Catalogued labels this rule touches. **Read by nobody yet** — reserved for the relevance filter |
 | `messages` | no | **The enforced part.** See below |
+| `degerler` | no | Named lists of literals this rule FIXES. Enforced the same way `messages` is, and diffed when the rule changes — see below |
 | `source` | no | Where the rule came from; shown to the analyst, never to the model |
 
 ### `status` defaults to "assumption", deliberately
@@ -131,6 +135,55 @@ Two consequences worth knowing:
   PROMPT; the validator sees the whole product. Tying the two together would
   mean a draft accepted during generation being refused by the identical check
   at the run gate, because a checkbox was cleared in between.
+
+### `degerler` — the literals a rule fixes
+
+A named list per fact: `secenekler`, `varsayilan`, whatever the rule actually
+pins down. A scalar is read as a one-item list, so `varsayilan: "Son 1 Ay"` and
+`secenekler: [...]` come out the same shape and no reader has to ask which one
+it got. Not a map at all costs the values, never the rule.
+
+It earns its place twice, and neither use needs a reference syntax inside
+scenarios:
+
+- **The validator accepts them**, exactly as it accepts `messages`. A
+  dropdown's options are something the screen PRINTS, so
+  `verify "Son 12 Ay" text is displayed` is quoting a written-down fact rather
+  than inventing a sentence. On a screen with no catalog this list is the only
+  thing the check can consult.
+- **A change is diffed value by value.** When the rule moves, every scenario
+  bound to it is marked "bayat" and the detail view names the values that were
+  added and dropped, plus the lines of the scenario still carrying a dropped
+  one. See below.
+
+### A changed rule marks its scenarios, and never rewrites them
+
+A scenario is bound to a rule by id, so a rule being **renamed or deleted** was
+always caught — the chip reads "unknown". A rule whose **text changed** was
+not: the id still matched and every scenario on it went on testing the old
+wording in silence.
+
+`SourceSnapshot` closes that. When a scenario is created, imported or reviewed,
+the full text of every rule and alias it names is stored alongside it
+(`SCENARIO.reviewed_sources`) — a copy, not a hash, because "what changed" is
+the only half of the question an analyst can act on. Every read compares it to
+the current files.
+
+**It reports and stops there, on purpose.** The same difference means two
+opposite things: the application changed and the rule caught up, so the
+scenario should follow; or the rule was simply written down wrong and has been
+corrected, in which case the scenario should change AND the run should stay
+RED, over a defect that is still there. Rewriting the scenario from the rule
+would turn that second case into a green test over a live bug — the oracle
+problem arriving through the back door, this time as maintenance. So the badge
+names what moved, points at the lines worth reading, and offers two ways out a
+person chooses between: edit the scenario, or "Gözden geçirildi" (re-stamp,
+scenario untouched).
+
+An **unstamped** scenario reports nothing. A badge that is on for every row
+says nothing about any of them, which is also why the import and the one-time
+backfill stamp against the files as they stand: the scenarios and `rules.yaml`
+travelled here in the same commit, so as far as anyone knows they agree.
 
 ### Duplicate ids
 

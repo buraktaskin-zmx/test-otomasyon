@@ -86,6 +86,12 @@ export function ScenarioTable({
                   {scenario.problem || scenario.stepCount === 0 ? null : (
                     <span className="sc-steps"> · {scenario.stepCount} adım</span>
                   )}
+                  {scenario.stale ? (
+                    <span className="sc-stale"
+                          title="Bu senaryonun dayandığı kural ya da ön koşul, senaryo gözden geçirildikten sonra değişti">
+                      {" "}· bayat
+                    </span>
+                  ) : null}
                 </div>
                 {scenario.tags.map((tag) => (
                   <span key={tag} className="sc-tag">@{tag}</span>
@@ -106,10 +112,13 @@ export function ScenarioTable({
                   scenario.rules.map((rule) => (
                     <span
                       key={rule.id}
-                      className={"rule-chip" + (rule.known ? "" : " is-unknown")}
-                      title={rule.known
-                        ? rule.title + (rule.confirmed ? "" : " (VARSAYIM)")
-                        : "rules.yaml'da böyle bir kural yok"}
+                      className={"rule-chip" + (rule.known ? "" : " is-unknown")
+                        + (rule.stale ? " is-stale" : "")}
+                      title={!rule.known
+                        ? "rules.yaml'da böyle bir kural yok"
+                        : rule.stale
+                          ? rule.title + " — bu kural senaryo gözden geçirildikten sonra değişti"
+                          : rule.title + (rule.confirmed ? "" : " (VARSAYIM)")}
                     >
                       {rule.id}
                     </span>
@@ -191,8 +200,11 @@ function Precondition({ scenario }: { scenario: RegisteredScenario }) {
       {scenario.needs.map((need) => (
         <div
           key={need.id}
-          className={"sc-alias" + (need.readiness === "READY" ? "" : " is-weak")}
-          title={needTitle(need)}
+          className={"sc-alias" + (need.readiness === "READY" ? "" : " is-weak")
+            + (need.stale ? " is-stale" : "")}
+          title={need.stale
+            ? needTitle(need) + " · tanımı senaryo gözden geçirildikten sonra değişti"
+            : needTitle(need)}
         >
           {need.label || need.id}
         </div>

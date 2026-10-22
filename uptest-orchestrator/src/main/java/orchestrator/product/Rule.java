@@ -1,7 +1,9 @@
 package orchestrator.product;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * One business rule: a thing the application MUST do, written by a person.
@@ -34,9 +36,28 @@ import java.util.Locale;
  * @param messages    the EXACT sentences the application prints for this rule.
  *                    Compared character for character after folding, so a
  *                    paraphrase here is as wrong as no entry at all
+ * @param values      {@code degerler:} — the named value lists this rule
+ *                    fixes, e.g. {@code secenekler: ["Bu Hafta", "Son 1 Ay"]}.
+ *                    Same job {@link #messages} already does and earns its
+ *                    place the same way: a dropdown's options are something
+ *                    the screen PRINTS, so a scenario asserting one is
+ *                    quoting a written-down fact rather than inventing it —
+ *                    and on a screen with no catalog there is nothing else to
+ *                    check it against. A scalar in the YAML becomes a
+ *                    one-item list, so every reader sees one shape
  */
 public record Rule(String id, String title, String status, String description,
-                   List<String> fields, List<String> messages, String source) {
+                   List<String> fields, List<String> messages,
+                   Map<String, List<String>> values, String source) {
+
+    /** Every value of every list, in declaration order. */
+    public List<String> allValues() {
+        List<String> all = new ArrayList<>();
+        if (values != null) {
+            values.values().forEach(all::addAll);
+        }
+        return all;
+    }
 
     public static final String CONFIRMED = "DOĞRULANDI";
     public static final String ASSUMPTION = "VARSAYIM";

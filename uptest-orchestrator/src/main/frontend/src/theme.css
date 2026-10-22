@@ -1203,6 +1203,71 @@ body {
 .sc-alias.is-weak { color: var(--warn); }
 .sc-alias-none { font-family: var(--sans); color: var(--text-faint); }
 
+/* ----- bayat: dayandığı kural/ön koşul sonradan değişmiş ----- */
+
+/* Kesik alt çizgi, yazım denetimi gibi: okurken gürültü yapmaz, dikkatle
+   bakınca "burada bir şey var" dedirtir. Rozet DEĞİL -- bayatlık bir hata
+   değil, bakılması gereken bir şey. */
+.rule-chip.is-stale,
+.sc-alias.is-stale {
+    text-decoration: underline wavy var(--warn);
+    text-underline-offset: 3px;
+}
+
+.sc-stale { color: var(--warn); }
+
+.sd-changed {
+    margin: 0 0 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--warn);
+    border-radius: var(--radius);
+    background: var(--surface);
+}
+
+.sd-changed-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.sd-changed-title {
+    flex: 1;
+    font-weight: 600;
+    color: var(--warn);
+}
+
+.sd-change { margin-top: 10px; }
+.sd-change + .sd-change { border-top: 1px solid var(--border); padding-top: 10px; }
+
+.sd-change-id { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.sd-change-name { color: var(--text-muted); }
+.sd-change-gone { color: var(--warn); font-size: var(--text-xs); }
+
+.sd-change-values { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 6px; }
+
+.sd-value {
+    padding: 1px 6px;
+    border-radius: var(--radius);
+    font-family: var(--mono);
+    font-size: var(--text-xs);
+}
+
+.sd-value.is-removed { background: rgba(200, 60, 60, .12); text-decoration: line-through; }
+.sd-value.is-added { background: rgba(60, 160, 90, .14); }
+
+.sd-change-field { margin-top: 8px; }
+
+.sd-diff {
+    margin: 2px 0;
+    padding: 6px 8px;
+    white-space: pre-wrap;
+    border-left: 3px solid var(--border);
+}
+
+.sd-diff.is-before { border-left-color: rgba(200, 60, 60, .7); color: var(--text-muted); }
+.sd-diff.is-after { border-left-color: rgba(60, 160, 90, .7); }
+
 .sc-preconditions {
     margin: 0;
     padding-left: 1.1em;

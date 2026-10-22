@@ -76,6 +76,22 @@ public class ScenarioEntity {
     @Column(name = "source_path", length = 512)
     private String sourcePath;
 
+    /**
+     * The rules and aliases this scenario names, AS THEY READ when somebody
+     * last reviewed it -- see orchestrator.product.SourceSnapshot. JSON, and
+     * the whole text rather than a hash, because the question an analyst can
+     * act on is "what changed", not "did it change".
+     *
+     * Null means nobody has stamped this scenario yet, and that reads as "no
+     * finding": a badge that is on for every row says nothing about any of
+     * them.
+     */
+    @Column(name = "reviewed_sources", length = Length.LONG32)
+    private String reviewedSources;
+
+    @Column(name = "reviewed_at")
+    private Instant reviewedAt;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -149,6 +165,20 @@ public class ScenarioEntity {
 
     public String getSourcePath() {
         return sourcePath;
+    }
+
+    public String getReviewedSources() {
+        return reviewedSources;
+    }
+
+    public Instant getReviewedAt() {
+        return reviewedAt;
+    }
+
+    /** Stamps what the scenario's rules and aliases say right now. */
+    public void setReviewedSources(String reviewedSources) {
+        this.reviewedSources = reviewedSources;
+        this.reviewedAt = Instant.now();
     }
 
     public Instant getUpdatedAt() {

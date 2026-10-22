@@ -17,6 +17,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Reads product context out to the UI.
@@ -163,7 +165,8 @@ public class ProductController {
         Map<String, Object> body = new LinkedHashMap<>(summary(model, knownCatalogs));
         body.put("screens", screens(model, cards, knownCatalogs));
         body.put("scenarios", registered.stream().map(entry -> {
-            Map<String, Object> row = row(entry.card(), model);
+            Map<String, Object> row = row(entry.card(), model,
+                    products.changes(entry.stored(), model));
             // The Ön koşul column shows these, item by item, as written --
             // so the Açıklama column leaves them out.
             row.put("preconditions", entry.fields().preconditions());
@@ -201,7 +204,8 @@ public class ProductController {
      * {@code version} goes back with an edit, so a save over someone else's
      * newer one is refused instead of silently overwriting it.
      */
-    private static Map<String, Object> detail(ScenarioStore.Stored stored, ProductModel model) {
+    private Map<String, Object> detail(ScenarioStore.Stored stored, ProductModel model) {
+        List<SourceSnapshot.SourceChange> changes = products.changes(stored, model);
         ScenarioFields fields = stored.fields();
         String feature = FeatureComposer.compose(fields);
         ScenarioCard card = ScenarioLibrary.parse(stored.path(), stored.flow(), feature);
@@ -213,14 +217,71 @@ public class ProductController {
         doc.put("steps", fields.steps());
         doc.put("expected", fields.expected());
 
-        Map<String, Object> body = new LinkedHashMap<>(row(card, model));
+        Map<String, Object> body = new LinkedHashMap<>(row(card, model, changes));
         body.put("preconditions", fields.preconditions());
         body.put("path", stored.path());
         body.put("feature", feature);
         body.put("gherkin", fields.gherkin());
         body.put("doc", doc);
         body.put("version", stored.version());
+        body.put("changes", changes.stream().map(change -> change(change, fields)).toList());
         return body;
+    }
+
+    /**
+     * One source that moved since the scenario was reviewed, with the lines
+     * of the scenario worth looking at.
+     *
+     * Those line numbers are pointed at, never rewritten. The same difference
+     * means two opposite things -- the application changed and the rule
+     * caught up, or the rule was written down wrong and has been corrected --
+     * and only the second one must leave the run RED, over a defect that is
+     * still there. A machine cannot tell them apart; it can say where to look.
+     */
+    private static Map<String, Object> change(SourceSnapshot.SourceChange change,
+                                              ScenarioFields fields) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("kind", change.kind());
+        row.put("id", change.id());
+        row.put("state", change.state());
+        row.put("title", change.title());
+        row.put("fields", change.fields().stream().map(field -> Map.of(
+                "field", field.field(),
+                "before", field.before(),
+                "after", field.after())).toList());
+        row.put("removed", change.removed());
+        row.put("added", change.added());
+        row.put("mentions", mentions(change.removed(), fields));
+        return row;
+    }
+
+    /** Lines of the scenario that still carry a value the rule has dropped. */
+    private static List<Map<String, Object>> mentions(List<String> removed, ScenarioFields fields) {
+        if (removed.isEmpty()) {
+            return List.of();
+        }
+        // LinkedHashMap, not Map.of: these are rendered in order to a person,
+        // and Map.of leaves iteration order unspecified.
+        Map<String, List<String>> parts = new LinkedHashMap<>();
+        parts.put("Ön koşul", fields.preconditions());
+        parts.put("Adımlar", fields.steps());
+        parts.put("Beklenen", fields.expected());
+        parts.put("Gherkin", List.of(fields.gherkin().split("\\R")));
+
+        List<Map<String, Object>> found = new ArrayList<>();
+        for (String value : removed) {
+            if (value.isBlank()) {
+                continue;
+            }
+            for (Map.Entry<String, List<String>> part : parts.entrySet()) {
+                for (String line : part.getValue()) {
+                    if (line.contains(value)) {
+                        found.add(Map.of("value", value, "where", part.getKey(), "line", line.trim()));
+                    }
+                }
+            }
+        }
+        return found;
     }
 
     /**
@@ -309,7 +370,15 @@ public class ProductController {
         return rows;
     }
 
-    private static Map<String, Object> row(ScenarioCard card, ProductModel product) {
+    private static Map<String, Object> row(ScenarioCard card, ProductModel product,
+                                           List<SourceSnapshot.SourceChange> changes) {
+        // The ids whose text reads differently now than when this scenario was
+        // last reviewed. A rule that was DELETED is not among them on purpose:
+        // `known=false` already reports that, and two complaints about one
+        // fact is one too many.
+        Set<String> staleRules = changed(changes, SourceSnapshot.Source.RULE);
+        Set<String> staleNeeds = changed(changes, SourceSnapshot.Source.ALIAS);
+
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("path", card.path());
         row.put("flow", card.flow());
@@ -331,6 +400,7 @@ public class ProductController {
             chip.put("known", rule != null);
             chip.put("title", rule == null ? "" : rule.title());
             chip.put("confirmed", rule != null && rule.confirmed());
+            chip.put("stale", staleRules.contains(id));
             return chip;
         }).toList());
 
@@ -354,6 +424,7 @@ public class ProductController {
             need.put("how", alias == null ? "" : alias.how());
             need.put("description", alias == null ? "" : alias.description());
             need.put("blockedBy", alias == null ? "" : alias.blockedBy());
+            need.put("stale", staleNeeds.contains(id));
             needs.add(need);
         }
         row.put("needs", needs);
@@ -362,7 +433,17 @@ public class ProductController {
         // preconditions were never written down, so nobody can say whether it
         // runs. @needs:none is how an author says "checked, there are none".
         row.put("readiness", card.needsUndeclared() ? "UNDECLARED" : worst.name());
+        row.put("stale", !changes.isEmpty());
         return row;
+    }
+
+    /** Ids of one kind whose text moved since the scenario was reviewed. */
+    private static Set<String> changed(List<SourceSnapshot.SourceChange> changes, String kind) {
+        return changes.stream()
+                .filter(change -> kind.equals(change.kind()))
+                .filter(change -> SourceSnapshot.SourceChange.CHANGED.equals(change.state()))
+                .map(SourceSnapshot.SourceChange::id)
+                .collect(Collectors.toSet());
     }
 
     /** A row is as ready as its worst need. BLOCKED > MISSING > SEED > READY. */
