@@ -166,13 +166,21 @@ export function ScenarioTable({
 }
 
 /**
- * One word for the row, then the needs behind it in the analyst's words.
+ * The scenario's own "Ön koşul" items, one per line, exactly as written --
+ * edited in the detail view, re-read with the table after every save.
  *
- * The row's word is the WORST of its needs, because a scenario is as runnable
- * as its least available piece of data — four of five aliases ready is still
- * a scenario that cannot run.
+ * Only a scenario that wrote none falls back to the @needs readiness: one
+ * word for the row, the WORST of its needs, then the needs themselves.
  */
 function Precondition({ scenario }: { scenario: RegisteredScenario }) {
+  const written = scenario.preconditions ?? [];
+  if (written.length > 0) {
+    return (
+      <ul className="sc-preconditions">
+        {written.map((item, index) => <li key={index}>{item}</li>)}
+      </ul>
+    );
+  }
   const state = readinessLabel(scenario.readiness, scenario.needsNone);
   return (
     <>

@@ -124,9 +124,20 @@ public class ProductService {
      * disappearing.
      */
     public List<ScenarioCard> scenarios(String app, String product) {
+        return registered(app, product).stream().map(Registered::card).toList();
+    }
+
+    /** A table row: what the Gherkin parse says, plus the fields as stored. */
+    public record Registered(ScenarioCard card, ScenarioFields fields) {
+    }
+
+    /** {@link #scenarios}, with each scenario's stored fields beside its card. */
+    public List<Registered> registered(String app, String product) {
         return store.scenarios(safe(app), product).stream()
-                .map(stored -> ScenarioLibrary.parse(stored.path(), stored.flow(),
-                        FeatureComposer.compose(stored.fields())))
+                .map(stored -> new Registered(
+                        ScenarioLibrary.parse(stored.path(), stored.flow(),
+                                FeatureComposer.compose(stored.fields())),
+                        stored.fields()))
                 .toList();
     }
 

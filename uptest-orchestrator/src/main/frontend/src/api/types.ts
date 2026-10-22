@@ -358,6 +358,8 @@ export interface RegisteredScenario {
   needsNone: boolean;
   /** The worst of `needs` -- a row is as ready as its least ready need. */
   readiness: Readiness;
+  /** The scenario's own "Ön koşul" items, as written in it. */
+  preconditions: string[];
 }
 
 /** The natural-language half of a scenario, as the database keeps it. */

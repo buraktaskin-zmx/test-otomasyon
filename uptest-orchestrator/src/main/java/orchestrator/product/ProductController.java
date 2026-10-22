@@ -156,12 +156,20 @@ public class ProductController {
                     "detail", products.diagnose(app, product)));
         }
 
-        List<ScenarioCard> cards = products.scenarios(app, product);
+        List<ProductService.Registered> registered = products.registered(app, product);
+        List<ScenarioCard> cards = registered.stream().map(ProductService.Registered::card).toList();
         List<String> knownCatalogs = catalogs.list();
 
         Map<String, Object> body = new LinkedHashMap<>(summary(model, knownCatalogs));
         body.put("screens", screens(model, cards, knownCatalogs));
-        body.put("scenarios", cards.stream().map(card -> row(card, model)).toList());
+        body.put("scenarios", registered.stream().map(entry -> {
+            Map<String, Object> row = row(entry.card(), model);
+            // The Ön koşul column shows these, item by item, as written --
+            // so the Açıklama column leaves them out.
+            row.put("preconditions", entry.fields().preconditions());
+            row.put("description", description(entry.fields()));
+            return row;
+        }).toList());
         return ResponseEntity.ok(body);
     }
 
@@ -206,12 +214,31 @@ public class ProductController {
         doc.put("expected", fields.expected());
 
         Map<String, Object> body = new LinkedHashMap<>(row(card, model));
+        body.put("preconditions", fields.preconditions());
         body.put("path", stored.path());
         body.put("feature", feature);
         body.put("gherkin", fields.gherkin());
         body.put("doc", doc);
         body.put("version", stored.version());
         return body;
+    }
+
+    /**
+     * The Açıklama column: the steps and the expectation, in the layout the
+     * column always had ("Adımlar: - … Beklenen: - …"). The preconditions are
+     * NOT repeated here; they have their own column.
+     */
+    private static String description(ScenarioFields fields) {
+        StringBuilder out = new StringBuilder();
+        if (!fields.steps().isEmpty()) {
+            out.append("Adımlar:");
+            fields.steps().forEach(step -> out.append(" - ").append(step));
+        }
+        if (!fields.expected().isEmpty()) {
+            out.append(out.isEmpty() ? "" : " ").append("Beklenen:");
+            fields.expected().forEach(item -> out.append(" - ").append(item));
+        }
+        return out.toString();
     }
 
     /**

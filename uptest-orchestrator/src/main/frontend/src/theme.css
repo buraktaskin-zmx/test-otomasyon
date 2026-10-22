@@ -1203,6 +1203,14 @@ body {
 .sc-alias.is-weak { color: var(--warn); }
 .sc-alias-none { font-family: var(--sans); color: var(--text-faint); }
 
+.sc-preconditions {
+    margin: 0;
+    padding-left: 1.1em;
+    max-width: 28ch;
+    line-height: 1.5;
+    color: var(--text);
+}
+
 
 /* The wide panel's own scrolling is handled by its two columns, so the
    panel itself must not add a third scrollbar. */
