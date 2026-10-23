@@ -245,6 +245,11 @@ Then verify {string} text is displayed
 - `verify the {string} field equals {string}` — assert a **text** field equals
   the expected value, **EXACT match**. Example:
   `Then verify the "Fatura No" field equals "FTR-2026-0001"`
+  Also reads a **dropdown's chosen text**, so the selection on a Select2 field
+  can be asserted: `Then verify the "Firma" field equals "Seçiniz"`. (It used
+  to read the widget's hidden SEARCH box instead, which is always empty — so a
+  field plainly showing "Seçiniz" failed with `Expected: Seçiniz / Received:`
+  and nothing after it.)
 - `verify the {string} has date {string}` — assert a **date** field, using the
   SAME offset that was entered. The offset is resolved at run time and then
   compared exactly. Example:

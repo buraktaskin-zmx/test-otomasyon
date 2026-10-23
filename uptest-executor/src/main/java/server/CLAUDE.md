@@ -474,13 +474,13 @@ of these designs. If the target ever becomes twenty parallel runs, the order is
 ## State — what is remembered, and where the database is
 
 The orchestrator has a database as of 2026-10-06: **H2 in file mode**, driven by
-Spring Data JPA, holding `TEST_RUN` and `TEST_RUN_STEP`. The executor has none
-and never will. What survives a restart is now the run history plus what is on
-disk.
+Spring Data JPA. The executor has none and never will. What survives a restart
+is now the run history, the scenario library, and what is on disk.
 
 | where | what it holds | after a restart |
 |---|---|---|
 | orchestrator **database** | `TEST_RUN`, `TEST_RUN_STEP` — the history the UI lists, with each run's step timeline | **kept** |
+| orchestrator **database** | `MAIN_MENU`, `SCREEN`, `SCENARIO` — the Kayıtlı Senaryolar tree and every scenario in it (since 2026-10-21) | **kept** |
 | orchestrator memory | `CatalogDiscoveryService.runs`, `VocabularyService.cached` | **gone** |
 | executor memory | recent run results, pruned at `MAX_RETAINED_RUNS` | **gone** |
 | executor disk | `{featuresFolder}/{runId}/` — feature, log, report, traces | kept |
@@ -488,6 +488,29 @@ disk.
 The gap that closed: the files used to outlive the record that pointed at them.
 A `TEST_RUN` row now outlives the process, so a report from last month is still
 reachable from the history page.
+
+### The database stopped being only a convenience
+
+`TEST_RUN` is derived data — lose it and you lose history, not work. The three
+scenario tables are not: **a scenario written in the UI exists nowhere else**
+until someone presses "Dosyaya aktar", which writes the library back out as
+`.feature` files under `products/` for an ordinary commit. Two things follow
+and both are operational, not architectural:
+
+- The `.mv.db` file is now worth backing up, or exporting from regularly. It
+  lives outside the checkout on purpose (`${LOCALAPPDATA}/uptest/uptest`),
+  because the VDI checkout sits on an SMB share and H2 must not keep a database
+  on a network share.
+- `ddl-auto=update` ADDS columns and never widens one, so every long text in
+  these tables is declared `Length.LONG32` and lands as CLOB. Verified with
+  `INFORMATION_SCHEMA.COLUMNS` after the first start; a column that came out
+  `varchar(255)` would have to be fixed by deleting the database while it was
+  still empty.
+
+This also sharpens the horizontal-scaling gate above. It used to be "run
+history is in a single-writer H2 file"; it is now "run history **and the
+scenario library** are", which makes moving to Postgres a prerequisite for a
+second orchestrator process rather than merely a nicety.
 
 The gap still open: **discovery runs are not persisted yet**, so a catalog
 discovery that finishes after an orchestrator restart is still unrecoverable —
@@ -709,9 +732,14 @@ Also: if an image pull is interrupted by a full disk, layers can be left
   which is copied onto the finished result afterwards — so the UI polls one
   endpoint and one shape throughout. See "Step timeline" below.
 - Multi-module split before or after orchestrator work starts?
-- Discovery and draft persistence — `TEST_RUN`/`TEST_RUN_STEP` landed, but
+- Discovery and draft persistence — `TEST_RUN`/`TEST_RUN_STEP` landed, and so
+  did the scenario library (`MAIN_MENU`/`SCREEN`/`SCENARIO`), but
   `CatalogDiscoveryService.runs` is still a map, so a catalog discovery that
   finishes after a restart is unrecoverable and its four minutes of browser time
-  must be spent again. `SCENARIO_DRAFT` is likewise unwritten. Both are designed;
-  see "State, and where the database is".
+  must be spent again. `SCENARIO_DRAFT` — a GENERATED draft, which is a
+  different thing from a saved scenario — is likewise unwritten: the Çoklu Üret
+  drafts still live only in the browser tab. Both are designed; see "State, and
+  where the database is".
+- Backup for the scenario library. "Dosyaya aktar" + commit is the manual
+  answer today and nothing enforces it being done.
 - Artifact retention policy; traces and screenshots grow fast.

@@ -161,10 +161,14 @@ All test-side code lives in `uptest-executor/src/main/java/` under the package
 
 Elsewhere:
 
-- Scenarios (working copies analysts and the LLM look at): `scenarios/*.feature`
-- Product context (the oracle): `products/<app>/<product>/` — `product.yaml`
-  (identity + the flows it claims), `rules.yaml` (ID'd business rules), and
-  optional `flow.md` / `roles.md` / `open-questions.md`. Schema in
+- Scenarios: in the DATABASE — see the Kayıtlı Senaryolar entry below.
+  `scenarios/*.feature` at the repo root is the older loose collection (Banko,
+  DBS, NGI login) that predates products and is not in the library; the ones
+  under `products/**/scenarios/` are its import seed and export target.
+- Product context (the oracle): `products/<app>/<product>/` — `rules.yaml`
+  (ID'd business rules, read from disk on EVERY request), `test-data.yaml`, and
+  optional `flow.md` / `roles.md` / `open-questions.md`. `product.yaml` is
+  identity + flows, read once at import and written back by an export. Schema in
   `products/SCHEMA.md`, read by `orchestrator/product/`. Separate from
   `catalogs/` and NOT a directory level inside it: `Origin{app, flow}` travels
   on every validate/suggest/run request and is persisted in `TEST_RUN`'s own
@@ -181,7 +185,13 @@ Elsewhere:
   the database does not know yet (`ProductService.importMissing`) — after that
   the database is the source, and "Dosyaya aktar" (`POST
   /api/v1/products/export`) writes it back to files for git, never deleting.
-  Rules, test data and the analysts' notes stay files.
+  Rules, test data and the analysts' notes stay files. **Editing a `.feature`
+  by hand changes nothing in a running UI**, and neither does pulling one.
+  `SourceSnapshot` stores what each scenario's rules and aliases said when it
+  was last reviewed and marks it "bayat" when they move.
+  No `.feature` anywhere carries a `#` comment line, by the analysts' standing
+  rule — enforced in `ScenarioFields`, `FeatureComposer` and
+  `LlmOutputCleaner` rather than asked for in a prompt.
 - Screen catalogs for LLM prompting: `catalogs/<app>/<flow>.yaml`; schema in
   `catalogs/SCHEMA.md`
 - Screen discovery (executor): `PW/discovery/` — `CatalogDiscovery` walks a flow
@@ -564,6 +574,20 @@ and leave each independently runnable.
   tells it to open the control and click the option, and to copy the option
   text rather than retype it (it produced "Taksitli Ödnsin", which matches
   nothing and looks like an application fault).
+  **And it cannot be READ through its native `<select>` either**, which is the
+  same lesson arriving from the verify side a fortnight later.
+  `verifyFieldEquals` takes the container's `input` when there is one — right
+  for an ordinary text box, wrong here, because the input inside a Select2 is
+  the widget's SEARCH box and it is always empty. So
+  `verify the "Firma" field equals "Seçiniz"` failed with `Expected: Seçiniz`,
+  `Received:` and nothing after it, on a field that plainly said Seçiniz; the
+  call log even named the element (`class="select2-input nonprintable"`) and it
+  still read as an application fault. The value a person sees lives in
+  `.select2-chosen` (v3) or `.select2-selection__rendered` (v4), so the verify
+  checks for those first and only then falls back to the input. The general
+  shape, and it is now three for three: **a widget that must be DRIVEN through
+  its rendered control must be READ through it too** — reaching past it finds a
+  hidden element that answers confidently and wrongly, in both directions.
 - **`fill()` does not work on a masked input.** It writes the value in a single
   `input` event; a jQuery-masked field listens for key events and rebuilds the
   value character by character, so it ignores that event and paints the empty
@@ -1015,6 +1039,15 @@ and leave each independently runnable.
   direction — a missing `verifiable` weakens a test, a wrong one fails a run —
   but it is why agent `verifiable` flags are cross-checked against a scan.
 - Verifying text inside an invoice table.
+- **No step verifies a dropdown's option LIST.** A rule can write its options
+  down (`degerler:` in `rules.yaml`) and the validator accepts a scenario
+  asserting one of them, but asserting the whole list takes one
+  `verify … text is displayed` per option, with the dropdown open. Until that
+  step exists, `degerler` keeps the DOCUMENTATION honest and the staleness diff
+  precise, not the test.
+- **Nothing backs up the scenario library.** The scenarios live only in the
+  VDI's `.mv.db`; "Dosyaya aktar" + commit is the only route out and nothing
+  prompts for it.
 - `mvn test` finds no features: they sit in a directory literally named
   `com.ykb.uplift.uptest` (dots), while `RunCucumberTest` selects the classpath
   resource `com/ykb/uplift/uptest` (slashes), which holds only the suite class.

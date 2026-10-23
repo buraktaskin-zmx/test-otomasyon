@@ -5,21 +5,46 @@ written knowledge about it: the screens it owns, and the rules it must obey.
 
 ```
 products/<app>/<product>/
-├── product.yaml         identity + the flows it claims   (REQUIRED)
 ├── rules.yaml           the business rules               (optional)
 ├── test-data.yaml       alias catalogue                  (optional)
 ├── flow.md              state machine, free text         (optional)
 ├── roles.md             who may do what, free text       (optional)
 ├── known-issues.md      bugs not to write tests for      (optional)
 ├── open-questions.md    what nobody has answered         (optional)
+├── product.yaml         identity + flows   — IMPORT SEED / EXPORT TARGET
 └── scenarios/
     └── <flow>/          one folder per screen
-        └── NN-ad.feature
+        └── NN-ad.feature  — IMPORT SEED / EXPORT TARGET
 ```
 
-Only `product.yaml` is load-bearing. A product being written has most of the
-rest missing and must still load — that is the ordinary state of a product
-someone started this morning.
+## Two halves, split by who writes them
+
+**Written by a person, reviewed through git, read from these files on every
+request:** `rules.yaml`, `test-data.yaml` and the three free-text documents.
+Nothing in the UI edits them; a change arrives by editing the file and pulling.
+
+**Edited in the UI all day, and therefore in the database:** the ana menü, its
+screens and its scenarios — `MAIN_MENU`, `SCREEN`, `SCENARIO` in the
+orchestrator's H2, reached only through `orchestrator/product/ScenarioStore`.
+Saving a scenario no longer rewrites a file in the checkout, which is what the
+move was for: every save used to land in the working tree and collide with the
+next `git pull`.
+
+`product.yaml` and `scenarios/**/*.feature` are therefore **not the source any
+more**. They are:
+
+- the **import seed** — `ProductService.importMissing` reads a product folder
+  ONCE, at startup, and only when the database does not know that product yet.
+  A product already in the database is never re-read, because re-reading would
+  undo every edit made since. `scenarios-gizli/` is not read at all.
+- the **export target** — `POST /api/v1/products/export` ("Dosyaya aktar")
+  writes the database back out as `.feature` files so they can be committed.
+  Write-only: a file the database no longer has is REPORTED, never deleted,
+  because deleting files is a decision for a person.
+
+Consequence worth stating plainly: **editing a `.feature` by hand changes
+nothing in a running UI**, and neither does pulling one. To change a scenario,
+edit it in the UI; to read what the UI holds, export first.
 
 ---
 
@@ -44,7 +69,16 @@ disk is not an error, it is the work queue.
 
 ---
 
-## `product.yaml`
+## `product.yaml` — read once, then the database answers
+
+Everything below is what the IMPORT reads, and what an export writes back.
+Once the product is in the database, the menu's name, its category and its
+screens are edited through the tree ("+ Ana menü", "+ Ekran ekle") and this
+file is no longer consulted.
+
+An export writes `product.yaml` only when the folder has none: the existing
+ones carry hand-written comments beside each flow, and a regenerated file
+would erase them.
 
 ```yaml
 app: ngc                      # must match the directory above
@@ -193,33 +227,67 @@ analyst reading a file whose contents disagree with the screen.
 
 ---
 
-## `scenarios/` — the registry
+## `scenarios/` — the import seed, and the shape of a stored scenario
 
 ```
 scenarios/alici-listesi-islemleri/01-firma-secilmeden-listele.feature
-          └─ the FLOW ─────────┘  └─ the file, and the row's identity ─┘
+          └─ the FLOW ─────────┘  └─ the file name, and the row's identity ─┘
 ```
 
 **One folder per screen, and the folder name IS the flow** — the same name the
-catalog has. That is how a scenario finds its screen without anything being
-written down twice, and a folder nobody declared in `flows:` shows up in the
-Ürünler tree as `bildirilmemiş` rather than silently becoming a sixth screen.
+catalog has. The import turns the folder into a `SCREEN` row and each file into
+a `SCENARIO` row; the pair `<flow>/<file name>` stays the row's identity in the
+API and in every URL, so nothing above the store had to learn about UUIDs. A
+folder nobody declared in `flows:` still becomes a screen, marked
+`bildirilmemiş` rather than silently becoming a sixth declared one.
 
-**There is no registry file.** Everything the Ürünler table shows is derived
-from the `.feature` itself, because Gherkin already has somewhere to put each
-of it and a second list of the same scenarios would start by agreeing and end
-by disagreeing:
+**A scenario is stored as fields, not as one blob.** The natural language and
+the Gherkin live in separate columns (`orchestrator/product/ScenarioFields`),
+and that split is the point: while both halves shared one file, pasting a whole
+`.feature` into the Gherkin box doubled the rule tags and wiped the
+description, because the paste carried a tag line and a description of its own.
+Now a Gherkin edit touches `gherkin` and nothing else.
+
+Two converters keep the two shapes interchangeable, both pure Java:
+`ScenarioDocParser` splits a `.feature` into fields (the import, and any client
+that still sends a whole file), `FeatureComposer` builds one back (a run, the
+"Git" button, the export). The round trip is exact for every structured file in
+the repo. Neither ever emits a `#` comment line — see *No comments* below.
 
 ```gherkin
 @R-AL-011 @needs:MAKER_01 @needs:FIRMA_LISTELI
 Feature: Alıcı Listesi İşlemleri
 
   Scenario: Firma seçilmeden Listele çalışmaz
-    Firma alanı boş bırakılıp Listele tıklanır; sorgu çalışmaz.
+
+    Ön koşul:
+    - Listesi olan bir firma bulunabilmeli
+
+    Adımlar:
+    - Alıcı Listesi İşlemleri ekranını aç
+    - Firma alanını boş bırak
+    - Listele butonuna tıkla
+
+    Beklenen:
+    - Sorgu çalışmaz
 
     Given login with cif "MAKER_01" and userid "MAKER_01"
     ...
 ```
+
+The three sections under `Scenario:` are the natural-language half. An older
+file written as free prose still imports — an `Ön koşul:` or `Beklenen:`
+paragraph is recognised and the rest is split into steps by sentence — and
+comes back out in this layout.
+
+### No comment lines, anywhere
+
+No `.feature` in this repository carries a `#` line, by the analysts' standing
+rule. It is enforced in three places rather than asked for: `ScenarioFields`
+strips them from anything stored, `FeatureComposer` never writes one, and
+`LlmOutputCleaner` removes them from a generated draft — a draft is a file the
+moment it is saved. Explanations belong in the reply to the analyst, not in the
+file they have to read.
 
 **Two namespaces, and they point in opposite directions.** This is the single
 easiest thing to confuse, because both can name the same field:
@@ -240,14 +308,14 @@ that tags do nothing.
 
 | Column | Comes from |
 |---|---|
-| Senaryo | the **Scenario** line (the Feature line names the screen, the Scenario line names the test), the path, and the parsed step count — Background included, because Background steps run |
-| Kurallar | `@R-...` tags. A tag naming a rule that no longer exists is shown struck through, never dropped: a scenario pointing at a deleted rule LOOKS bound and is not |
-| Ön koşul | `@needs:...` tags. The row's word is the WORST of its needs |
-| Açıklama | the Scenario's description block |
+| Senaryo | the scenario's title, its `<flow>/<file name>`, and the parsed step count — Background included, because Background steps run. Plus "bayat" when a rule or alias it names has moved |
+| Kurallar | its rules. A rule the product no longer has is marked unknown, never dropped: a scenario pointing at a deleted rule LOOKS bound and is not. A rule whose TEXT moved is underlined |
+| Ön koşul | the scenario's own `Ön koşul:` items, one per line, exactly as written. Only a scenario that wrote none falls back to its `@needs:` readiness, and then the word is the WORST of them |
+| Açıklama | `Adımlar:` and `Beklenen:`. **Not** the preconditions — they have their own column and repeating them there was noise |
 
-Clicking a row opens the file. The columns are CLAIMS the tags make; the
-Gherkin underneath is whether the steps keep them — and no parser can check
-that, which is why a row opens rather than merely expanding.
+Clicking a row opens the scenario. The columns are CLAIMS; the Gherkin
+underneath is whether the steps keep them — and no parser can check that,
+which is why a row opens rather than merely expanding.
 
 Tags cost nothing elsewhere: Cucumber ignores the ones it has no hook for, and
 `ScenarioValidator` only ever looks at steps.

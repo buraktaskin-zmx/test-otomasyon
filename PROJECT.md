@@ -197,6 +197,25 @@ two applications and several flows.
   never writes to a field the application owns, and reports its own ceiling when
   a screen cannot produce as many genuinely different tests as were asked for.
   Each draft is its own document, validated and repaired on its own.
+- **A scenario library the analysts own.** The Kayıtlı Senaryolar tree — ana
+  menü, screens and every scenario — lives in the orchestrator's database, so a
+  save is a save rather than an edit to a file in the checkout that collides
+  with the next `git pull`. A scenario is stored as FIELDS: the natural
+  language (title, rules, preconditions, steps, expectations) and the Gherkin
+  in separate columns, because while they shared one file editing either half
+  could silently damage the other. The `.feature` files are the one-time import
+  seed and the export target — "Dosyaya aktar" writes the library back out so
+  it can be committed, and never deletes anything.
+- **Scenarios know which version of a rule they were written against.** A
+  scenario is bound to a rule by id, so a rename or a deletion was always
+  caught and a reworded rule was silent — five scenarios went on testing the
+  old wording with nothing to say so. The full text of every rule and alias a
+  scenario names is now stored beside it and diffed on every read; when it
+  moves, the scenario is marked and the detail view names what changed and the
+  lines still carrying a dropped value. It reports and never rewrites, because
+  the same difference means either "the application changed and the rule caught
+  up" or "the rule was wrong and has been corrected" — and auto-updating hides
+  the second behind a green test over a live defect.
 - **The platform.** One orchestrator (`:8035`) and three executors (`:9035`,
   internal only) under Docker Compose, built and verified. Live step timeline,
   run history, HTML report and trace download.
@@ -211,16 +230,22 @@ See Roadmap.
 
 ## Roadmap
 
-1. **Run history persistence — largely done, not finished.** `TEST_RUN` and
-   `TEST_RUN_STEP` landed 2026-10-06 (H2 file mode, Spring Data JPA,
-   `ddl-auto=update`, orchestrator only). The history the UI lists now survives
-   a restart, so a report from last month is still reachable. What remains:
+1. **Persistence — largely done, not finished.** `TEST_RUN` and
+   `TEST_RUN_STEP` landed 2026-10-06, and the scenario library
+   (`MAIN_MENU`, `SCREEN`, `SCENARIO`) 2026-10-21 — H2 file mode, Spring Data
+   JPA, `ddl-auto=update`, orchestrator only. The history and the scenarios now
+   survive a restart. The column-width check that `ddl-auto=update` makes
+   irreversible has been done for the scenario tables (all long text came out
+   CLOB, never `varchar(255)`) but still not for `TEST_RUN`. What remains:
    `SCENARIO_DRAFT` and `DISCOVERY_RUN` are designed but unwritten, so a
-   catalog discovery that finishes after a restart is still unrecoverable; the
-   four test classes exist but have never been run; and the one irreversible
-   check — that the long-text columns really came out unbounded rather than
-   `varchar(255)`, which `ddl-auto=update` can never widen — has not been done
-   against a live database yet.
+   catalog discovery that finishes after a restart is still unrecoverable and
+   the Çoklu Üret drafts still live only in the browser tab; and the run-history
+   test classes exist but have never been run.
+   **The database stopped being only a convenience** when the scenarios moved
+   into it: a scenario written in the UI exists nowhere else until somebody
+   exports and commits, so a backup or a routine export is now operational
+   work, and a second orchestrator process needs Postgres rather than merely
+   wanting it.
 2. **Artifact retention policy.** Traces run to tens of megabytes each and
    nothing prunes them.
 3. **MCP agent robustness.** The agent is useful but not yet reliable: it can
@@ -238,11 +263,14 @@ See Roadmap.
 
 ## Open Issues
 
-- **Persistence is partial.** Run history is now a database (`TEST_RUN`,
-  `TEST_RUN_STEP`, orchestrator-side H2). Still in memory and lost on restart:
-  catalog discovery runs — so a discovery that finishes after a restart cannot
-  be recovered and its YAML must be walked again — and the record of what the
-  model generated. The executor keeps nothing by design.
+- **Persistence is partial.** Run history and the scenario library are now a
+  database (`TEST_RUN`, `TEST_RUN_STEP`, `MAIN_MENU`, `SCREEN`, `SCENARIO`,
+  orchestrator-side H2). Still in memory and lost on restart: catalog discovery
+  runs — so a discovery that finishes after a restart cannot be recovered and
+  its YAML must be walked again — and the generated drafts of Çoklu Üret, which
+  live only in the browser tab. The executor keeps nothing by design.
+- **Nothing backs up the scenario library.** "Dosyaya aktar" + commit is the
+  only route out of the database and nothing prompts for it.
 - **The MCP agent can loop on a failed tool call.** Seen on the NGC login page,
   where two `Giriş` links match one selector: the model retried the same guess
   dozens of times instead of re-reading the page, then had its recovery
@@ -252,7 +280,14 @@ See Roadmap.
 - **`shown_when` is hand-written** — neither producer can emit it.
 - **`verifyFieldEquals` reads the label instead of the value** on screens where
   label and value share a span class (`elem-span-infos`, DBS Firm Invoice
-  summary). Needs label-exclusion logic to stay generic.
+  summary). Needs label-exclusion logic to stay generic. (The neighbouring
+  Select2 case IS fixed: it used to read the widget's always-empty search box,
+  so a dropdown plainly showing "Seçiniz" failed against "Seçiniz".)
+- **No step verifies a dropdown's option LIST.** A rule can now write its
+  options down (`degerler:` in `rules.yaml`) and the validator accepts a
+  scenario asserting one, but asserting the whole list takes one
+  `verify … text is displayed` per option. Until that step exists, `degerler`
+  keeps the documentation honest rather than the test.
 - **Verifying text inside an invoice table** is not solved.
 - **`mvn test` and the IDE run gutter find no features**, because the feature
   directory is literally named with dots while the runner selects a slashed

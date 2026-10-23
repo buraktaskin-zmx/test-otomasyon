@@ -231,6 +231,27 @@ değerli ve model gerektirmiyor — **önce bunu yap, model katmanını sonra ta
 
 ### İş 3 — Katalog tazelik sinyali ("cache stale" fikrinin bizdeki karşılığı)
 
+> **Bu fikrin yarısı 2026-10-22'de yapıldı, ama KATALOG için değil KURAL
+> için.** `orchestrator/product/SourceSnapshot`: bir senaryo oluşturulduğunda,
+> aktarıldığında ya da gözden geçirildiğinde, bağlı olduğu her kuralın ve
+> test-verisi alias'ının tam metni yanına yazılıyor (`SCENARIO
+> .reviewed_sources`), her okumada bugünküyle karşılaştırılıyor ve değişmişse
+> senaryo "bayat" işaretleniyor. Kuralın kaynağı zaten bir metin dosyası
+> olduğu için bu, aşağıda anlatılan katalog versiyonundan teknik olarak çok
+> daha kolaydı.
+>
+> Kaydedilen hash değil **tam kopya**, çünkü "değişti mi" sorusunun ucuz
+> yarısına değil "ne değişti" sorusuna cevap vermek gerekiyor; analistin
+> üzerine işlem yapabileceği tek şey bu. Ve rapor ediyor, **asla yeniden
+> yazmıyor**: aynı fark ya "uygulama değişti, kural güncellendi" (senaryo da
+> güncellenmeli) ya da "kural baştan yanlış yazılmıştı, düzeltildi" (senaryo
+> değişmeli ama koşu KIRMIZI kalmalı, çünkü uygulamadaki hata duruyor)
+> demek. Otomatik güncelleme ikincisini yeşil bir testin arkasına saklar.
+>
+> Aşağıdaki locator-stratejisi fikri hâlâ yapılmadı ve hâlâ geçerli: o,
+> kuralın değil **ekranın** değiştiğini yakalar, yani bu mekanizmanın
+> görmediği yarıyı.
+
 **Neden:** e2e'nin cache'i uygulama değişince bunu *fark ediyor*. Bizim
 kataloglarımız değişimi fark etmiyor — bayatladığını ancak bir koşu patlayınca
 öğreniyoruz, hem de yanlış yeri suçlayarak.
