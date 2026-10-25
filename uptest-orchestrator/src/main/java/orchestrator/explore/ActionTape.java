@@ -46,16 +46,20 @@ import java.util.UUID;
  * the run. Same discipline as Hooks closing the browser even when tracing
  * throws.
  *
- * <p><b>Secrets.</b> The agent really does type the password and the SMS code,
- * so those two values are masked wherever they appear. The cif and the user id
- * are NOT masked: a user id is four digits here and masking a four-digit
- * string corrupts every amount and invoice number that happens to match, which
- * is a worse artifact than an unmasked test credential in a gitignored
- * directory ({@code runs/}). When a tape is persisted or exported — H2, "Dosyaya
- * aktar" — that calculus changes and the rule in docs/EYLEM-BANDI.md §6
- * applies instead: the tape starts AFTER login and the login line is grafted
- * back at render time, exactly as LoginStep already does for generated
- * scenarios.
+ * <p><b>Secrets, and the lesson they cost.</b> The agent really does type the
+ * password and the SMS code, so those two are masked — but only where they are
+ * a WHOLE argument value, see {@link #maskValues}. Masking them wherever they
+ * occurred was the first version and the first real tape killed it: the test
+ * password is {@code 123456}, the dealer code under test is {@code 81234567},
+ * and the grid came back {@code cell "8***7"}. The one value the scenario
+ * asserts was destroyed by the thing meant to protect it.
+ *
+ * <p>The cif and the user id are not masked at all. They are test-environment
+ * values, they already live in {@code TEST_RUN.intent}, and {@code runs/} is
+ * gitignored. When a tape is persisted or exported — H2, "Dosyaya aktar" —
+ * that calculus changes and the rule in docs/EYLEM-BANDI.md §6 applies
+ * instead: the tape starts AFTER login and the login line is grafted back at
+ * render time, exactly as LoginStep already does for generated scenarios.
  */
 public final class ActionTape {
 
@@ -134,7 +138,7 @@ public final class ActionTape {
         tape.header.put("recordedAt", tape.startedAt.toString());
         tape.header.put("url", url == null ? "" : url);
         tape.header.put("mainMenu", mainMenu == null ? "" : mainMenu);
-        tape.header.put("instruction", tape.mask(instruction));
+        tape.header.put("instruction", tape.maskText(instruction));
         tape.flush();
         if (tape.file != null) {
             System.out.println("[uptest] tape -> " + tape.file);
@@ -150,7 +154,14 @@ public final class ActionTape {
      */
     private static Path resolve(Path dir, String id) {
         try {
-            Path target = dir.resolve(id);
+            // Absolute, because the configured default is RELATIVE (./runs/mcp)
+            // and a relative path resolves against whatever working directory
+            // the orchestrator was started in — the module folder under IDEA,
+            // the repo root from the command line. The first tape written went
+            // missing for exactly this reason: the log line said ".\runs\mcp\…"
+            // and nobody could say which ".". CatalogService.root() absolutises
+            // for the same reason.
+            Path target = dir.toAbsolutePath().normalize().resolve(id);
             Files.createDirectories(target);
             return target.resolve(FILE);
         } catch (RuntimeException | IOException unavailable) {
@@ -186,9 +197,9 @@ public final class ActionTape {
         entry.put("seq", entries.size() + 1);
         entry.put("atMs", Duration.between(startedAt, Instant.now()).toMillis());
         entry.put("tool", tool == null ? "" : tool);
-        entry.put("args", mask(input));
+        entry.put("args", maskValues(input));
         entry.put("outcome", outcome.name());
-        entry.put("result", mask(result));
+        entry.put("result", maskValues(result));
         entries.add(entry);
         flush();
     }
@@ -227,8 +238,49 @@ public final class ActionTape {
         }
     }
 
-    /** Every secret replaced, everywhere, including inside a result. */
-    private String mask(String text) {
+    /**
+     * Masks a secret only where it is a WHOLE JSON string value.
+     *
+     * <p>The first version replaced the secret wherever it occurred, and the
+     * very first real tape proved why that is wrong: the test password is
+     * {@code 123456} and the dealer code under test is {@code 81234567}, so
+     * the grid came back as {@code cell "8***7"} — the artifact corrupted on
+     * exactly the value the scenario asserts. A tape that edits the page's own
+     * data is worse than no tape, because it looks right.
+     *
+     * <p>So the match is anchored on the quotes: a credential is always a
+     * complete argument ({@code "value": "123456"}, {@code "text": "123456"}),
+     * never a fragment of a longer string, while a page value that merely
+     * CONTAINS those digits never has quotes around just that part. Same idea
+     * as Redactor, whose mask is itself a quoted argument so the pass is
+     * idempotent and bounded.
+     *
+     * <p>What this gives up: a password echoed back in plain prose by some
+     * tool would survive. These tools do not echo it — a fill reports "Typed
+     * into …" — and over-masking has now cost more than under-masking would.
+     */
+    private String maskValues(String text) {
+        if (text == null || secrets.isEmpty()) {
+            return text;
+        }
+        String masked = text;
+        for (String secret : secrets) {
+            masked = masked.replace('"' + secret + '"', '"' + MASK + '"');
+        }
+        return masked;
+    }
+
+    /**
+     * Masks a secret anywhere, for the composed instruction only.
+     *
+     * <p>That text is written by {@code ExploreController.compose}, which puts
+     * the credential in unquoted ({@code - Şifre = 123456}), so the anchored
+     * rule above would miss it. The looser rule is acceptable here and nowhere
+     * else: the instruction is prose kept for audit, nothing is ever replayed
+     * from it, and over-masking a word in it costs a line of context rather
+     * than a value under test.
+     */
+    private String maskText(String text) {
         if (text == null || secrets.isEmpty()) {
             return text;
         }
