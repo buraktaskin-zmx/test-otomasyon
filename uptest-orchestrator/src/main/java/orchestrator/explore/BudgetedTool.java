@@ -334,11 +334,20 @@ final class BudgetedTool implements ToolCallback {
             tape.record(name(), input, ActionTape.Outcome.ERROR, result);
             return closed();
         }
-        // Recorded AFTER trim, so the tape holds exactly what the model saw —
-        // reading a reference out of a snapshot the model never received
-        // would resolve to an element it could not have chosen.
+        // Recorded BEFORE trim, and that is a correction of the first version.
+        //
+        // The tape used to store what the model saw, on the reasoning that it
+        // cannot act on a reference it was never shown. Measured on a real
+        // walk, that is false: two of eight snapshots hit the result cap, and
+        // the two refs the agent then clicked — the sub-menu and the dropdown
+        // option — appear in NEITHER stored snapshot, so neither could be
+        // resolved back into a step. The cap exists because every result stays
+        // in the conversation for the rest of the task and one run died of it;
+        // that is a budget for the CONVERSATION. The tape is evidence, it is
+        // read once, long afterwards, and it costs a few hundred kilobytes of
+        // a directory that already holds Playwright traces.
         String answer = trim(result);
-        tape.record(name(), input, ActionTape.Outcome.OK, answer);
+        tape.record(name(), input, ActionTape.Outcome.OK, result);
         return answer;
     }
 
