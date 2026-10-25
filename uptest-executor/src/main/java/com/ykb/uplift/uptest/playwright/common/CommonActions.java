@@ -48,6 +48,21 @@ public class CommonActions {
      */
     private static final String DIALOG_OVERLAY = ".ui-widget-overlay";
     private static final String DIALOG_BOX = "div[role='dialog']";
+
+    /**
+     * The same modal, asked for in the three shapes it can take.
+     *
+     * Wider than {@link #DIALOG_BOX} and deliberately NOT a replacement for
+     * it: that one gates the click guard, which has been right on these
+     * screens for a long time and is not worth disturbing. This one only
+     * decides where a VERIFY looks, where being too narrow costs the whole
+     * point — the accessibility tree reports the "Fatura Bilgileri" modal as a
+     * {@code dialog} node, and that node could be a div with the role, a
+     * native {@code <dialog>}, or jQuery UI's wrapper. Missing it would send
+     * the verify back to the page, where the first "Bayi Kodu" is the grid's
+     * column header.
+     */
+    private static final String READABLE_DIALOG = "div[role='dialog'], dialog[open], .ui-dialog";
     private static final String DIALOG_MESSAGE = "#messageTag";
     private static final String DIALOG_DISMISS = "Tamam";
 
@@ -89,8 +104,32 @@ public class CommonActions {
         // is a LINK, and preferring a button sent the click somewhere else —
         // the step went green, the form never opened, and the next step blamed
         // "Bayi Kodu". Ambiguity is reported below instead of guessed at.
-        Locator target = page.getByRole(AriaRole.BUTTON, new Page.GetByRoleOptions().setName(label))
-                .or(page.getByRole(AriaRole.LINK, new Page.GetByRoleOptions().setName(label)));
+        Locator target = byName(label, false);
+
+        // An EXACT name wins when one exists, because getByRole's default is a
+        // SUBSTRING match and these screens put the short caption inside the
+        // long one. On Firma Fatura İşlemleri the page carries "Detaylı Arama"
+        // and "Detay": the loose match finds both, and "Detaylı Arama" comes
+        // first in document order, so `click "Detay"` opened the search panel
+        // and every step after it failed somewhere else. Read off a recorded
+        // agent walk, where the MCP server disambiguated the same click with
+        // `getByRole('link', { name: 'Detay', exact: true })` — the option our
+        // step had never passed.
+        Locator exact = byName(label, true);
+        if (exact.count() == 0 && target.count() > 1) {
+            // Only pay for this when there IS ambiguity: the panel holding the
+            // short caption is often the one that just re-rendered, so it can
+            // be a moment behind the long one.
+            try {
+                exact.first().waitFor(new Locator.WaitForOptions()
+                        .setState(WaitForSelectorState.ATTACHED).setTimeout(EXACT_NAME_MS));
+            } catch (RuntimeException neverArrived) {
+                // No exact caption on this screen; the loose match is all there is.
+            }
+        }
+        if (exact.count() > 0) {
+            target = exact;
+        }
 
         if (target.count() > 1) {
             System.out.println("[uptest] click: '" + label + "' icin " + target.count()
@@ -113,6 +152,29 @@ public class CommonActions {
         }
         return this;
     }
+
+    /**
+     * Buttons and links carrying this accessible name.
+     *
+     * @param exact true asks Playwright for the WHOLE name rather than its
+     *              default substring match, which is the difference between
+     *              "Detay" and "Detaylı Arama"
+     */
+    private Locator byName(String label, boolean exact) {
+        return page.getByRole(AriaRole.BUTTON,
+                        new Page.GetByRoleOptions().setName(label).setExact(exact))
+                .or(page.getByRole(AriaRole.LINK,
+                        new Page.GetByRoleOptions().setName(label).setExact(exact)));
+    }
+
+    /**
+     * How long an ambiguous click waits for the exact caption to turn up.
+     *
+     * Short on purpose: it is only ever spent when the loose match already
+     * found more than one candidate, and the panel holding the short caption
+     * has usually just re-rendered rather than being absent.
+     */
+    private static final double EXACT_NAME_MS = 3000;
 
     /**
      * jQuery UI's calendar, which this app opens whenever a date input takes
@@ -1379,6 +1441,12 @@ public class CommonActions {
         if (box != null) {
             Locator inDialog = box.getByText(label, new Locator.GetByTextOptions().setExact(true));
             if (inDialog.count() > 0) {
+                // Printed only when the narrowing actually happens, which is
+                // rare and always worth knowing: it is the difference between
+                // reading the dialog and reading the grid header behind it.
+                System.out.println("[uptest] verify: '" + label + "' acik diyalogun icinde arandi ("
+                        + page.getByText(label, new Page.GetByTextOptions().setExact(true)).count()
+                        + " aday vardi, " + inDialog.count() + " tanesi diyalogda)");
                 return inDialog.first();
             }
         }
@@ -1597,7 +1665,7 @@ public class CommonActions {
      * looks.
      */
     private Locator visibleDialogBox() {
-        Locator box = page.locator(DIALOG_BOX);
+        Locator box = page.locator(READABLE_DIALOG);
         int count = box.count();
         for (int i = 0; i < count; i++) {
             if (box.nth(i).isVisible()) {
