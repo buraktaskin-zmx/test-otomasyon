@@ -10,6 +10,7 @@ fields:
     type: dropdown
     options:
       - "ÇAYKUR ÇAY Online DBS"
+      - "ASAŞ ALÜMİNYUM SAN."
   - label: "Hızlı Tarih Seçimi"
     type: dropdown
     options:
@@ -25,6 +26,51 @@ fields:
   - label: "Onaylı Tutar (TL)"
     type: amount
     verifiable: true
+  # "Fatura Bilgileri" dialog, opened with the İŞLEMLER panel's "Detay" after a
+  # grid row is picked. A DRAFT: read off a recorded agent walk's accessibility
+  # tree, not off a DOM scan, so the types are the part to check. Label and
+  # value are siblings inside ONE cell here — a shape no other screen in this
+  # catalog uses — which is why verifyFieldEquals had to learn to read it.
+  - label: "Ana Firma Adı"
+    type: text
+    readonly: true
+    verifiable: true
+  - label: "Bayi Ünvanı"
+    type: text
+    readonly: true
+    verifiable: true
+  - label: "Bayi Kodu"
+    type: text
+    readonly: true
+    verifiable: true
+  - label: "Fatura No"
+    type: text
+    readonly: true
+    verifiable: true
+  - label: "Fatura Tutarı"
+    type: amount
+    readonly: true
+    verifiable: true
+  - label: "Durum"
+    type: text
+    readonly: true
+    verifiable: true
+  - label: "Vade Tarihi"
+    type: date
+    readonly: true
+    verifiable: true
+  - label: "Oluşturulma Tarihi"
+    type: date
+    readonly: true
+    verifiable: true
+  - label: "Ek Bilgi"
+    type: text
+    readonly: true
+    verifiable: true
+
+buttons:
+  - "Detay"
+  - "Kapat"
 
 # Inquiry flow: no submit buttons, no success banner — the result is the
 # populated summary fields above.

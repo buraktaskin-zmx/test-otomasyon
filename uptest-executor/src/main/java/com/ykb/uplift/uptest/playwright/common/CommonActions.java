@@ -1140,7 +1140,7 @@ public class CommonActions {
 
     // Amount fields: normalize then compare numerically
     public CommonActions verifyFieldHasAmount(String label, String expectedAmount) {
-        Locator container = findValueElement(label);
+        Locator container = readableValue(label);
         // Confirm screen: read-only span filled by JS. Auto-wait until non-empty.
         Locator valueSpan = valueHolder(container);
         // TL is appended last, so this waits until the value is fully rendered.
@@ -1162,7 +1162,7 @@ public class CommonActions {
 
     // Text / date fields: EXACT match, NO normalization
     public CommonActions verifyFieldEquals(String label, String expectedText) {
-        Locator container = findValueElement(label);
+        Locator container = readableValue(label);
         Locator inputFields = container.locator("input");
         // A Select2 dropdown's container holds its SEARCH box -- v3's
         // "select2-input", always empty -- so the input branch below read ""
@@ -1230,7 +1230,7 @@ public class CommonActions {
      * screen where nothing is ever filled in.
      */
     public CommonActions verifyFieldIsMasked(String label) {
-        Locator container = findValueElement(label);
+        Locator container = readableValue(label);
         Locator holder = valueHolder(container);
 
         try {
@@ -1308,15 +1308,85 @@ public class CommonActions {
         return trimmed.startsWith(prefix) ? trimmed.substring(prefix.length()).trim() : trimmed;
     }
 
+    /**
+     * The element holding the value, when it can be told apart from the label.
+     *
+     * ONE value span is the ordinary case and it is the value. SEVERAL means
+     * the label is wearing the same class as its value — the open issue on the
+     * DBS Firma Fatura summary — and then {@code .first()} is the LABEL, so a
+     * verify compared "Bayi Kodu" against the expected value and reported a
+     * mismatch that said nothing about the real shape of the screen.
+     *
+     * The fix is to stop choosing. With more than one candidate the container
+     * is returned whole, and its text reads "Bayi Kodu81234567" — which
+     * labelThenValue and withoutLabel already accept, both written for exactly
+     * this run-together rendering. Guessing is what was wrong; the machinery
+     * for not guessing was already here.
+     */
     private static Locator valueHolder(Locator container) {
         Locator span = container.locator("span.elem-span-infos");
-        return span.count() > 0 ? span.first() : container.first();
+        return span.count() == 1 ? span.first() : container.first();
     }
 
     // Returns the input (if entry field) or the value span (if read-only display)
     // that belongs EXACTLY to this label. Auto-waits handled by the callers.
     private Locator findValueElement(String label) {
-        Locator labelEl = page.getByText(label, new Page.GetByTextOptions().setExact(true)).first();
+        return resolveFrom(page.getByText(label, new Page.GetByTextOptions().setExact(true)).first());
+    }
+
+    /**
+     * The element a VERIFY should read, which is not always the one an action
+     * should drive.
+     *
+     * Two things the action path must NOT inherit, which is why this is a
+     * separate entry point rather than a change to findValueElement:
+     *
+     * - A visible modal narrows the search. "Bayi Kodu" is on the Firma Fatura
+     *   screen TWICE — once as a sortable column header, once inside the
+     *   "Fatura Bilgileri" dialog — and the header comes first in document
+     *   order, so getByText(...).first() lands on the header, which is a <th>
+     *   with no fieldcontainer and no following cell. Measured on a recorded
+     *   agent walk: the header is ref e587, the dialog's label is e668.
+     *   visibleDialog()'s own javadoc already offered this ("so callers can
+     *   scope a search to it"); nothing had taken it up.
+     *
+     * - A label and its value can share one parent. The last rung below
+     *   returns that parent, whose text reads "Bayi Kodu81234567" — which
+     *   labelThenValue and withoutLabel were already written to accept. It is
+     *   reached ONLY when the three existing shapes all resolved to nothing,
+     *   so no currently-passing screen changes behaviour.
+     *
+     * Deliberately not wired into select()/selectAccount(): returning a
+     * container one level up from the label was tried on the ACTION path and
+     * reverted, because a selectOption on a <span> that holds no <select>
+     * spends the full timeout instead of failing clearly. Reading has no such
+     * trap — the worst case is an assertion that compares the wrong text and
+     * says so.
+     */
+    private Locator readableValue(String label) {
+        Locator labelEl = labelFor(label);
+        Locator resolved = resolveFrom(labelEl);
+        if (resolved.count() > 0) {
+            return resolved;
+        }
+        Locator shared = labelEl.locator("xpath=parent::*");
+        return shared.count() > 0 ? shared.first() : resolved;
+    }
+
+    /** The label element, preferring the copy inside an open modal. */
+    private Locator labelFor(String label) {
+        Locator box = visibleDialogBox();
+        if (box != null) {
+            Locator inDialog = box.getByText(label, new Locator.GetByTextOptions().setExact(true));
+            if (inDialog.count() > 0) {
+                return inDialog.first();
+            }
+        }
+        return page.getByText(label, new Page.GetByTextOptions().setExact(true)).first();
+    }
+
+    /** The three container shapes this application renders, in order. */
+    private Locator resolveFrom(Locator labelEl) {
         Locator container = labelEl.locator("xpath=ancestor::div[contains(@class,'fieldcontainer')][1]");
 
         // Plain confirmation table (DBS Fatura Oluştur "Onay" step): there is no
@@ -1503,6 +1573,33 @@ public class CommonActions {
             return null;
         }
         for (int i = 0; i < box.count(); i++) {
+            if (box.nth(i).isVisible()) {
+                return box.nth(i);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * A visible modal, decided by the BOX alone.
+     *
+     * visibleDialog() above gates on the OVERLAY, and rightly so: the overlay
+     * is what swallows a click, and that method exists to stop an action from
+     * landing on a covered page. Reading is the other case — nothing is being
+     * pressed, so whether the page behind is blocked does not matter. What
+     * matters is that a dialog is on screen, because then a label the step
+     * names is almost certainly the copy inside it rather than the one on the
+     * list behind.
+     *
+     * Separate from visibleDialog() rather than a flag on it, because that
+     * method also answers to UPTEST_FAIL_ON_DIALOG — the switch that turns the
+     * guard off. Turning off a guard should not quietly change where a verify
+     * looks.
+     */
+    private Locator visibleDialogBox() {
+        Locator box = page.locator(DIALOG_BOX);
+        int count = box.count();
+        for (int i = 0; i < count; i++) {
             if (box.nth(i).isVisible()) {
                 return box.nth(i);
             }
