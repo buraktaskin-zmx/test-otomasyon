@@ -265,7 +265,14 @@ public final class ActionTape {
         }
         String masked = text;
         for (String secret : secrets) {
-            masked = masked.replace('"' + secret + '"', '"' + MASK + '"');
+            // Double quotes for the model's own JSON argument, single quotes
+            // for the Playwright line the MCP server echoes back in its
+            // result: "### Ran Playwright code … page.locator('#password')
+            // .fill('123456')". The first version only covered the argument,
+            // so the password went into the tape anyway — through the half
+            // nobody had looked at, one line below the half that was masked.
+            masked = masked.replace('"' + secret + '"', '"' + MASK + '"')
+                    .replace('\'' + secret + '\'', '\'' + MASK + '\'');
         }
         return masked;
     }
