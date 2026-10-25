@@ -204,9 +204,19 @@ final class BudgetedTool implements ToolCallback {
      */
     private final Set<String> pending;
 
+    /**
+     * Where every call is written down, so the walk can be replayed without
+     * the model.
+     *
+     * Never null: a tape that cannot reach the disk still accepts records and
+     * simply does not write them, which keeps the recording out of
+     * {@link #guarded}'s control flow. See {@link ActionTape}.
+     */
+    private final ActionTape tape;
+
     private BudgetedTool(ToolCallback delegate, AtomicInteger remaining, Set<String> visited,
                          CatalogSink sink, List<String> forbidden, AtomicBoolean aborted,
-                         Set<String> pending, String instruction) {
+                         Set<String> pending, String instruction, ActionTape tape) {
         this.delegate = delegate;
         this.remaining = remaining;
         this.visited = visited;
@@ -215,6 +225,7 @@ final class BudgetedTool implements ToolCallback {
         this.aborted = aborted;
         this.pending = pending;
         this.instruction = instruction;
+        this.tape = tape;
     }
 
     /**
@@ -239,17 +250,19 @@ final class BudgetedTool implements ToolCallback {
      * @param pending captions that must be touched; entries are REMOVED as
      *                they are seen, so the caller reads the leftovers
      * @param aborted set when the browser is found closed; the caller reads it
+     * @param tape    one tape for the whole request, shared by every tool, so
+     *                the entries come out in the order the model made them
      */
     static Object[] wrap(List<ToolCallback> callbacks, int budget, CatalogSink sink,
                          List<String> forbidden, Set<String> pending, String instruction,
-                         AtomicBoolean aborted) {
+                         AtomicBoolean aborted, ActionTape tape) {
         AtomicInteger remaining = new AtomicInteger(budget);
         Set<String> visited = new HashSet<>();
         List<String> lowered = forbidden.stream().map(BudgetedTool::fold).toList();
         String folded = fold(instruction == null ? "" : instruction);
         return callbacks.stream()
                 .map(callback -> (Object) new BudgetedTool(
-                        callback, remaining, visited, sink, lowered, aborted, pending, folded))
+                        callback, remaining, visited, sink, lowered, aborted, pending, folded, tape))
                 .toArray();
     }
 
@@ -291,15 +304,21 @@ final class BudgetedTool implements ToolCallback {
         trace(input);
         String refusal = refuse(input);
         if (refusal != null) {
+            // A refused call is a fact about the walk, not a non-event: it is
+            // what the model tried to do, and the sentence it got back is why
+            // the next call looks the way it does.
+            tape.record(name(), input, ActionTape.Outcome.REFUSED, refusal);
             return refusal;
         }
         String result;
         try {
             result = watch(invoke.get());
         } catch (BrowserClosed closed) {
+            tape.record(name(), input, ActionTape.Outcome.ERROR, closed.getMessage());
             throw closed;
         } catch (RuntimeException failed) {
             watch(String.valueOf(failed.getMessage()));
+            tape.record(name(), input, ActionTape.Outcome.ERROR, String.valueOf(failed.getMessage()));
             if (aborted.get()) {
                 // Answer rather than rethrow: a thrown tool is one the model
                 // retries, and retrying is exactly how it kept reopening the
@@ -308,7 +327,24 @@ final class BudgetedTool implements ToolCallback {
             }
             throw failed;
         }
-        return aborted.get() ? closed() : trim(result);
+        if (aborted.get()) {
+            // The call itself came back carrying the browser-is-gone marker.
+            // Recorded with the real result rather than a note, because that
+            // text is the only evidence of WHEN the window was shut.
+            tape.record(name(), input, ActionTape.Outcome.ERROR, result);
+            return closed();
+        }
+        // Recorded AFTER trim, so the tape holds exactly what the model saw —
+        // reading a reference out of a snapshot the model never received
+        // would resolve to an element it could not have chosen.
+        String answer = trim(result);
+        tape.record(name(), input, ActionTape.Outcome.OK, answer);
+        return answer;
+    }
+
+    /** This tool's own name, which is what the tape and the guards key on. */
+    private String name() {
+        return getToolDefinition().name();
     }
 
     /** The prose endpoint ends the request; the catalog endpoint asks for an answer. */

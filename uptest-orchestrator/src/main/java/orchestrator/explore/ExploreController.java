@@ -19,6 +19,8 @@ import org.springframework.web.bind.annotation.RestController;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
@@ -224,12 +226,24 @@ public class ExploreController {
      */
     private final int budget;
 
+    /**
+     * Where each walk's action tape is written.
+     *
+     * Under {@code runs/} on purpose: that directory is already gitignored and
+     * is where the MCP server puts its own artifacts, so a tape is filed with
+     * the rest of a run's evidence rather than somewhere new that has to be
+     * explained and excluded.
+     */
+    private final Path tapeDir;
+
     public ExploreController(ChatClient.Builder builder, ToolCallbackProvider tools, CatalogService catalogs,
-                             @Value("${uptest.explore.tool-budget:250}") int budget) {
+                             @Value("${uptest.explore.tool-budget:250}") int budget,
+                             @Value("${uptest.explore.tape-dir:./runs/mcp}") String tapeDir) {
         this.client = builder.build();
         this.tools = tools;
         this.catalogs = catalogs;
         this.budget = budget;
+        this.tapeDir = Paths.get(tapeDir);
     }
 
     /**
@@ -249,9 +263,11 @@ public class ExploreController {
      * @param sink        when given, the model also gets the catalog tools and
      *                    answers by calling them; null for the prose endpoint
      * @param instruction the analyst's text, read for off-limits controls
+     * @param tape        this request's action tape; every wrapped tool writes
+     *                    to it, which is what makes the walk replayable later
      */
     private Object[] toolsFor(CatalogSink sink, String instruction, Set<String> pending,
-                              AtomicBoolean aborted) {
+                              AtomicBoolean aborted, ActionTape tape) {
         List<ToolCallback> usable = new ArrayList<>(Arrays.stream(tools.getToolCallbacks())
                 .filter(callback -> !WITHHELD.contains(callback.getToolDefinition().name()))
                 .toList());
@@ -270,7 +286,20 @@ public class ExploreController {
         }
 
         return BudgetedTool.wrap(usable, budget, sink, forbidden(instruction), pending, instruction,
-                aborted);
+                aborted, tape);
+    }
+
+    /**
+     * The values a tape must not keep.
+     *
+     * Only the two that are genuinely credentials. The cif and the user id are
+     * left alone on purpose — see {@link ActionTape}'s note on why masking a
+     * four-digit user id damages the artifact more than it protects anything.
+     */
+    private static List<String> secretsOf(Instruction body) {
+        return List.of(
+                body.password() == null ? "" : body.password(),
+                body.smsCode() == null ? "" : body.smsCode());
     }
 
     /**
@@ -431,11 +460,18 @@ public class ExploreController {
         return out.append(body.text().trim()).toString();
     }
 
-    /** 409 with a fixed code the UI recognises, so it can say what happened. */
-    private static ResponseEntity<?> browserClosed() {
+    /**
+     * 409 with a fixed code the UI recognises, so it can say what happened.
+     *
+     * Carries the tape id like every other answer: a walk that was cut short
+     * is exactly the one whose recorded calls are worth reading, and it is the
+     * one that leaves no prose behind to read instead.
+     */
+    private static ResponseEntity<?> browserClosed(ActionTape tape) {
         return ResponseEntity.status(409).body(Map.of(
                 "error", "BROWSER_CLOSED",
-                "detail", "Tarayıcı beklenmedik şekilde kapandı"));
+                "detail", "Tarayıcı beklenmedik şekilde kapandı",
+                "tapeId", tape.id()));
     }
 
     private static void append(StringBuilder out, String label, String value) {
@@ -455,23 +491,25 @@ public class ExploreController {
         }
         String instruction = compose(body);
         AtomicBoolean aborted = new AtomicBoolean();
+        ActionTape tape = ActionTape.open(tapeDir, "explore", instruction,
+                body.url(), body.mainMenu(), secretsOf(body));
         try {
             String answer = client.prompt()
                     .system(SYSTEM + ANSWER_RULES)
                     .user(instruction)
-                    .tools(toolsFor(null, instruction, new LinkedHashSet<>(), aborted))
+                    .tools(toolsFor(null, instruction, new LinkedHashSet<>(), aborted, tape))
                     .call()
                     .content();
             // Belt and braces: should the framework ever turn BrowserClosed
             // into a tool result, the flag still says the walk was cut short.
             if (aborted.get()) {
-                return browserClosed();
+                return browserClosed(tape);
             }
-            return ResponseEntity.ok(Map.of("answer", answer));
+            return ResponseEntity.ok(Map.of("answer", answer, "tapeId", tape.id()));
         } catch (Exception e) {
             for (Throwable cause = e; cause != null; cause = cause.getCause()) {
                 if (cause instanceof BudgetedTool.BrowserClosed || aborted.get()) {
-                    return browserClosed();
+                    return browserClosed(tape);
                 }
                 if (cause.getCause() == cause) {
                     break;
@@ -486,8 +524,12 @@ public class ExploreController {
             }
             return ResponseEntity.status(502).body(Map.of(
                     "error", root.getClass().getSimpleName(),
-                    "detail", String.valueOf(root.getMessage())));
+                    "detail", String.valueOf(root.getMessage()),
+                    "tapeId", tape.id()));
         } finally {
+            // Stamped before the browser goes, and on every path: the tape of
+            // a run that died is the one worth reading.
+            tape.finish();
             closeBrowser();
         }
     }
@@ -525,9 +567,14 @@ public class ExploreController {
                     "detail", String.valueOf(missing.getMessage())));
         }
 
+        // Composed before the try so the tape — which the finally stamps — is
+        // in scope on every path out of here.
+        String instruction = compose(body) + CLOSING;
+        ActionTape tape = ActionTape.open(tapeDir, "catalog", instruction,
+                body.url(), body.mainMenu(), secretsOf(body));
+
         try {
             CatalogSink sink = new CatalogSink();
-            String instruction = compose(body) + CLOSING;
             // Emptied by BudgetedTool as each caption is touched; whatever is
             // left when the run ends was skipped.
             Set<String> skipped = new LinkedHashSet<>(required(instruction));
@@ -535,7 +582,7 @@ public class ExploreController {
             String spoken = client.prompt()
                     .system(SYSTEM + CATALOG_RULES + schema)
                     .user(instruction)
-                    .tools(toolsFor(sink, instruction, skipped, new AtomicBoolean()))
+                    .tools(toolsFor(sink, instruction, skipped, new AtomicBoolean(), tape))
                     .call()
                     .content();
 
@@ -576,7 +623,8 @@ public class ExploreController {
                         + ". Bu adim atlandiysa sonraki her sey DOGRU ama YANLIS ekranda "
                         + "yapilmis olabilir — katalogu kullanmadan once kontrol edin.");
             }
-            return ResponseEntity.ok(Map.of("catalog", catalog, "problems", problems));
+            return ResponseEntity.ok(Map.of(
+                    "catalog", catalog, "problems", problems, "tapeId", tape.id()));
         } catch (Exception e) {
             Throwable root = e;
             while (root.getCause() != null && root.getCause() != root) {
@@ -584,10 +632,12 @@ public class ExploreController {
             }
             return ResponseEntity.status(502).body(Map.of(
                     "error", root.getClass().getSimpleName(),
-                    "detail", String.valueOf(root.getMessage())));
+                    "detail", String.valueOf(root.getMessage()),
+                    "tapeId", tape.id()));
         } finally {
             // Also on the failure paths: a run that died halfway leaves the
             // browser somewhere stranger than a finished one does.
+            tape.finish();
             closeBrowser();
         }
     }

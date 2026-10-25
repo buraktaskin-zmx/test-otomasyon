@@ -21,6 +21,12 @@ Goals, deliverables and roadmap. This is the "why and where to" document; the
   [`docs/E2E-CERCEVE-DEGERLENDIRME.md`](docs/E2E-CERCEVE-DEGERLENDIRME.md) —
   why we are not adopting `tester-army/e2e`, and the three of its ideas we are
   building ourselves instead
+- **Record the agent's walk, replay it without a model (Turkish):**
+  [`docs/EYLEM-BANDI.md`](docs/EYLEM-BANDI.md) — recording is written, the
+  rest is design. The token cost is the agent walk, not the run, so the walk is
+  recorded once at `BudgetedTool.guarded` and will be rendered into the
+  existing Gherkin vocabulary; snapshot refs resolve to role + accessible name
+  because a ref is dead the moment the page changes
 
 ## Overview
 

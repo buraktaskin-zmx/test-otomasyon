@@ -9,6 +9,10 @@ neden'ini kayda geçirir. İlgili diğer belgeler:
 - Hedefler ve yol haritası: [`PROJECT.md`](../PROJECT.md)
 - Test tarafı kuralları: [`CLAUDE.md`](../CLAUDE.md)
 - Sunum anlatısı: [`docs/SUNUM-BAGLAMI.md`](SUNUM-BAGLAMI.md)
+- Bölüm 2'de *"bizde olmayan tek gerçek yetenek: koşu anında devralma"* diye
+  bırakılan boşluğun cevabı: [`EYLEM-BANDI.md`](EYLEM-BANDI.md) — devralma
+  yoluyla değil **kayıt** yoluyla. Ajan yürüyüşü bir kez kaydedilir, Gherkin'e
+  render edilir ve sonraki her koşu sıfır token eder
 
 ---
 
