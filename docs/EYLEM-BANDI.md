@@ -1,6 +1,6 @@
 # Eylem Bandı — AI koşusunu bir kez yap, sıfır token ile birebir oynat
 
-Tarih: 2026-10-25 · Durum: **Faz 0 kodlandı, VDI'da koşulmadı** — kalan fazlar tasarım
+Tarih: 2026-10-25 · Durum: **Faz 0, 1 ve 2'nin sunucu yarısı kodlandı** — UI paneli ve VDI doğrulaması bekliyor
 
 İlgili belgeler:
 
@@ -302,7 +302,7 @@ asıl yer, dosya ihracat hedefi.**
 |---|---|---|
 | **0** ✔ kodlandı | `guarded()` içine bant yazıcısı: her çağrının adı, ham argümanı, ok/hata/reddedilme. Çıktı `runs/mcp/<tapeId>/tape.json`; `/explore` ve `/catalog` cevaplarına `tapeId`. Ajanın davranışı **değişmez**. Sınıf: `orchestrator/explore/ActionTape.java`, dizin `uptest.explore.tape-dir` ile taşınabilir | Pilot akış "AI ile çalıştır" ile koşulur; dosya oluşur ve o koşunun tüm çağrıları sırayla görünür. **Henüz koşulmadı** |
 | **1** | Ref çözümleme: snapshot sonuçlarından `ref → (role, name)` tablosu (`ScreenLabels` desenlerine `[ref=…]` eklenir), `raw` yanına `action` + `within` | Aynı bantta her `browser_click` satırının yanında rol ve erişilebilir ad görünür; `action` alanında çıplak `e42` kalmaz |
-| **2** | `action` → Gherkin render + "Bu koşuyu kaydet". Render `ScenarioValidator`'dan geçer (salt-okunur bayrağı dahil, §7-2) | Pilotun render'ı doğrulamayı geçer ve **mevcut koşu yolundan** koşar; sonuç ajan koşusunun sonucuyla aynı — ve ikinci koşu **sıfır token** |
+| **2** yarısı | `TapeRenderer` kodlandı ve gerçek bir banttan dört doğru satır üretti; `/explore` cevabına `gherkin` + `notes` eklendi. **UI paneli ve "Bu koşuyu kaydet" düğmesi yok.** Asıl kaynak snapshot değil, her sonuçtaki `### Ran Playwright code` bloğu çıktı | Pilotun render'ı doğrulamayı geçer ve **mevcut koşu yolundan** koşar; sonuç ajan koşusunun sonucuyla aynı — ve ikinci koşu **sıfır token** |
 | **3** | Eşleşmeyen çağrı tiplerini ölç ve raporla | Liste basılır. Boşsa Faz 4 **hiç yapılmaz** |
 | **4** | Yalnızca ölçülen fiiller için `TapeSteps` (vocabulary dışı) ve `within` için satır kapsamlı `click` | Pilotun "Detay" adımı doğru satırın detayını açar, on sekiz adaydan ilkini değil |
 | **5** | `ACTION_TAPE` tabloları + "Dosyaya aktar" | Orchestrator yeniden başlatılır; bant ve render'ı yerinde durur |

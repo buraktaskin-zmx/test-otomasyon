@@ -204,6 +204,26 @@ public final class ActionTape {
         flush();
     }
 
+    /**
+     * The recorded calls, for whatever wants to read the walk back.
+     *
+     * A copy rather than the live list: the renderer runs on the request
+     * thread while nothing else is writing, but handing out the field would
+     * make that a matter of luck rather than of design.
+     */
+    public synchronized List<TapeRenderer.Call> calls() {
+        List<TapeRenderer.Call> calls = new ArrayList<>(entries.size());
+        for (Map<String, Object> entry : entries) {
+            calls.add(new TapeRenderer.Call(
+                    (int) entry.getOrDefault("seq", 0),
+                    String.valueOf(entry.get("tool")),
+                    (String) entry.get("args"),
+                    String.valueOf(entry.get("outcome")),
+                    (String) entry.get("result")));
+        }
+        return calls;
+    }
+
     /** Stamps the end of the walk. Called whether it finished or died. */
     public synchronized void finish() {
         header.put("finishedAt", Instant.now().toString());

@@ -1,10 +1,12 @@
 package orchestrator.explore;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -263,6 +265,106 @@ public final class AriaSnapshot {
             }
         }
         return "";
+    }
+
+    /** The nodes directly inside this one, in document order. */
+    public List<Node> childrenOf(String ref) {
+        Integer index = byRef.get(ref);
+        if (index == null) {
+            return List.of();
+        }
+        List<Node> children = new ArrayList<>();
+        for (int i = index + 1; i < nodes.size(); i++) {
+            if (nodes.get(i).indent() <= nodes.get(index).indent()) {
+                break;
+            }
+            if (nodes.get(i).parent() == index) {
+                children.add(nodes.get(i));
+            }
+        }
+        return children;
+    }
+
+    /**
+     * The accessible name with a decoration stripped off the end.
+     *
+     * The NAKİT YÖNETİMİ menu marks new screens with a badge, so the link that
+     * opens Firma Fatura İşlemleri is named "Firma Fatura İşlemleri YENİ" —
+     * and a step carrying that name would go stale the day the badge is
+     * removed. The badge is its own child node, so it can be subtracted rather
+     * than guessed at: no list of words to maintain, and a caption that
+     * genuinely ends in "YENİ" is left alone because it has no such child.
+     */
+    public String plainName(String ref) {
+        String name = nameOf(ref);
+        if (name.isBlank()) {
+            return name;
+        }
+        for (Node child : childrenOf(ref)) {
+            String decoration = child.caption();
+            if (!decoration.isBlank() && !decoration.equals(name) && name.endsWith(decoration)) {
+                return name.substring(0, name.length() - decoration.length()).trim();
+            }
+        }
+        return name;
+    }
+
+    /**
+     * A cell value that tells this grid row apart from the others.
+     *
+     * {@code select row} matches on any column, so any cell would drive the
+     * step — but not every cell IDENTIFIES the row. On Firma Fatura İşlemleri
+     * the dealer code is the same in all five rows, so a step built from the
+     * first cell would match five rows and pick whichever came first. The
+     * invoice number is unique, and which column that is cannot be known in
+     * advance: it is read off the grid by comparing the row against its
+     * siblings.
+     *
+     * Falls back to the first non-empty cell when nothing is unique, because a
+     * step that names a real value and fails loudly beats no step at all.
+     */
+    public String rowIdentifier(String ref) {
+        Integer index = byRef.get(ref);
+        if (index == null) {
+            return "";
+        }
+        int row = ancestorWithRole(index, "row");
+        if (row < 0) {
+            return "";
+        }
+        int group = nodes.get(row).parent();
+
+        List<String> mine = cellTexts(row);
+        Set<String> elsewhere = new HashSet<>();
+        for (int i = 0; i < nodes.size(); i++) {
+            if (i != row && nodes.get(i).parent() == group && "row".equals(nodes.get(i).role())) {
+                elsewhere.addAll(cellTexts(i));
+            }
+        }
+        return mine.stream().filter(cell -> !cell.isBlank() && !elsewhere.contains(cell)).findFirst()
+                .orElseGet(() -> mine.stream().filter(cell -> !cell.isBlank()).findFirst().orElse(""));
+    }
+
+    private int ancestorWithRole(int index, String role) {
+        for (int at = index; at >= 0; at = nodes.get(at).parent()) {
+            if (role.equals(nodes.get(at).role())) {
+                return at;
+            }
+        }
+        return -1;
+    }
+
+    private List<String> cellTexts(int row) {
+        List<String> texts = new ArrayList<>();
+        for (int i = row + 1; i < nodes.size(); i++) {
+            if (nodes.get(i).indent() <= nodes.get(row).indent()) {
+                break;
+            }
+            if (nodes.get(i).parent() == row && "cell".equals(nodes.get(i).role())) {
+                texts.add(nodes.get(i).caption());
+            }
+        }
+        return texts;
     }
 
     /**

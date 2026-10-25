@@ -505,7 +505,17 @@ public class ExploreController {
             if (aborted.get()) {
                 return browserClosed(tape);
             }
-            return ResponseEntity.ok(Map.of("answer", answer, "tapeId", tape.id()));
+
+            // The walk, written back out as steps. A PROPOSAL, never a save:
+            // an agent that skipped a step produces a scenario that skips it
+            // too, and this run's own tape caught exactly that happening. The
+            // analyst reads the lines and decides.
+            TapeRenderer.Rendered rendered = TapeRenderer.render(tape.calls(), body.mainMenu());
+            return ResponseEntity.ok(Map.of(
+                    "answer", answer,
+                    "tapeId", tape.id(),
+                    "gherkin", String.join("\n", rendered.steps()),
+                    "notes", rendered.notes()));
         } catch (Exception e) {
             for (Throwable cause = e; cause != null; cause = cause.getCause()) {
                 if (cause instanceof BudgetedTool.BrowserClosed || aborted.get()) {
