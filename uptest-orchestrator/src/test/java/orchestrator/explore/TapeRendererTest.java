@@ -687,6 +687,74 @@ class TapeRendererTest {
         assertThat(rendered.notes()).anySatisfy(note -> assertThat(note).contains("yukarıdan aşağıya"));
     }
 
+    /**
+     * Tape of 26 Oct, 15:5x. The agent reached "Bayi Kodu" through five
+     * different references — its container, its inner box, its search box —
+     * and chose the option only on the last try. Judging "the same trigger"
+     * by reference left a stray `click "Seçiniz"` in the scenario.
+     */
+    @Test
+    @DisplayName("a dropdown re-opened through other references is still one select")
+    void followsADropdownReachedByManyReferences() {
+        login();
+        reachTheScreen();
+        ok("browser_snapshot", "{}", tree("""
+                - generic [ref=f1e630]:
+                  - generic [ref=f1e631]: Bayi Kodu
+                  - combobox [ref=f1e634]:
+                    - textbox "Seçiniz" [ref=f1e635]"""));
+        calls.add(new TapeRenderer.Call(++seq, "browser_click",
+                "{\"target\": \"f1e635\", \"element\": \"Bayi Kodu combobox\"}", "OK",
+                ran("await page.locator('#select2-bayiKodu-container').click();")));
+        failed("browser_type", "{\"target\": \"f1e635\", \"text\": \"151732\"}", "TimeoutError");
+        ok("browser_click", "{\"target\": \"f1e634\"}",
+                ran("await page.locator('#s2id_bayiKodu').getByRole('combobox', { name: 'Seçiniz' }).click();"));
+        ok("browser_click", "{\"target\": \"f1e635\"}",
+                ran("await page.locator('#select2-bayiKodu-container').click();"));
+        ok("browser_type", "{\"target\": \"f1e747\", \"text\": \"151732\"}",
+                ran("await page.getByRole('searchbox').fill('151732');"));
+        failed("browser_click", "{\"target\": \"f1e758\"}", "Ref f1e758 not found");
+        ok("browser_press_key", "{\"key\": \"Escape\"}", ran("await page.keyboard.press('Escape');"));
+        ok("browser_click", "{\"target\": \"f1e635\"}",
+                ran("await page.locator('#select2-bayiKodu-container').click();"));
+        ok("browser_click", "{\"target\": \"f1e769\"}",
+                ran("await page.getByRole('option', { name: 'bayisanko1' }).click();"));
+
+        TapeRenderer.Rendered rendered = TapeRenderer.render(calls, MAIN_MENU, List.of());
+
+        assertThat(rendered.steps()).containsExactly(
+                "navigate to \"NAKİT YÖNETİMİ\" \"Firma Fatura İşlemleri\"",
+                "select \"bayisanko1\" from \"Bayi Kodu\"");
+    }
+
+    /**
+     * The agent never typed "Başlangıç Vadesi": it opened the calendar, the
+     * form refused the submit, and it clicked the day 27 afterwards. The only
+     * place the date exists is that click, and the box it filled says so.
+     */
+    @Test
+    @DisplayName("a date set only by clicking a calendar day is still written")
+    void readsADateSetThroughTheCalendar() {
+        login();
+        reachTheScreen();
+        ok("browser_snapshot", "{}", tree("""
+                - generic [ref=c1]:
+                  - generic [ref=c2]: Başlangıç Vadesi
+                  - textbox "Başlangıç Vadesi" [ref=f1e643]
+                  - img "..." [ref=f1e644]"""));
+        ok("browser_click", "{\"target\": \"f1e644\"}",
+                ran("await page.locator('#baslangicVadesiFC').getByRole('img', { name: '...' }).click();"));
+        ok("browser_click", "{\"target\": \"f1e1083\"}",
+                ran("await page.getByRole('link', { name: '27' }).click();"));
+        ok("browser_snapshot", "{\"target\": \"f1e641\", \"depth\": 5}", tree("""
+                - generic [ref=c1]:
+                  - generic [ref=c2]: Başlangıç Vadesi
+                  - textbox "Başlangıç Vadesi" [ref=f1e643]: 27/10/2026"""));
+
+        assertThat(TapeRenderer.render(calls, MAIN_MENU, List.of()).steps()).contains(
+                "enter date \"Başlangıç Vadesi\" \"27/10/2026\"");
+    }
+
     /** The detail dialog, label and value as siblings in one cell. */
     private void detailDialog() {
         ok("browser_snapshot", "{}", tree("""

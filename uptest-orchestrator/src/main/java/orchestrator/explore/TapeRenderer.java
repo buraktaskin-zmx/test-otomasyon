@@ -198,6 +198,15 @@ public final class TapeRenderer {
             // drives the widget itself, so the icon and the day cell are
             // implementation of a step that is already written.
             if (act.isClick() && isCalendarClick(act)) {
+                // A day clicked in the calendar can be the ONLY place a date
+                // was ever entered: one walk never typed "Başlangıç Vadesi"
+                // and set it by opening the calendar and clicking 27, so
+                // dropping the click dropped the field. The value is read off
+                // the box the click filled.
+                String[] set = dateSetBy(calls, i, act);
+                if (set != null) {
+                    steps.add("enter date \"" + set[0] + "\" \"" + set[1] + "\"");
+                }
                 continue;
             }
 
@@ -637,6 +646,44 @@ public final class TapeRenderer {
         return false;
     }
 
+    private static final Pattern DATE_TEXT = Pattern.compile("^(\\d{2})/(\\d{2})/(\\d{4})$");
+
+    /**
+     * The date box a clicked calendar day just filled, as {label, value}, or
+     * null when no snapshot after the click shows one.
+     *
+     * The box is the one whose value is a date ENDING in the day that was
+     * clicked, in the first snapshot taken afterwards. That is evidence
+     * rather than a guess: the label comes from the box, the value from what
+     * it now holds, and the month and year are whatever the calendar had
+     * selected, which the box reports for itself.
+     */
+    private static String[] dateSetBy(List<Call> calls, int from, Act click) {
+        if (!"link".equals(click.role())) {
+            return null;
+        }
+        int day = Integer.parseInt(click.name());
+        for (int j = from + 1; j < calls.size() && j <= from + 6; j++) {
+            Call next = calls.get(j);
+            if (!"browser_snapshot".equals(next.tool()) || !"OK".equals(next.outcome())) {
+                continue;
+            }
+            AriaSnapshot parsed = AriaSnapshot.of(next.result());
+            for (AriaSnapshot.Node node : parsed.nodes()) {
+                Matcher date = DATE_TEXT.matcher(node.text() == null ? "" : node.text().trim());
+                if ("textbox".equals(node.role()) && date.matches()
+                        && Integer.parseInt(date.group(1)) == day) {
+                    String label = node.name().isBlank() ? parsed.labelOf(node.ref()) : node.name();
+                    if (!label.isBlank()) {
+                        return new String[]{label, node.text().trim()};
+                    }
+                }
+            }
+            return null;
+        }
+        return null;
+    }
+
     /** The calendar's own controls: its icon, and a bare day number. */
     private static boolean isCalendarClick(Act act) {
         if ("img".equals(act.role()) && "...".equals(act.name())) {
@@ -658,7 +705,7 @@ public final class TapeRenderer {
      * Select2 — the agent moved on without choosing.
      */
     private static int optionAfter(List<Call> calls, int from, String ref, Scope scope) {
-        for (int j = from + 1; j < calls.size() && j <= from + 12; j++) {
+        for (int j = from + 1; j < calls.size() && j <= from + 60; j++) {
             Call call = calls.get(j);
             scope.remember(call);
             if (SILENT.contains(call.tool()) || !"OK".equals(call.outcome())) {
@@ -671,8 +718,15 @@ public final class TapeRenderer {
             if ("option".equals(act.role())) {
                 return j;
             }
-            boolean reopened = act.isClick() && ref.equals(refOf(call));
-            boolean typedIntoSearch = !act.isClick() && act.locator().contains("select2");
+            // The same widget is reached through a different reference each
+            // time it is re-opened (its container, its inner box, its
+            // search box), so "the same trigger" cannot be judged by ref: a
+            // click on anything that IS a dropdown trigger counts.
+            boolean reopened = act.isClick() && (ref.equals(refOf(call)) || isTrigger(act.role())
+                    || (act.role().isEmpty() && (act.locator().contains("select2")
+                    || act.locator().contains("s2id"))));
+            boolean typedIntoSearch = !act.isClick()
+                    && (act.locator().contains("select2") || "searchbox".equals(act.role()));
             if (!reopened && !typedIntoSearch) {
                 return -1;
             }
