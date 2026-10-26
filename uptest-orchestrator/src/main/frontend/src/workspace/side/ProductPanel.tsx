@@ -183,9 +183,16 @@ export function ProductPanel({
   const toast = useToast();
   const [aiAnswer, setAiAnswer] = useState("");
   const [aiClosed, setAiClosed] = useState(false);
+  /* The walk rendered into steps, and whatever it could not express. Held
+     beside the prose rather than written anywhere: it is a proposal until the
+     analyst presses save. */
+  const [aiGherkin, setAiGherkin] = useState("");
+  const [aiNotes, setAiNotes] = useState<string[]>([]);
   useEffect(() => {
     setAiAnswer("");
     setAiClosed(false);
+    setAiGherkin("");
+    setAiNotes([]);
   }, [selection?.path]);
 
   const aiRun = useAsyncAction(async () => {
@@ -208,6 +215,8 @@ export function ProductPanel({
 
     setAiAnswer("");
     setAiClosed(false);
+    setAiGherkin("");
+    setAiNotes([]);
     const result = await explore({
       text,
       url: LOGIN_URL[selection.app.toLowerCase()],
@@ -226,6 +235,8 @@ export function ProductPanel({
       return;
     }
     setAiAnswer(result.body.answer);
+    setAiGherkin(result.body.gherkin ?? "");
+    setAiNotes(result.body.notes ?? []);
   });
 
   /* Senaryolar veritabanında; git'e girmeleri için .feature olarak yazılır.
@@ -428,6 +439,8 @@ export function ProductPanel({
                   aiBusy={aiRun.busy}
                   aiAnswer={aiAnswer}
                   aiClosed={aiClosed}
+                  aiGherkin={aiGherkin}
+                  aiNotes={aiNotes}
                   onSave={async (edit) => {
                     const result = await products.saveScenario(
                       selection.app, selection.product, selection.path!, edit);

@@ -27,6 +27,8 @@ export function ScenarioDetail({
   aiBusy,
   aiAnswer,
   aiClosed,
+  aiGherkin,
+  aiNotes,
   onSave,
 }: {
   detail: Detail | null;
@@ -41,6 +43,10 @@ export function ScenarioDetail({
   aiAnswer: string;
   /** The operator closed the agent's browser mid-run. */
   aiClosed: boolean;
+  /** The walk rendered into steps -- a proposal, no login line, no assertion. */
+  aiGherkin: string;
+  /** What the render could not express. Empty is normal; silent is not. */
+  aiNotes: string[];
   /** Saves the fields sent; resolves to true when it was saved. */
   onSave: (edit: ScenarioEdit) => Promise<boolean>;
 }) {
@@ -48,9 +54,14 @@ export function ScenarioDetail({
   const [draft, setDraft] = useState("");
   const [docDraft, setDocDraft] = useState<ScenarioDoc | null>(null);
   const [saving, setSaving] = useState(false);
+  /** The proposal has been taken; leaving it on screen would read as pending. */
+  const [applied, setApplied] = useState(false);
 
   // Another scenario opened: any half-finished edit belongs to the old one.
-  useEffect(() => setEditing(null), [detail?.path]);
+  useEffect(() => {
+    setEditing(null);
+    setApplied(false);
+  }, [detail?.path]);
 
   if (!detail) {
     return <p className="registry-empty">{busy ? "Okunuyor…" : "Senaryo okunamadı."}</p>;
@@ -81,6 +92,20 @@ export function ScenarioDetail({
     const ok = await onSave(edit);
     setSaving(false);
     if (ok) setEditing(null);
+  };
+
+  /* The proposal, under this scenario's own header. The steps replace what was
+     in the Gherkin half; the natural language is not touched, because the two
+     are separate fields for exactly this reason. */
+  const proposal = aiGherkin ? composeFeature(shown, doc.title, aiGherkin) : "";
+
+  const applyProposal = async () => {
+    setSaving(true);
+    const edit: ScenarioEdit = { gherkin: proposal, version: detail.version };
+    if (detail.changes.length > 0) edit.reviewed = true;
+    const ok = await onSave(edit);
+    setSaving(false);
+    if (ok) setApplied(true);
   };
 
   const editButton = (pane: "gherkin" | "prose", start: () => void) =>
@@ -196,6 +221,37 @@ export function ScenarioDetail({
             <>
               <span className="sd-pane-title">AJANIN ANLATTIĞI</span>
               <pre className="sd-code sd-answer">{aiAnswer}</pre>
+            </>
+          ) : null}
+
+          {/* The walk, written back out as steps. Shown BESIDE the stored
+              Gherkin rather than over it: a reviewed scenario being replaced
+              by a second agent run, silently, is the thing SourceSnapshot
+              already refuses to do for rules. The analyst presses save. */}
+          {proposal && !applied ? (
+            <>
+              <header className="sd-pane-head">
+                <span className="sd-pane-title">ÖNERİLEN GHERKİN</span>
+                <span className="sd-pane-gap" />
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={saving || editing !== null}
+                  title="Ajanın yaptığı adımları bu senaryonun Gherkin'i olarak kaydeder"
+                  onClick={() => void applyProposal()}
+                >
+                  {saving ? "Kaydediliyor…" : "Bu koşuyu kaydet"}
+                </button>
+              </header>
+              <Gherkin text={proposal} />
+              {hasSteps(shown) ? (
+                <p className="sd-note">
+                  Mevcut Gherkin'in adımları bununla değişir; doğal dil tarafına dokunulmaz.
+                </p>
+              ) : null}
+              {aiNotes.map((note, index) => (
+                <p className="sd-note" key={index}>{note}</p>
+              ))}
             </>
           ) : null}
         </section>
@@ -445,6 +501,41 @@ function ListEditor({
  * spans to render, which is what keeps a scenario containing "&lt;" from
  * becoming HTML.
  */
+/**
+ * The walk's steps under this scenario's own Feature/Scenario header.
+ *
+ * The header is kept rather than rebuilt: it is what the analyst named the
+ * scenario, and the tape knows nothing about it. One is made from the title
+ * only when there is none -- a scenario whose Gherkin half was never written,
+ * which is the usual case the first time a walk is recorded.
+ *
+ * No login line, deliberately. RunService grafts it from the CIF chosen at run
+ * time, because the login is the one part of a scenario that belongs to
+ * whoever runs it. So the first step takes the Given and the rest are Ands,
+ * which is what LoginStep inserts in front of.
+ */
+function composeFeature(existing: string, title: string, steps: string): string {
+  const lines = existing.split(/\r?\n/);
+  const scenarioAt = lines.findIndex((line) => /^\s*Scenario:/i.test(line));
+  const header =
+    scenarioAt >= 0
+      ? lines.slice(0, scenarioAt + 1)
+      : [`Feature: ${title}`, "", `  Scenario: ${title}`];
+  const body = steps
+    .split(/\r?\n/)
+    .map((step) => step.trim())
+    .filter((step) => step.length > 0)
+    .map((step, index) => `    ${index === 0 ? "Given" : "And"} ${step}`);
+  return [...header, ...body, ""].join("\n");
+}
+
+/** Whether the stored Gherkin already carries steps, not just a header. */
+function hasSteps(text: string): boolean {
+  return text
+    .split(/\r?\n/)
+    .some((line) => /^\s*(Given|When|Then|And|But|\*)\s+\S/.test(line));
+}
+
 function Gherkin({ text }: { text: string }) {
   return (
     <pre className="sd-code">

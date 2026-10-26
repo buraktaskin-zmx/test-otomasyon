@@ -768,9 +768,25 @@ export interface ExploreRequest {
   mainMenu?: string;
 }
 
-/** POST /api/v1/explore 200 body -- ONE key. */
+/** POST /api/v1/explore 200 body.
+ *
+ *  `gherkin` is the walk itself, rendered back into the step vocabulary from
+ *  the recorded tape. A PROPOSAL and never a save: an agent that skipped a
+ *  step produces a scenario that skips it too, which is exactly what one
+ *  recorded walk was caught doing.
+ *
+ *  Two things it deliberately does NOT contain. No login line -- RunService
+ *  grafts that from the CIF chosen at run time, because the login is the one
+ *  part of a scenario that belongs to whoever runs it rather than to the
+ *  scenario. And no assertion -- the agent never asserts, it reads a snapshot
+ *  and describes it, so the THEN comes from the analyst's own expectation.
+ *
+ *  `notes` says what could not be expressed. Empty is normal; silent is not. */
 export interface ExploreAnswerResponse {
   answer: string;
+  tapeId: string;
+  gherkin: string;
+  notes: string[];
 }
 
 /** POST /api/v1/explore/catalog 200 body -- TWO keys, neither optional:
