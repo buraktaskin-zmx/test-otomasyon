@@ -277,12 +277,26 @@ public class ExploreController {
         // four times and read them as the model's own moves.
         DateTool dates = DateTool.bind(tools.getToolCallbacks());
 
+        // Ordinary @Tool objects, so they go through the same budget wrapper
+        // as the browser tools and need no special case.
+        //
+        // set_date is offered on EVERY walk, not only the catalog one. It sat
+        // behind `sink != null`, so "AI ile çalıştır" — which has no sink —
+        // told the agent in the shared prompt that dates are set with
+        // set_date and never gave it the tool. The agent then typed into the
+        // masked box ("81/02/0262" for 28/10/2026), got refused, and drove the
+        // calendar by hand, which is the slow and flaky route the tool exists
+        // to replace.
+        List<Object> ours = new ArrayList<>();
         if (sink != null) {
-            // Ordinary @Tool objects, so they go through the same budget
-            // wrapper as the browser tools and need no special case.
-            Object[] ours = dates == null ? new Object[]{sink} : new Object[]{sink, dates};
+            ours.add(sink);
+        }
+        if (dates != null) {
+            ours.add(dates);
+        }
+        if (!ours.isEmpty()) {
             usable.addAll(List.of(MethodToolCallbackProvider.builder()
-                    .toolObjects(ours).build().getToolCallbacks()));
+                    .toolObjects(ours.toArray()).build().getToolCallbacks()));
         }
 
         return BudgetedTool.wrap(usable, budget, sink, forbidden(instruction), pending, instruction,

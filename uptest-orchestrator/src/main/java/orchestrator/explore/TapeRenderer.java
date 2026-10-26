@@ -158,6 +158,26 @@ public final class TapeRenderer {
                 continue;
             }
 
+            // set_date makes its browser calls itself, so its entry carries no
+            // echoed Playwright line: the box is a snapshot reference and the
+            // date is an argument, and that is everything `enter date` needs.
+            if ("set_date".equals(call.tool())) {
+                if (!started) {
+                    continue;
+                }
+                String date = argOf(call, "date");
+                String field = scope.labelOf(refOf(call), "");
+                if (call.result() == null || !call.result().startsWith("Set to") || date.isBlank()) {
+                    notes.add("#" + call.seq() + " set_date tarihi yazamadı; satır üretilmedi.");
+                } else if (field.isBlank()) {
+                    notes.add("#" + call.seq() + " \"" + date + "\" tarihi yazıldı ama hangi alana"
+                            + " olduğu çözülemedi; satır yazılmadı.");
+                } else {
+                    steps.add("enter date \"" + field + "\" \"" + date + "\"");
+                }
+                continue;
+            }
+
             Act act = firstAct(call).orElse(null);
             if (act == null) {
                 if (!started) {
@@ -847,11 +867,11 @@ public final class TapeRenderer {
         steps.addAll(out);
     }
 
-    private static final Pattern ELEMENT = Pattern.compile("\"element\"\s*:\s*\"([^\"]*)\"");
+    private static final Pattern ELEMENT = Pattern.compile("\"element\"\\s*:\\s*\"([^\"]*)\"");
 
     /** The words the agent appends to a label when it describes a control. */
     private static final Pattern ELEMENT_SUFFIX = Pattern.compile(
-            "\s+(combobox|textbox|alanı|alani|kutusu|listesi|dropdown|seçici)$", Pattern.CASE_INSENSITIVE);
+            "\\s+(combobox|textbox|alanı|alani|kutusu|listesi|dropdown|seçici)$", Pattern.CASE_INSENSITIVE);
 
     /** What the agent called the control it acted on, with its own suffix off. */
     private static String elementOf(Call call) {
@@ -860,6 +880,13 @@ public final class TapeRenderer {
             return "";
         }
         return ELEMENT_SUFFIX.matcher(match.group(1).trim()).replaceFirst("").trim();
+    }
+
+    /** One string argument of the recorded call, or blank. */
+    private static String argOf(Call call, String name) {
+        Matcher match = Pattern.compile("\"" + name + "\"\\s*:\\s*\"([^\"]*)\"")
+                .matcher(call.args() == null ? "" : call.args());
+        return match.find() ? match.group(1).trim() : "";
     }
 
     private static String refOf(Call call) {
@@ -1077,6 +1104,16 @@ public final class TapeRenderer {
             for (AriaSnapshot snapshot : recent) {
                 for (AriaSnapshot.Node node : snapshot.nodes()) {
                     if ("option".equals(node.role()) || !fold(node.caption()).equals(fold(chosen))) {
+                        continue;
+                    }
+                    // Only a CONTROL can be the field that now holds the
+                    // value. The snapshots are read newest first, and the one
+                    // after a page-changing choice is the NEXT screen, where
+                    // the same text is plain print — "Kurum: Sanko DBS
+                    // Ödemeleri" — and its label named the dropdown. The
+                    // control showing the value sits in an older snapshot.
+                    if (!"textbox".equals(node.role()) && !"combobox".equals(node.role())
+                            && !"spinbutton".equals(node.role())) {
                         continue;
                     }
                     String label = snapshot.labelOf(node.ref());

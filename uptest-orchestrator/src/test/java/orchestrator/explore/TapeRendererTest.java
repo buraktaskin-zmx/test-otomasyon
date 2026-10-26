@@ -788,6 +788,43 @@ class TapeRendererTest {
                 .noneMatch(step -> step.contains("\"Kurum\""));
     }
 
+    /**
+     * Read from the real tape of 26 Oct, 17:0x: after the choice the SAME page
+     * still shows the value inside Firma Seçimi's own box, and the page after
+     * it prints "Kurum: Sanko DBS Ödemeleri" as plain text. Snapshots are read
+     * newest first, so the plain text won.
+     */
+    @Test
+    @DisplayName("the control holding the value names the field, not plain text on a later page")
+    void prefersTheControlOverPlainText() {
+        login();
+        reachTheScreen();
+        ok("browser_snapshot", "{}", tree("""
+                - generic [ref=f1e368]:
+                  - generic [ref=f1e369]: Firma Seçimi
+                  - combobox [ref=f1e372]:
+                    - textbox "Seçiniz" [ref=f1e373]"""));
+        ok("browser_click", "{\"target\": \"f1e373\"}",
+                ran("await page.getByRole('textbox', { name: 'Seçiniz' }).click();"));
+        ok("browser_click", "{\"target\": \"f1e530\"}",
+                ran("await page.getByRole('option', { name: 'Sanko DBS Ödemeleri' }).click();"));
+        ok("browser_snapshot", "{}", tree("""
+                - generic [ref=f1e368]:
+                  - generic [ref=f1e369]: Firma Seçimi
+                  - combobox [ref=f1e554]:
+                    - textbox "Sanko DBS Ödemeleri" [ref=f1e555]"""));
+        ok("browser_click", "{\"target\": \"f1e421\"}",
+                ran("await page.getByRole('link', { name: 'Fatura Oluştur' }).click();"));
+        ok("browser_snapshot", "{}", tree("""
+                - generic [ref=f1e627]:
+                  - generic [ref=f1e628]: Kurum
+                  - generic [ref=f1e629]: Sanko DBS Ödemeleri"""));
+
+        assertThat(TapeRenderer.render(calls, MAIN_MENU, List.of()).steps())
+                .contains("select \"Sanko DBS Ödemeleri\" from \"Firma Seçimi\"")
+                .noneMatch(step -> step.contains("\"Kurum\""));
+    }
+
     /** A calendar day whose box cannot be read is reported, never dropped silently. */
     @Test
     @DisplayName("a calendar day with no readable box is reported")
@@ -801,6 +838,32 @@ class TapeRendererTest {
 
         assertThat(rendered.steps()).noneMatch(step -> step.startsWith("click \"28\""));
         assertThat(rendered.notes()).anySatisfy(note -> assertThat(note).contains("28").contains("elle"));
+    }
+
+    /**
+     * set_date makes its own browser calls, so its tape entry carries no
+     * echoed Playwright line — only a box reference and a date argument.
+     */
+    @Test
+    @DisplayName("a set_date call is an enter date")
+    void rendersSetDate() {
+        login();
+        reachTheScreen();
+        ok("browser_snapshot", "{}", tree("""
+                - generic [ref=d1]:
+                  - generic [ref=d2]: Fatura Tarihi
+                  - textbox "Fatura Tarihi" [ref=d3]"""));
+        ok("set_date", "{\"target\": \"d3\", \"date\": \"28/10/2026\"}",
+                "Set to 28/10/2026. Clicking the day closes the calendar.");
+        ok("set_date", "{\"target\": \"d3\", \"date\": \"31/02/abc\"}",
+                "\"31/02/abc\" is not a date. Give it as gg/aa/yyyy.");
+
+        TapeRenderer.Rendered rendered = TapeRenderer.render(calls, MAIN_MENU, List.of());
+
+        assertThat(rendered.steps()).containsExactly(
+                "navigate to \"NAKİT YÖNETİMİ\" \"Firma Fatura İşlemleri\"",
+                "enter date \"Fatura Tarihi\" \"28/10/2026\"");
+        assertThat(rendered.notes()).anySatisfy(note -> assertThat(note).contains("set_date"));
     }
 
     /** The detail dialog, label and value as siblings in one cell. */
