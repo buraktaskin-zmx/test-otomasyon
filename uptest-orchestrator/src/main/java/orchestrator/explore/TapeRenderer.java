@@ -72,7 +72,20 @@ public final class TapeRenderer {
 
     private static final Pattern NAME = Pattern.compile("name:\\s*'((?:[^'\\\\]|\\\\.)*)'");
     private static final Pattern EXACT = Pattern.compile("exact:\\s*true");
-    private static final Pattern FILL = Pattern.compile("\\.fill\\('((?:[^'\\\\]|\\\\.)*)'\\)");
+    /**
+     * A value going in. {@code pressSequentially} is the same act typed key by
+     * key — the agent is TOLD to type amounts that way, because the masked
+     * boxes ignore a single fill — and reading only {@code fill} turned the
+     * lira half of "Toplam Tutar" into {@code click "Toplam Tutar"}.
+     */
+    private static final Pattern FILL =
+            Pattern.compile("\\.(?:fill|pressSequentially)\\('((?:[^'\\\\]|\\\\.)*)'\\)");
+
+    /** {@code page.locator('#toplamTutar-decimal')}: a control reached by id. */
+    private static final Pattern LOCATOR = Pattern.compile("page\\.locator\\('([^']*)'\\)");
+
+    /** The kuruş half of an amount box; the lira half is the one before it. */
+    private static final String DECIMAL_SUFFIX = "-decimal";
 
     /** {@code getByLabel('Fatura No')}, the other way the server names a field. */
     private static final Pattern BY_LABEL =
@@ -85,7 +98,8 @@ public final class TapeRenderer {
             "browser_console_messages", "browser_network_requests", "browser_take_screenshot");
 
     /** One {@code await page…} line, taken apart. */
-    private record Act(String role, String name, boolean exact, String innerRole, String value) {
+    private record Act(String role, String name, boolean exact, String innerRole, String value,
+                       String locator) {
 
         boolean isClick() {
             return value == null;
@@ -114,6 +128,8 @@ public final class TapeRenderer {
                     + " Öncekiler başarısız denemeler sayıldı — bu yürüyüşte 404 alıp"
                     + " baştan başlamış olabilir.");
         }
+
+        java.util.Set<Integer> premature = prematureClicks(calls);
 
         boolean started = false;
         for (int i = 0; i < calls.size(); i++) {
@@ -167,6 +183,15 @@ public final class TapeRenderer {
                 continue;
             }
 
+            // Pressed too early, and pressed again once the form was filled.
+            // See prematureClicks.
+            if (premature.contains(i)) {
+                notes.add("#" + call.seq() + " \"" + caption + "\" form doldurulmadan basılmış ve"
+                        + " doldurulduktan sonra aynı elemana yeniden basılmış; erken olan adım"
+                        + " olarak yazılmadı.");
+                continue;
+            }
+
             // Error recovery, not a step. See DIALOG_DISMISS.
             if (act.isClick() && fold(caption).equals(fold(DIALOG_DISMISS))) {
                 notes.add("#" + call.seq() + " \"" + DIALOG_DISMISS + "\" tıklaması bir hata"
@@ -176,7 +201,8 @@ public final class TapeRenderer {
             }
 
             // A dropdown is two clicks: open the control, then pick the option.
-            if (act.isClick() && isTrigger(act)) {
+            if (act.isClick() && (isTrigger(act.role()) || isTrigger(scope.roleOf(ref))
+                    || act.role().isEmpty())) {
                 int at = nextActing(calls, i, scope);
                 Act option = at < 0 ? null : firstAct(calls.get(at)).orElse(null);
                 if (option != null && "option".equals(option.role())) {
@@ -201,6 +227,34 @@ public final class TapeRenderer {
                     i = at;
                     continue;
                 }
+                // A click INTO a text box is focus, not a step: `click` drives
+                // buttons and links and would time out on a box. The agent
+                // clicks a date box before typing into it, which rendered as
+                // `click "Başlangıç Vadesi"` above its own `enter date`.
+                if ("textbox".equals(act.role()) || "textbox".equals(scope.roleOf(ref))) {
+                    if (at < 0 || !ref.equals(refOf(calls.get(at)))) {
+                        notes.add("#" + call.seq() + " bir metin kutusuna tıklandı ama ardından"
+                                + " ne yazıldı ne seçildi; satır yazılmadı.");
+                    }
+                    continue;
+                }
+            }
+
+            // An option picked from a list whose opening was not recorded as
+            // a click of its own. Still a choice, never a `click`: the option
+            // list is not a button or a link, so `click "TL"` could not run.
+            if (act.isClick() && "option".equals(act.role())) {
+                String chosen = caption;
+                scope.peek(calls, i);
+                String field = scope.labelOfChosen(chosen);
+                if (field.isBlank()) {
+                    notes.add("#" + call.seq() + " bir listeden \"" + chosen + "\" seçildi ama"
+                            + " hangi alanın listesi olduğu kesinleşmedi; satır yazılmadı."
+                            + " 'select ... from ...' satırını elle ekleyin.");
+                } else {
+                    steps.add("select \"" + chosen + "\" from \"" + field + "\"");
+                }
+                continue;
             }
 
             // A radio is two different steps depending on where it lives. In a
@@ -248,6 +302,18 @@ public final class TapeRenderer {
             if (field.isBlank()) {
                 notes.add("#" + call.seq() + " \"" + act.value() + "\" yazıldı ama hangi alana"
                         + " olduğu çözülemedi; satır yazılmadı.");
+                continue;
+            }
+
+            // An amount is two boxes, lira then kuruş, and `enter amount`
+            // splits a "1000,50" back into them. The kuruş box is reached by
+            // id (`#toplamTutar-decimal`), so it is recognised by that id
+            // rather than by a label it does not have.
+            int at = nextActing(calls, i, scope);
+            Act next = at < 0 ? null : firstAct(calls.get(at)).orElse(null);
+            if (next != null && !next.isClick() && next.locator().endsWith(DECIMAL_SUFFIX)) {
+                steps.add("enter amount \"" + field + "\" \"" + act.value() + "," + next.value() + "\"");
+                i = at;
                 continue;
             }
             steps.add(enterFor(field, act.value()));
@@ -457,8 +523,67 @@ public final class TapeRenderer {
     private static final String DIALOG_DISMISS = "Tamam";
 
     /** A control that opens a list rather than doing something on its own. */
-    private static boolean isTrigger(Act act) {
-        return "textbox".equals(act.role()) || "combobox".equals(act.role());
+    private static boolean isTrigger(String role) {
+        return "textbox".equals(role) || "combobox".equals(role);
+    }
+
+    /**
+     * Clicks the agent made too early: the same element is clicked again
+     * later, and something was filled or chosen in between.
+     *
+     * A snapshot reference only lives while its page does — a navigation
+     * renumbers everything — so the same reference clicked twice proves the
+     * first click did not leave the page. With values going in between, that
+     * is a submit refused because the form was still empty, then retried.
+     * Measured on DBS Fatura Oluştur: "Fatura Oluştur" pressed before a Kurum
+     * was chosen (the bank answered with a dialog), and "Devam" pressed the
+     * moment "Bilgi Girişi" revealed the form — which painted "giriniz" under
+     * every required field. Both were rendered, so the replay would have
+     * repeated the agent's mistakes.
+     *
+     * Without anything in between it is left alone: pressing a "+" twice is
+     * an action, not a retry.
+     */
+    private static java.util.Set<Integer> prematureClicks(List<Call> calls) {
+        java.util.Set<Integer> early = new java.util.HashSet<>();
+        for (int i = 0; i < calls.size(); i++) {
+            Act first = clickOf(calls.get(i));
+            String ref = refOf(calls.get(i));
+            if (first == null || ref.isEmpty() || "option".equals(first.role())
+                    || isTrigger(first.role()) || first.role().isEmpty()) {
+                continue;
+            }
+            boolean changed = false;
+            for (int j = i + 1; j < calls.size(); j++) {
+                Call later = calls.get(j);
+                if (!"OK".equals(later.outcome())) {
+                    continue;
+                }
+                Act act = firstAct(later).orElse(null);
+                if (act == null) {
+                    continue;
+                }
+                if (!act.isClick() || "option".equals(act.role())) {
+                    changed = true;
+                    continue;
+                }
+                if (ref.equals(refOf(later)) && fold(act.name()).equals(fold(first.name()))) {
+                    if (changed) {
+                        early.add(i);
+                    }
+                    break;
+                }
+            }
+        }
+        return early;
+    }
+
+    private static Act clickOf(Call call) {
+        if (!"browser_click".equals(call.tool()) || !"OK".equals(call.outcome())) {
+            return null;
+        }
+        Act act = firstAct(call).orElse(null);
+        return act != null && act.isClick() ? act : null;
     }
 
     /** The line chains down to a radio, or the reference resolves to one. */
@@ -532,12 +657,22 @@ public final class TapeRenderer {
                 // walk and reported each as "no vocabulary equivalent" — the
                 // step existed, the parser could not see the call. The field
                 // is then named from the snapshot, through the ref.
+                Matcher located = LOCATOR.matcher(line);
+                String locator = located.find() ? located.group(1) : "";
                 if (typed == null) {
+                    // A click on a control reached by id:
+                    // `page.locator('#select2-bayiKodu-container').click()` is
+                    // how the server opens a Select2 it found no role for.
+                    // Skipping it left the option click that follows with no
+                    // trigger, and it came out as `click "bayisanko1"`.
+                    if (!locator.isEmpty() && line.contains(".click(")) {
+                        return Optional.of(new Act("", "", false, "", null, locator));
+                    }
                     continue;
                 }
                 Matcher labelled = BY_LABEL.matcher(line);
                 return Optional.of(new Act("textbox",
-                        labelled.find() ? unescape(labelled.group(1)) : "", false, "", typed));
+                        labelled.find() ? unescape(labelled.group(1)) : "", false, "", typed, locator));
             }
 
             String[] first = roles.get(0);
@@ -547,7 +682,7 @@ public final class TapeRenderer {
                     name.find() ? unescape(name.group(1)) : "",
                     EXACT.matcher(first[1]).find(),
                     roles.size() > 1 ? roles.get(1)[0] : "",
-                    typed));
+                    typed, ""));
         }
         return Optional.empty();
     }

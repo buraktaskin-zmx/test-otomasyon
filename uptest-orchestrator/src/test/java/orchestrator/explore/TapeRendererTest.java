@@ -374,6 +374,160 @@ class TapeRendererTest {
                 .contains("select row \"ccsdf\"");
     }
 
+    /**
+     * Measured on DBS Fatura Oluştur (tape fe25749f): "Devam" was pressed the
+     * moment "Bilgi Girişi" revealed the form, the bank painted "giriniz"
+     * under every required field, and the same "Devam" — same reference, so
+     * the page never changed — was pressed again once the form was filled.
+     */
+    @Test
+    @DisplayName("a submit pressed before the form was filled, then retried, is written once")
+    void dropsTheEarlySubmit() {
+        login();
+        reachTheScreen();
+        ok("browser_snapshot", "{}", tree("""
+                - generic [ref=d1]:
+                  - generic [ref=d2]: Oluşturma Tipi
+                  - radio "Bilgi Girişi" [ref=d3]
+                - generic [ref=b1]:
+                  - generic [ref=b2]: Fatura No
+                  - textbox [ref=b3]
+                - link "Devam" [ref=f1e753]"""));
+        ok("browser_click", "{\"target\": \"d3\"}",
+                ran("await page.getByRole('radio', { name: 'Bilgi Girişi' }).click();"));
+        ok("browser_click", "{\"target\": \"f1e753\"}",
+                ran("await page.getByRole('link', { name: 'Devam' }).click();"));
+        ok("browser_type", "{\"target\": \"b3\", \"text\": \"11113\"}",
+                ran("await page.getByRole('textbox', { name: 'Fatura No' }).fill('11113');"));
+        ok("browser_click", "{\"target\": \"f1e753\"}",
+                ran("await page.getByRole('link', { name: 'Devam' }).click();"));
+
+        TapeRenderer.Rendered rendered = TapeRenderer.render(calls, MAIN_MENU, List.of());
+
+        assertThat(rendered.steps()).containsSubsequence(
+                "choose \"Bilgi Girişi\"", "enter \"Fatura No\" \"11113\"", "click \"Devam\"");
+        assertThat(rendered.steps()).filteredOn(step -> step.equals("click \"Devam\"")).hasSize(1);
+        assertThat(rendered.notes()).anySatisfy(note -> assertThat(note).contains("#").contains("Devam"));
+    }
+
+    /** "Fatura Oluştur" before a Kurum was chosen: dialog, Tamam, choose, again. */
+    @Test
+    @DisplayName("a button refused for an empty choice, then pressed again, is written once")
+    void dropsTheButtonPressedBeforeTheChoice() {
+        login();
+        reachTheScreen();
+        ok("browser_snapshot", "{}", tree("""
+                - generic [ref=k1]:
+                  - generic [ref=k2]: Kurum
+                  - combobox [ref=k3]:
+                    - textbox "Seçiniz" [ref=k4]
+                - link "Fatura Oluştur" [ref=f1e421]"""));
+        ok("browser_click", "{\"target\": \"f1e421\"}",
+                ran("await page.getByRole('link', { name: 'Fatura Oluştur' }).click();"));
+        ok("browser_click", "{\"target\": \"f1e451\"}",
+                ran("await page.getByRole('link', { name: 'Tamam' }).click();"));
+        ok("browser_click", "{\"target\": \"k4\"}",
+                ran("await page.getByRole('textbox', { name: 'Seçiniz' }).click();"));
+        ok("browser_click", "{\"target\": \"f1e550\"}",
+                ran("await page.getByRole('option', { name: 'Sanko DBS Ödemeleri' }).click();"));
+        ok("browser_snapshot", "{}", tree("""
+                - generic [ref=k1]:
+                  - generic [ref=k2]: Kurum
+                  - combobox [ref=k5]:
+                    - textbox "Sanko DBS Ödemeleri" [ref=k6]
+                - link "Fatura Oluştur" [ref=f1e421]"""));
+        ok("browser_click", "{\"target\": \"f1e421\"}",
+                ran("await page.getByRole('link', { name: 'Fatura Oluştur' }).click();"));
+
+        assertThat(TapeRenderer.render(calls, MAIN_MENU, List.of()).steps()).containsExactly(
+                "navigate to \"NAKİT YÖNETİMİ\" \"Firma Fatura İşlemleri\"",
+                "select \"Sanko DBS Ödemeleri\" from \"Kurum\"",
+                "click \"Fatura Oluştur\"");
+    }
+
+    /**
+     * The server opens a Select2 it found no role for by id —
+     * `page.locator('#select2-bayiKodu-container').click()` — and skipping
+     * that line left the option with no trigger: `click "bayisanko1"`.
+     */
+    @Test
+    @DisplayName("a dropdown opened by id is still a select")
+    void readsADropdownOpenedById() {
+        login();
+        reachTheScreen();
+        ok("browser_snapshot", "{}", tree("""
+                - generic [ref=g1]:
+                  - generic [ref=g2]: Bayi Kodu
+                  - combobox [ref=g3]:
+                    - textbox [ref=g4]"""));
+        ok("browser_click", "{\"target\": \"g4\"}",
+                ran("await page.locator('#select2-bayiKodu-container').click();"));
+        ok("browser_click", "{\"target\": \"g9\"}",
+                ran("await page.getByRole('option', { name: 'bayisanko1' }).click();"));
+        ok("browser_snapshot", "{}", tree("""
+                - generic [ref=g1]:
+                  - generic [ref=g2]: Bayi Kodu
+                  - combobox [ref=g5]:
+                    - textbox "bayisanko1" [ref=g6]"""));
+
+        TapeRenderer.Rendered rendered = TapeRenderer.render(calls, MAIN_MENU, List.of());
+
+        assertThat(rendered.steps()).contains("select \"bayisanko1\" from \"Bayi Kodu\"");
+        assertThat(rendered.steps()).noneMatch(step -> step.startsWith("click"));
+    }
+
+    /** Focus before typing is not a step: `click` cannot drive a text box. */
+    @Test
+    @DisplayName("clicking into a box before typing is not written")
+    void dropsTheFocusClick() {
+        login();
+        reachTheScreen();
+        ok("browser_snapshot", "{}", tree("""
+                - generic [ref=c1]:
+                  - generic [ref=c2]: Başlangıç Vadesi
+                  - textbox "Başlangıç Vadesi" [ref=c3]"""));
+        ok("browser_click", "{\"target\": \"c3\"}",
+                ran("await page.getByRole('textbox', { name: 'Başlangıç Vadesi' }).click();"));
+        ok("browser_type", "{\"target\": \"c3\", \"text\": \"27/10/2026\"}",
+                ran("await page.getByRole('textbox', { name: 'Başlangıç Vadesi' }).fill('27/10/2026');"));
+
+        TapeRenderer.Rendered rendered = TapeRenderer.render(calls, MAIN_MENU, List.of());
+
+        assertThat(rendered.steps()).containsExactly(
+                "navigate to \"NAKİT YÖNETİMİ\" \"Firma Fatura İşlemleri\"",
+                "enter date \"Başlangıç Vadesi\" \"27/10/2026\"");
+        assertThat(rendered.notes()).noneMatch(note -> note.contains("metin kutusuna"));
+    }
+
+    /**
+     * An amount is two boxes, typed key by key as the agent is told to; the
+     * kuruş box is reached by id. Read as one `enter amount`, which splits it
+     * back the same way.
+     */
+    @Test
+    @DisplayName("lira and kuruş typed separately become one enter amount")
+    void joinsTheTwoAmountBoxes() {
+        login();
+        reachTheScreen();
+        ok("browser_snapshot", "{}", tree("""
+                - generic [ref=t1]:
+                  - generic [ref=t2]: Toplam Tutar
+                  - textbox "Toplam Tutar" [ref=t3]
+                  - textbox [ref=t4]
+                  - generic [ref=t5]: TL"""));
+        ok("browser_type", "{\"target\": \"t3\", \"text\": \"1000\", \"slowly\": true}",
+                ran("await page.getByRole('textbox', { name: 'Toplam Tutar' }).pressSequentially('1000');"));
+        ok("browser_type", "{\"target\": \"t4\", \"text\": \"50\", \"slowly\": true}",
+                ran("await page.locator('#toplamTutar-decimal').pressSequentially('50');"));
+
+        TapeRenderer.Rendered rendered = TapeRenderer.render(calls, MAIN_MENU, List.of());
+
+        assertThat(rendered.steps()).containsExactly(
+                "navigate to \"NAKİT YÖNETİMİ\" \"Firma Fatura İşlemleri\"",
+                "enter amount \"Toplam Tutar\" \"1000,50\"");
+        assertThat(rendered.notes()).noneMatch(note -> note.contains("karşılık yok"));
+    }
+
     /** The detail dialog, label and value as siblings in one cell. */
     private void detailDialog() {
         ok("browser_snapshot", "{}", tree("""

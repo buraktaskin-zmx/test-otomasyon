@@ -184,11 +184,25 @@ export function writeDoc(feature: string, doc: ScenarioDoc): string {
   return joinTags([...rules, ...others].join(" "), rest);
 }
 
-/** The scenario as plain numbered text, for the browsing agent. */
+/**
+ * The scenario as plain numbered text, for the browsing agent.
+ *
+ * The title is LABELLED as a title. Bare, it sat straight under "Sonra şu
+ * senaryoyu uygula:" and a title like "fatura oluştur" reads as a command:
+ * the agent pressed "Fatura Oluştur" before step 1 had chosen a Kurum, got
+ * the bank's refusal dialog, closed it, and only then started the steps.
+ */
 export function docAsText(doc: ScenarioDoc): string {
-  const out: string[] = [doc.title];
+  const out: string[] = [`Senaryo adı (yalnızca bir isim, yapılacak bir adım DEĞİL): ${doc.title}`];
   if (doc.preconditions.length) out.push("", "Ön koşul:", ...doc.preconditions.map((p) => "- " + p));
-  if (doc.steps.length) out.push("", "Adımlar:", ...doc.steps.map((s, i) => i + 1 + ". " + s));
+  if (doc.steps.length) {
+    out.push(
+      "",
+      "Adımlar — numara sırasıyla, birer birer uygula. Bir adım bitmeden sonrakine geçme;"
+        + " sonraki bir adımın butonuna önceden basma; burada yazmayan bir butona basma:",
+      ...doc.steps.map((s, i) => i + 1 + ". " + s),
+    );
+  }
   if (doc.expected.length) out.push("", "Beklenen:", ...doc.expected.map((e) => "- " + e));
   return out.join("\n");
 }
