@@ -219,7 +219,7 @@ Projenin kökündeki bu dosya, MCP sunucusunun nasıl başlatılacağını söyl
       "args": [
         "C:/tools/playwright-mcp/node_modules/@playwright/mcp/cli.js",
         "--browser", "msedge",
-        "--user-data-dir", "./.mcp-browser-profile",
+        "--isolated",
         "--allowed-origins", "https://ifctest.yapikredi.com.tr;https://intest.yapikredi.com.tr",
         "--output-dir", "./runs/mcp"
       ]
@@ -235,7 +235,7 @@ Satır satır:
 | `command: node` | MCP sunucusu bir **Node.js** programı | Java değil. Ayrı bir süreç, ayrı bir yaşam döngüsü. |
 | `C:/tools/playwright-mcp/...` | Paket repo **DIŞINDA** kurulu | Repoda `node_modules` yok; kurulum her makinede elle yapılıyor. |
 | `--browser msedge` | Sistemdeki Edge | Playwright'ın kendi Chromium'u değil. Kurumsal SSL denetimi indirmeyi engelliyor. |
-| `--user-data-dir ./.mcp-browser-profile` | Tarayıcı profili diskte saklanıyor | **Canlı oturum çerezleri burada.** 12. bölüm. |
+| `--isolated` | Her koşu bellekte, sıfırdan bir profil | Eskiden `--user-data-dir ./.mcp-browser-profile` idi; **kaldırıldı**, 12. bölüm. |
 | `--allowed-origins` | Yalnızca bu iki adrese gidebilir | Ajan yanlış bir siteye yönelse bile tarayıcı reddeder. |
 | `--output-dir ./runs/mcp` | Ekran görüntüleri vb. buraya | Koşu çıktıları. |
 
@@ -918,17 +918,44 @@ ajan bu aracı **hiç almıyor** — her çağrıda patlayan bir araç almaktans
 
 ## 12. Tarayıcı profili ve pencereyi kapatmak
 
-### 12.1 `.mcp-browser-profile/` — asla commit edilmez
+### 12.1 Kalıcı profil kaldırıldı — `--isolated`
 
-`--user-data-dir ./.mcp-browser-profile` tarayıcı profilini diske yazıyor.
-İçinde **canlı oturum çerezleri** var — yani giriş yapılmış bir bankacılık
-oturumu.
+Ajan eskiden `--user-data-dir ./.mcp-browser-profile` ile, profili **diske**
+yazarak çalışıyordu. İçinde canlı oturum çerezleri vardı ve yan etkisi
+burada uyarı olarak yazılıydı: *sonraki koşu kendini zaten giriş yapmış
+bulabilir.* Artık `--isolated`: her koşu bellekte, sıfırdan bir profille
+başlıyor ve kapanınca hiçbir şey kalmıyor.
 
-`.gitignore` bunu koruyor (satır 17). **Bu satır kaldırılmamalı.**
+**Kaldırılmasının sebebi gözlemlenmiş bir arıza** (2026-10-26). Ajan koşusu
+sırasında ikinci bir Edge penceresi kendiliğinden açılıp hiçbir şey yapmadan
+duruyor, ve aynı anda menü linkleri aralıklı olarak *"Şu anda işleminizi
+gerçekleştiremiyoruz (404 - error)"* dönüyordu. Ayırt edici ipucu: ikinci
+pencere `about:blank` değil, **banka sayfası** gösteriyordu — kimse onu
+sürmüyordu, yani oraya kimse götürmemişti. Bu Edge'in **oturum geri
+yüklemesi**:
 
-Bunun bir yan etkisi var ve bilinmesi gerekiyor: **sonraki koşu kendini zaten
-giriş yapmış bulabilir.** Pencereyi kapatmak oturumu sonlandırmıyor, çünkü
-çerezler diskte.
+1. Edge düzgün kapanmazsa profile "çöktü" işareti düşer ve açık pencereler
+   kaydedilir. Orchestrator'ı yeniden başlatmak altındaki `node` MCP sürecini
+   öldürür; Edge temiz kapanamaz. Geliştirme sırasında bu her pull+derle
+   döngüsünde oluyordu.
+2. Sonraki başlatmada Playwright kendi sayfasını açar **ve** Edge önceki
+   oturumun penceresini geri yükler — sürülmeyen, öylece duran ikinci pencere.
+3. Geri yüklenen pencere **eski oturumun** sayfasını yeniden yükler. Banka
+   kullanıcı başına tek oturum tuttuğu için bu, ajanın canlı oturumunu
+   düşürür ve sonraki menü isteği 404 döner.
+
+Aralıklılık buradan geliyor: önceki kapanış temizse olmuyor, değilse oluyor.
+Bellekteki bir profilin geri yükleyeceği oturumu da paylaşacağı çerezi de
+yok.
+
+Eski `.mcp-browser-profile/` dizini makinelerde durmaya devam edebilir ve
+içinde canlı bir oturum çerezi vardır. `.gitignore` onu korumaya devam ediyor
+(satır 17) — **bu satır kaldırılmamalı.** Dizin artık kullanılmıyor;
+silinmesi güvenli.
+
+**Bilinen bedeli:** banka her koşuyu yeni bir cihaz olarak görür. Ajan SMS
+şifresini zaten her koşuda giriyor, ama bir cihaz doğrulaması ("Cihaz
+Eşleştirmesi") istenirse onunla da karşılaşacak.
 
 ### 12.2 `closeBrowser()` — neden bizim işimiz
 

@@ -267,7 +267,7 @@ Tanım tek bir dosyada, `/.mcp.json`:
       "args": [
         "C:/tools/playwright-mcp/node_modules/@playwright/mcp/cli.js",
         "--browser", "msedge",
-        "--user-data-dir", "./.mcp-browser-profile",
+        "--isolated",
         "--allowed-origins", "https://ifctest.yapikredi.com.tr;https://intest.yapikredi.com.tr",
         "--output-dir", "./runs/mcp"
       ]
@@ -276,8 +276,10 @@ Tanım tek bir dosyada, `/.mcp.json`:
 }
 ```
 
-> `--user-data-dir ./.mcp-browser-profile` → oturum çerezleri **diske** yazılıyor.
-> Bu dizin canlı bir banka oturumu taşıyor; asla commit edilmemeli.
+> `--isolated` → her koşu bellekte, sıfırdan bir profille başlıyor; diske oturum
+> çerezi yazılmıyor. Eskiden `--user-data-dir ./.mcp-browser-profile` idi ve
+> Edge'in oturum geri yüklemesi yüzünden ikinci bir pencere + aralıklı 404
+> üretiyordu — `docs/AI-GEZ-VE-KESFET.md` §12.1.
 > `--allowed-origins` → ajan bu iki adres dışına çıkamaz.
 
 Spring AI bu araçları kendiliğinden keşfediyor (`spring.ai.mcp.client.stdio

@@ -5,7 +5,7 @@
       "args": [
         "C:/tools/playwright-mcp/node_modules/@playwright/mcp/cli.js",
         "--browser", "msedge",
-        "--user-data-dir", "./.mcp-browser-profile",
+        "--isolated",
         "--allowed-origins", "https://ifctest.yapikredi.com.tr;https://intest.yapikredi.com.tr",
         "--output-dir", "./runs/mcp"
       ]
