@@ -607,6 +607,86 @@ class TapeRendererTest {
         assertThat(rendered.notes()).filteredOn(note -> note.contains("klavye")).hasSize(1);
     }
 
+    /**
+     * The choice changes the page, so the first snapshot AFTER it is the next
+     * screen, where the same text is a static "Kurum: Sanko DBS Ödemeleri".
+     * The dropdown came out as `from "Kurum"`, a word that names no control;
+     * the real label, "Firma Seçimi", is what the agent itself called it.
+     */
+    @Test
+    @DisplayName("a dropdown is named by its own label, not by static text on the next screen")
+    void namesADropdownByItsLabel() {
+        login();
+        reachTheScreen();
+        ok("browser_snapshot", "{}", tree("""
+                - generic [ref=f1e366]:
+                  - generic [ref=f1e367]: Firma Seçimi
+                  - combobox [ref=f1e370]:
+                    - textbox "Seçiniz" [ref=f1e371]"""));
+        calls.add(new TapeRenderer.Call(++seq, "browser_click",
+                "{\"target\": \"f1e370\", \"element\": \"Firma Seçimi combobox\"}", "OK",
+                ran("await page.getByRole('combobox', { name: 'Seçiniz' }).click();")));
+        ok("browser_click", "{\"target\": \"f1e530\"}",
+                ran("await page.getByRole('option', { name: 'Sanko DBS Ödemeleri' }).click();"));
+        ok("browser_click", "{\"target\": \"f1e421\"}",
+                ran("await page.getByRole('link', { name: 'Fatura Oluştur' }).click();"));
+        ok("browser_snapshot", "{}", tree("""
+                - generic [ref=f1e626]:
+                  - generic [ref=f1e627]:
+                    - generic [ref=f1e628]: Kurum
+                    - generic [ref=f1e629]: Sanko DBS Ödemeleri
+                  - generic [ref=f1e630]:
+                    - generic [ref=f1e631]: Bayi Kodu
+                    - combobox [ref=f1e760]:
+                      - textbox "Seçiniz" [ref=f1e761]"""));
+
+        assertThat(TapeRenderer.render(calls, MAIN_MENU, List.of()).steps())
+                .contains("select \"Sanko DBS Ödemeleri\" from \"Firma Seçimi\"")
+                .noneMatch(step -> step.contains("\"Kurum\""));
+    }
+
+    /**
+     * One walk chose "Döviz Cinsi" last and, because a currency change clears
+     * the amounts, typed them twice. The scenario should read the way the
+     * screen is laid out: top to bottom, each field once, last value kept.
+     */
+    @Test
+    @DisplayName("a form is written top to bottom, each field once")
+    void writesTheFormInScreenOrder() {
+        login();
+        reachTheScreen();
+        ok("browser_snapshot", "{}", tree("""
+                - generic [ref=s1]:
+                  - generic [ref=s2]: Fatura No
+                  - textbox "Fatura No" [ref=s3]
+                - generic [ref=s4]:
+                  - generic [ref=s5]: Döviz Cinsi
+                  - combobox [ref=s6]:
+                    - textbox "Seçiniz" [ref=s7]
+                - generic [ref=s8]:
+                  - generic [ref=s9]: Taksit Adedi
+                  - textbox "Taksit Adedi" [ref=s10]"""));
+        ok("browser_type", "{\"target\": \"s10\", \"text\": \"12\"}",
+                ran("await page.getByRole('textbox', { name: 'Taksit Adedi' }).fill('12');"));
+        ok("browser_type", "{\"target\": \"s3\", \"text\": \"11113\"}",
+                ran("await page.getByRole('textbox', { name: 'Fatura No' }).fill('11113');"));
+        ok("browser_click", "{\"target\": \"s7\", \"element\": \"Döviz Cinsi combobox\"}",
+                ran("await page.getByRole('textbox', { name: 'Seçiniz' }).click();"));
+        ok("browser_click", "{\"target\": \"s20\"}",
+                ran("await page.getByRole('option', { name: 'TL' }).click();"));
+        ok("browser_type", "{\"target\": \"s10\", \"text\": \"24\"}",
+                ran("await page.getByRole('textbox', { name: 'Taksit Adedi' }).fill('24');"));
+
+        TapeRenderer.Rendered rendered = TapeRenderer.render(calls, MAIN_MENU, List.of());
+
+        assertThat(rendered.steps()).containsExactly(
+                "navigate to \"NAKİT YÖNETİMİ\" \"Firma Fatura İşlemleri\"",
+                "enter \"Fatura No\" \"11113\"",
+                "select \"TL\" from \"Döviz Cinsi\"",
+                "enter \"Taksit Adedi\" \"24\"");
+        assertThat(rendered.notes()).anySatisfy(note -> assertThat(note).contains("yukarıdan aşağıya"));
+    }
+
     /** The detail dialog, label and value as siblings in one cell. */
     private void detailDialog() {
         ok("browser_snapshot", "{}", tree("""

@@ -219,6 +219,17 @@ public final class AriaSnapshot {
     }
 
     /** True when nothing could be read out of the result. */
+    /** The labels of this screen's fields, in the order the page prints them. */
+    public List<String> controlLabels() {
+        List<String> labels = new ArrayList<>();
+        for (Node node : nodes) {
+            if (!node.caption().isBlank() && labelsAControl(node.ref())) {
+                labels.add(node.caption());
+            }
+        }
+        return labels;
+    }
+
     public boolean isEmpty() {
         return nodes.isEmpty();
     }
@@ -287,6 +298,33 @@ public final class AriaSnapshot {
             }
         }
         return "";
+    }
+
+    /**
+     * Whether this node is the LABEL of a control: its next sibling is a box
+     * the user can fill or open.
+     *
+     * Separates a field's caption from a caption that merely sits beside a
+     * value. "Kurum" on a form is followed by its value as plain text, so it
+     * is not a field; "Firma Seçimi" is followed by a combobox, so it is.
+     */
+    public boolean labelsAControl(String ref) {
+        Integer index = byRef.get(ref);
+        if (index == null) {
+            return false;
+        }
+        Node node = nodes.get(index);
+        for (int i = index + 1; i < nodes.size(); i++) {
+            Node next = nodes.get(i);
+            if (next.indent() <= node.indent() && next.parent() != node.parent()) {
+                return false;
+            }
+            if (next.parent() == node.parent()) {
+                return "combobox".equals(next.role()) || "textbox".equals(next.role())
+                        || "spinbutton".equals(next.role());
+            }
+        }
+        return false;
     }
 
     /** The nodes directly inside this one, in document order. */

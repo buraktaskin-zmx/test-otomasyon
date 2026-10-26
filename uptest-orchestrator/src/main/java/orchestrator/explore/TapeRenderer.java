@@ -234,7 +234,18 @@ public final class TapeRenderer {
                     // the choice the value sits INSIDE its own control, so the
                     // climb starts from the right place.
                     scope.peek(calls, at);
-                    String field = scope.labelOfChosen(chosen);
+                    // The agent names the control it opens ("Firma Seçimi
+                    // combobox"), and that name is trusted ONLY when the
+                    // screen itself carries it as a label. Reading the effect
+                    // alone failed when the choice changed the page: the first
+                    // snapshot afterwards was the next screen, where the same
+                    // text sits as a static "Kurum: Sanko DBS Ödemeleri", and
+                    // the dropdown came out as `from "Kurum"` — a word that
+                    // names no control at all.
+                    String field = scope.groundedLabel(elementOf(call));
+                    if (field.isBlank()) {
+                        field = scope.labelOfChosen(chosen);
+                    }
                     if (field.isBlank()) {
                         notes.add("#" + call.seq() + " bir listeden \"" + chosen + "\" seçildi ama"
                                 + " hangi alanın listesi olduğu kesinleşmedi; satır yazılmadı."
@@ -340,6 +351,7 @@ public final class TapeRenderer {
         if (steps.isEmpty()) {
             notes.add("Bu yürüyüşten hiçbir adım çıkarılamadı — ajan ana menüye hiç ulaşmamış olabilir.");
         }
+        reorderForm(steps, scope, notes);
         appendVerifies(expectations, scope, steps, notes);
         return new Rendered(steps, notes);
     }
@@ -709,6 +721,89 @@ public final class TapeRenderer {
         return -1;
     }
 
+    /** The label a field-writing step names, or null for any other step. */
+    private static final Pattern FIELD_STEP = Pattern.compile(
+            "^(?:select \"(?:[^\"]*)\" from \"([^\"]*)\""
+                    + "|enter(?: date| amount)? \"([^\"]*)\" \"(?:[^\"]*)\")$");
+
+    private static String fieldOf(String step) {
+        Matcher match = FIELD_STEP.matcher(step);
+        if (!match.matches()) {
+            return null;
+        }
+        return match.group(1) != null ? match.group(1) : match.group(2);
+    }
+
+    /**
+     * A form filled top to bottom, however the agent actually went.
+     *
+     * The agent is told to fill in the order the screen prints and does not
+     * always: one walk chose "Döviz Cinsi" last and, because a currency
+     * change clears the amounts, typed both amounts a second time. Written
+     * as it happened that is a scenario in which the dropdown sits below the
+     * boxes it resets. Screen order is also the safe order — whatever a field
+     * reloads is printed BELOW it — so each run of consecutive field steps
+     * is sorted by where the screen prints the field, and a field written
+     * twice keeps its LAST value.
+     *
+     * A run is left exactly as it was when any of its fields was never
+     * printed on a snapshot the walk saw: ordering by a guess is the thing
+     * this exists to stop.
+     */
+    private static void reorderForm(List<String> steps, Scope scope, List<String> notes) {
+        List<String> out = new ArrayList<>();
+        boolean moved = false;
+        int i = 0;
+        while (i < steps.size()) {
+            if (fieldOf(steps.get(i)) == null) {
+                out.add(steps.get(i++));
+                continue;
+            }
+            int end = i;
+            while (end < steps.size() && fieldOf(steps.get(end)) != null) {
+                end++;
+            }
+            List<String> run = steps.subList(i, end);
+            boolean known = run.stream().allMatch(step -> scope.rankOf(fieldOf(step)) >= 0);
+            if (!known || run.size() < 2) {
+                out.addAll(run);
+            } else {
+                Map<String, String> last = new LinkedHashMap<>();
+                for (String step : run) {
+                    String key = fold(fieldOf(step));
+                    last.remove(key);
+                    last.put(key, step);
+                }
+                List<String> sorted = new ArrayList<>(last.values());
+                sorted.sort(java.util.Comparator.comparingInt(step -> scope.rankOf(fieldOf(step))));
+                moved |= !sorted.equals(run);
+                out.addAll(sorted);
+            }
+            i = end;
+        }
+        if (moved) {
+            notes.add("Form alanları ekrandaki yukarıdan aşağıya sırayla yazıldı; ajan sırayı"
+                    + " bozmuş ya da bir alanı iki kez doldurmuştu (son değer kaldı).");
+        }
+        steps.clear();
+        steps.addAll(out);
+    }
+
+    private static final Pattern ELEMENT = Pattern.compile("\"element\"\s*:\s*\"([^\"]*)\"");
+
+    /** The words the agent appends to a label when it describes a control. */
+    private static final Pattern ELEMENT_SUFFIX = Pattern.compile(
+            "\s+(combobox|textbox|alanı|alani|kutusu|listesi|dropdown|seçici)$", Pattern.CASE_INSENSITIVE);
+
+    /** What the agent called the control it acted on, with its own suffix off. */
+    private static String elementOf(Call call) {
+        Matcher match = ELEMENT.matcher(call.args() == null ? "" : call.args());
+        if (!match.find()) {
+            return "";
+        }
+        return ELEMENT_SUFFIX.matcher(match.group(1).trim()).replaceFirst("").trim();
+    }
+
     private static String refOf(Call call) {
         Matcher match = TARGET_REF.matcher(call.args() == null ? "" : call.args());
         return match.find() ? match.group(1) : "";
@@ -849,6 +944,25 @@ public final class TapeRenderer {
             while (recent.size() > REMEMBERED) {
                 recent.removeLast();
             }
+            // The fullest form seen: the screen the fields were filled on is
+            // the one with the most labelled boxes, and it is long gone from
+            // `recent` by the time the walk ends.
+            List<String> labels = parsed.controlLabels();
+            if (labels.size() > fieldOrder.size()) {
+                fieldOrder = labels;
+            }
+        }
+
+        private List<String> fieldOrder = List.of();
+
+        /** Where the screen prints this field, or -1 when it never did. */
+        int rankOf(String label) {
+            for (int i = 0; i < fieldOrder.size(); i++) {
+                if (fold(fieldOrder.get(i)).equals(fold(label))) {
+                    return i;
+                }
+            }
+            return -1;
         }
 
         /**
@@ -910,6 +1024,28 @@ public final class TapeRenderer {
                     String label = snapshot.labelOf(node.ref());
                     if (!label.isBlank() && !fold(label).equals(fold(chosen))) {
                         return label;
+                    }
+                }
+            }
+            return "";
+        }
+
+        /**
+         * The candidate, spelled as the SCREEN spells it, or blank when no
+         * snapshot carries it as a label of a control.
+         *
+         * A bare text node is not enough: "Kurum" is printed on the form as
+         * a heading-like caption beside a value, and is not a field. Only a
+         * label whose next sibling is a control counts.
+         */
+        String groundedLabel(String candidate) {
+            if (candidate == null || candidate.isBlank()) {
+                return "";
+            }
+            for (AriaSnapshot snapshot : recent) {
+                for (AriaSnapshot.Node node : snapshot.nodes()) {
+                    if (fold(node.caption()).equals(fold(candidate)) && snapshot.labelsAControl(node.ref())) {
+                        return node.caption();
                     }
                 }
             }
