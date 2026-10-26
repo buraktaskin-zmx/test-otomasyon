@@ -73,6 +73,10 @@ public final class TapeRenderer {
     private static final Pattern NAME = Pattern.compile("name:\\s*'((?:[^'\\\\]|\\\\.)*)'");
     private static final Pattern EXACT = Pattern.compile("exact:\\s*true");
     private static final Pattern FILL = Pattern.compile("\\.fill\\('((?:[^'\\\\]|\\\\.)*)'\\)");
+
+    /** {@code getByLabel('Fatura No')}, the other way the server names a field. */
+    private static final Pattern BY_LABEL =
+            Pattern.compile("getByLabel\\('((?:[^'\\\\]|\\\\.)*)'");
     private static final Pattern TARGET_REF = Pattern.compile("\"target\"\\s*:\\s*\"([A-Za-z0-9]+)\"");
 
     /** Reads nothing and changes nothing; a scenario has no line for these. */
@@ -103,10 +107,24 @@ public final class TapeRenderer {
         List<String> notes = new ArrayList<>();
         Scope scope = new Scope();
 
+        int entry = lastMenuEntry(calls, mainMenu);
+        if (entry > 0 && countMenuEntries(calls, mainMenu) > 1) {
+            notes.add("Ajan ana menüye " + countMenuEntries(calls, mainMenu)
+                    + " kez girdi; yalnızca sonuncusundan itibaren render edildi."
+                    + " Öncekiler başarısız denemeler sayıldı — bu yürüyüşte 404 alıp"
+                    + " baştan başlamış olabilir.");
+        }
+
         boolean started = false;
         for (int i = 0; i < calls.size(); i++) {
             Call call = calls.get(i);
             scope.remember(call);
+            // Everything before the LAST entry into the main menu is read for
+            // its snapshots but produces no steps: it is either the login or
+            // an attempt that failed and was started over.
+            if (i < entry) {
+                continue;
+            }
 
             if (SILENT.contains(call.tool())) {
                 continue;
@@ -149,23 +167,60 @@ public final class TapeRenderer {
                 continue;
             }
 
+            // Error recovery, not a step. See DIALOG_DISMISS.
+            if (act.isClick() && fold(caption).equals(fold(DIALOG_DISMISS))) {
+                notes.add("#" + call.seq() + " \"" + DIALOG_DISMISS + "\" tıklaması bir hata"
+                        + " diyaloğunu kapatmış; adım olarak yazılmadı. Akışın gerçek parçasıysa"
+                        + " elle ekleyin.");
+                continue;
+            }
+
             // A dropdown is two clicks: open the control, then pick the option.
             if (act.isClick() && isTrigger(act)) {
-                // The label has to be read BEFORE walking forward: opening the
-                // control replaces the combobox node, so the snapshot that
-                // still knows which field this was is the one already in hand.
-                String field = scope.labelOf(ref, caption);
                 int at = nextActing(calls, i, scope);
                 Act option = at < 0 ? null : firstAct(calls.get(at)).orElse(null);
                 if (option != null && "option".equals(option.role())) {
-                    steps.add("select \"" + scope.caption(option, refOf(calls.get(at)))
-                            + "\" from \"" + field + "\"");
+                    String chosen = scope.caption(option, refOf(calls.get(at)));
+                    // The field is named by READING THE EFFECT BACK, not by
+                    // guessing from the control that was opened. Climbing from
+                    // an unopened combobox walks into the neighbouring field's
+                    // label — measured: a Döviz Cinsi dropdown came out as
+                    // `select "TL" from "Orijinal Fatura Tutarı"`, which is
+                    // plausible, passes a catalog check, and is wrong. After
+                    // the choice the value sits INSIDE its own control, so the
+                    // climb starts from the right place.
+                    scope.peek(calls, at);
+                    String field = scope.labelOfChosen(chosen);
+                    if (field.isBlank()) {
+                        notes.add("#" + call.seq() + " bir listeden \"" + chosen + "\" seçildi ama"
+                                + " hangi alanın listesi olduğu kesinleşmedi; satır yazılmadı."
+                                + " 'select ... from ...' satırını elle ekleyin.");
+                    } else {
+                        steps.add("select \"" + chosen + "\" from \"" + field + "\"");
+                    }
                     i = at;
                     continue;
                 }
             }
 
-            if (act.isClick() && isRow(act, ref, scope)) {
+            // A radio is two different steps depending on where it lives. In a
+            // result grid it picks a ROW and is named by the row's own data;
+            // in a plain form section it is a FORK between screens and is
+            // named by the text beside it. Reading both as a row wrote
+            // nothing at all for "Oluşturma Tipi: Bilgi Girişi" — the fork
+            // that decides which form opens — and reported it as a grid row
+            // with no identifying cell.
+            if (act.isClick() && isRadio(act, ref, scope)) {
+                if (!scope.insideRow(ref)) {
+                    String option = caption.isBlank() ? scope.labelOf(ref, "") : caption;
+                    if (option.isBlank()) {
+                        notes.add("#" + call.seq() + " bir seçenek işaretlendi ama adı çözülemedi;"
+                                + " 'choose' satırını elle yazın.");
+                    } else {
+                        steps.add("choose \"" + option + "\"");
+                    }
+                    continue;
+                }
                 String identifier = scope.rowIdentifier(ref);
                 if (identifier.isBlank()) {
                     notes.add("#" + call.seq() + " bir ızgara satırı seçildi ama satırı tanıtan"
@@ -177,11 +232,25 @@ public final class TapeRenderer {
             }
 
             if (act.isClick()) {
+                if (caption.isBlank()) {
+                    notes.add("#" + call.seq() + " bir tıklama kaydedildi ama neye tıklandığı"
+                            + " çözülemedi; satır yazılmadı.");
+                    continue;
+                }
                 steps.add("click \"" + caption + "\"");
                 continue;
             }
 
-            steps.add("enter \"" + scope.labelOf(ref, caption) + "\" \"" + act.value() + "\"");
+            // A value needs a field to belong to. Writing one with the
+            // control's own caption -- a placeholder like "Seçiniz" -- would
+            // produce a step naming a label the screen does not have.
+            String field = scope.labelOf(ref, act.name());
+            if (field.isBlank()) {
+                notes.add("#" + call.seq() + " \"" + act.value() + "\" yazıldı ama hangi alana"
+                        + " olduğu çözülemedi; satır yazılmadı.");
+                continue;
+            }
+            steps.add(enterFor(field, act.value()));
         }
 
         if (steps.isEmpty()) {
@@ -253,6 +322,26 @@ public final class TapeRenderer {
     private static final Pattern AMOUNT =
             Pattern.compile("^[0-9][0-9.]*,[0-9]{2}(\\s*[A-Z]{2,3})?$");
 
+    /**
+     * The write verb the value's shape asks for.
+     *
+     * A date written with plain {@code enter} is the mistake DateVerb exists
+     * to rewrite at generation time: {@code field equals} compares exactly, so
+     * a literal date passes into a field that resolves it and the assertion
+     * hunts for text the screen never shows. Here the shape is known, so the
+     * right verb is written in the first place.
+     *
+     * Amounts are deliberately NOT guessed: this application's amount field is
+     * two inputs, lira and kuruş, so a single recorded fill is only half of
+     * one and a step built from it would set the wrong number.
+     */
+    private static String enterFor(String label, String value) {
+        if (DATE.matcher(value).matches()) {
+            return "enter date \"" + label + "\" \"" + value + "\"";
+        }
+        return "enter \"" + label + "\" \"" + value + "\"";
+    }
+
     /** The verb the value's own shape asks for, as the type table does. */
     private static String verifyFor(String label, String value) {
         if (DATE.matcher(value).matches()) {
@@ -314,13 +403,66 @@ public final class TapeRenderer {
                 .replaceAll("^[:\\-–—\\s]+", "").replaceAll("[.,;\\s]+$", "").trim();
     }
 
+    /**
+     * Where the scenario really starts: the LAST time the agent opened the
+     * main menu.
+     *
+     * A walk is not always one attempt. This application's menu fails
+     * intermittently — CommonActions.navigateTo retries it three times for
+     * exactly that reason — and when it does, the agent dismisses the error
+     * and starts over from the menu. Rendering from the FIRST entry writes
+     * the failed attempt into the scenario: a click on a screen that never
+     * opened, then a dialog dismissal, then the real walk. Measured on a
+     * Fatura Oluştur recording, which produced "click Fatura Oluştur" before
+     * the firm had even been chosen.
+     *
+     * The risk is a scenario that legitimately visits the main menu twice;
+     * that one loses its first half. It is reported rather than hidden, and
+     * it is the better trade: a missing half is visible, a failed attempt
+     * rendered as steps is not.
+     */
+    private static int lastMenuEntry(List<Call> calls, String mainMenu) {
+        int last = 0;
+        for (int i = 0; i < calls.size(); i++) {
+            if (isMenuClick(calls.get(i), mainMenu)) {
+                last = i;
+            }
+        }
+        return last;
+    }
+
+    private static int countMenuEntries(List<Call> calls, String mainMenu) {
+        return (int) calls.stream().filter(call -> isMenuClick(call, mainMenu)).count();
+    }
+
+    private static boolean isMenuClick(Call call, String mainMenu) {
+        if (!"browser_click".equals(call.tool()) || !"OK".equals(call.outcome())) {
+            return false;
+        }
+        return firstAct(call)
+                .map(act -> !act.name().isBlank() && fold(act.name()).equals(fold(mainMenu)))
+                .orElse(false);
+    }
+
+    /**
+     * The caption this application puts on the button that closes an error
+     * dialog — the same one CommonActions.DIALOG_DISMISS drives.
+     *
+     * A click on it is error RECOVERY, not a step. Rendered into a scenario it
+     * is actively harmful: on the replay there is no dialog, so the step waits
+     * its whole timeout for a button that is not coming. Dropped and reported,
+     * because an analyst writing a negative scenario really may want it and
+     * should be told it was taken out.
+     */
+    private static final String DIALOG_DISMISS = "Tamam";
+
     /** A control that opens a list rather than doing something on its own. */
     private static boolean isTrigger(Act act) {
         return "textbox".equals(act.role()) || "combobox".equals(act.role());
     }
 
-    /** The row picker: the line chains down to a radio, or the ref is one. */
-    private static boolean isRow(Act act, String ref, Scope scope) {
+    /** The line chains down to a radio, or the reference resolves to one. */
+    private static boolean isRadio(Act act, String ref, Scope scope) {
         if ("radio".equals(act.innerRole()) || "radio".equals(act.role())) {
             return true;
         }
@@ -379,18 +521,33 @@ public final class TapeRenderer {
             while (byRole.find()) {
                 roles.add(new String[]{byRole.group(1), byRole.group(2) == null ? "" : byRole.group(2)});
             }
+            Matcher fill = FILL.matcher(line);
+            String typed = fill.find() ? unescape(fill.group(1)) : null;
+
             if (roles.isEmpty()) {
-                continue;
+                // No role, but something was typed: the server writes
+                // `page.locator('#userCode').fill(…)` for a control it
+                // reached by id, and `getByLabel(…)` for one it reached by
+                // label. Dropping these lost every `enter` of a form-filling
+                // walk and reported each as "no vocabulary equivalent" — the
+                // step existed, the parser could not see the call. The field
+                // is then named from the snapshot, through the ref.
+                if (typed == null) {
+                    continue;
+                }
+                Matcher labelled = BY_LABEL.matcher(line);
+                return Optional.of(new Act("textbox",
+                        labelled.find() ? unescape(labelled.group(1)) : "", false, "", typed));
             }
+
             String[] first = roles.get(0);
             Matcher name = NAME.matcher(first[1]);
-            Matcher fill = FILL.matcher(line);
             return Optional.of(new Act(
                     first[0],
                     name.find() ? unescape(name.group(1)) : "",
                     EXACT.matcher(first[1]).find(),
                     roles.size() > 1 ? roles.get(1)[0] : "",
-                    fill.find() ? unescape(fill.group(1)) : null));
+                    typed));
         }
         return Optional.empty();
     }
@@ -489,6 +646,51 @@ public final class TapeRenderer {
             return act.name();
         }
 
+        /**
+         * Reads a little way past a call, so the EFFECT of it can be seen.
+         *
+         * Two is enough: a choice is followed by a settle and then a
+         * snapshot. More would start pulling in the next screen.
+         */
+        void peek(List<Call> calls, int from) {
+            int seen = 0;
+            for (int i = from + 1; i < calls.size() && seen < 2; i++) {
+                int before = recent.size();
+                remember(calls.get(i));
+                if (recent.size() != before) {
+                    seen++;
+                }
+            }
+        }
+
+        /**
+         * The label of the field now DISPLAYING this value.
+         *
+         * The reliable way to name a dropdown: after the choice, the value
+         * sits inside its own control, so climbing to the label starts from
+         * the right place. Climbing from the control BEFORE it was opened
+         * walks into whatever label precedes it in the form, which on the
+         * DBS form meant a currency landing under "Orijinal Fatura Tutarı".
+         *
+         * Options are skipped on the way: the list that was open still
+         * carries the same text, and its label is the listbox's neighbour
+         * rather than the field's.
+         */
+        String labelOfChosen(String chosen) {
+            for (AriaSnapshot snapshot : recent) {
+                for (AriaSnapshot.Node node : snapshot.nodes()) {
+                    if ("option".equals(node.role()) || !fold(node.caption()).equals(fold(chosen))) {
+                        continue;
+                    }
+                    String label = snapshot.labelOf(node.ref());
+                    if (!label.isBlank() && !fold(label).equals(fold(chosen))) {
+                        return label;
+                    }
+                }
+            }
+            return "";
+        }
+
         /** The field's label, for the steps that take one. */
         String labelOf(String ref, String fallback) {
             for (AriaSnapshot snapshot : recent) {
@@ -527,6 +729,16 @@ public final class TapeRenderer {
                 snapshot.labelledValues().forEach(pairs::putIfAbsent);
             }
             return pairs;
+        }
+
+        /** Whether the element sits in a grid row — see AriaSnapshot#insideRow. */
+        boolean insideRow(String ref) {
+            for (AriaSnapshot snapshot : recent) {
+                if (snapshot.node(ref).isPresent()) {
+                    return snapshot.insideRow(ref);
+                }
+            }
+            return false;
         }
 
         String roleOf(String ref) {

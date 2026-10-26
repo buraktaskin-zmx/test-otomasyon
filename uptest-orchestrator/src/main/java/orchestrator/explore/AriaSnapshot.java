@@ -391,6 +391,21 @@ public final class AriaSnapshot {
         return pairs;
     }
 
+    /**
+     * Whether this element sits inside a grid row.
+     *
+     * The one question that tells {@code select row} from {@code choose}: a
+     * radio in a result grid is picked by its row's value, a radio in a plain
+     * form section is picked by the text beside it. CommonActions draws the
+     * same line in the DOM — selectRow matches on ancestor::td then
+     * ancestor::tr, and chooseOption exists precisely because that misses a
+     * radio with neither.
+     */
+    public boolean insideRow(String ref) {
+        Integer index = byRef.get(ref);
+        return index != null && ancestorWithRole(index, "row") >= 0;
+    }
+
     private int ancestorWithRole(int index, String role) {
         for (int at = index; at >= 0; at = nodes.get(at).parent()) {
             if (role.equals(nodes.get(at).role())) {

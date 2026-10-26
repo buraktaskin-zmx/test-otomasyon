@@ -90,6 +90,13 @@ class TapeRendererTest {
         // Echoed without exact, and SHORTER than the screen's own text.
         ok("browser_click", "{\"target\": \"f1e439\"}",
                 ran("await page.getByRole('option', { name: 'APPLE A.Ş' }).click();"));
+        // The effect: the chosen value now sits INSIDE its own control, which
+        // is the only place the field can be named from reliably.
+        ok("browser_snapshot", "{}", tree("""
+                - generic [ref=f1e366]:
+                  - generic [ref=f1e367]: Firma Seçimi
+                  - combobox [ref=f1e552]:
+                    - textbox "APPLE A.Ş." [ref=f1e553]"""));
 
         ok("browser_snapshot", "{}", tree("""
                 - rowgroup [ref=f1e611]:
@@ -197,6 +204,174 @@ class TapeRendererTest {
 
         assertThat(TapeRenderer.render(calls, MAIN_MENU, List.of()).notes())
                 .anySatisfy(note -> assertThat(note).contains("BEKLENEN"));
+    }
+
+    /**
+     * This application's menu fails intermittently — navigateTo retries it
+     * three times for that reason — and when it does the agent dismisses the
+     * error and starts over. Rendering from the FIRST entry wrote the failed
+     * attempt into the scenario: a click on a screen that never opened,
+     * followed by a dialog dismissal.
+     */
+    @Test
+    @DisplayName("a failed attempt is dropped: the scenario starts at the LAST menu entry")
+    void dropsAFailedAttempt() {
+        login();
+        // First attempt: menu, submenu, and the application refuses.
+        ok("browser_snapshot", "{}", tree("- link \"NAKİT YÖNETİMİ\" [ref=f1e148]"));
+        ok("browser_click", "{\"target\": \"f1e148\"}",
+                ran("await page.getByRole('link', { name: 'NAKİT YÖNETİMİ' }).click();"));
+        ok("browser_click", "{\"target\": \"f1e293\"}",
+                ran("await page.getByRole('link', { name: 'Fatura Oluştur' }).click();"));
+        ok("browser_click", "{\"target\": \"f1e391\"}",
+                ran("await page.getByRole('button', { name: 'Tamam' }).click();"));
+        // Second attempt, the one that worked.
+        reachTheScreen();
+
+        TapeRenderer.Rendered rendered = TapeRenderer.render(calls, MAIN_MENU, List.of());
+
+        assertThat(rendered.steps()).containsExactly(
+                "navigate to \"NAKİT YÖNETİMİ\" \"Firma Fatura İşlemleri\"");
+        assertThat(rendered.notes()).anySatisfy(note ->
+                assertThat(note).contains("ana menüye").contains("başarısız"));
+    }
+
+    /**
+     * On the replay there is no dialog, so a step waiting for "Tamam" spends
+     * its whole timeout on a button that is not coming.
+     */
+    @Test
+    @DisplayName("dismissing an error dialog is recovery, not a step")
+    void dropsTheDialogDismissal() {
+        login();
+        reachTheScreen();
+        ok("browser_click", "{\"target\": \"f1e500\"}",
+                ran("await page.getByRole('button', { name: 'Tamam' }).click();"));
+
+        TapeRenderer.Rendered rendered = TapeRenderer.render(calls, MAIN_MENU, List.of());
+
+        assertThat(rendered.steps()).noneMatch(step -> step.contains("Tamam"));
+        assertThat(rendered.notes()).anySatisfy(note ->
+                assertThat(note).contains("Tamam").contains("elle"));
+    }
+
+    /**
+     * Climbing from an unopened combobox walks into the neighbouring field's
+     * label. Measured on a DBS form: a currency came out as
+     * `select "TL" from "Orijinal Fatura Tutarı"` — plausible, passes a
+     * catalog check, and wrong. With no snapshot showing the effect, the line
+     * is refused instead.
+     */
+    @Test
+    @DisplayName("a choice whose field cannot be confirmed is refused, not guessed")
+    void refusesAChoiceItCannotName() {
+        login();
+        reachTheScreen();
+        ok("browser_snapshot", "{}", tree("""
+                - generic [ref=a1]:
+                  - generic [ref=a2]: Orijinal Fatura Tutarı
+                  - combobox [ref=a3]:
+                    - textbox "Seçiniz" [ref=a4]"""));
+        ok("browser_click", "{\"target\": \"a4\"}",
+                ran("await page.getByRole('textbox', { name: 'Seçiniz' }).click();"));
+        ok("browser_click", "{\"target\": \"a5\"}",
+                ran("await page.getByRole('option', { name: 'TL' }).click();"));
+
+        TapeRenderer.Rendered rendered = TapeRenderer.render(calls, MAIN_MENU, List.of());
+
+        assertThat(rendered.steps()).noneMatch(step -> step.startsWith("select \"TL\""));
+        assertThat(rendered.notes()).anySatisfy(note ->
+                assertThat(note).contains("TL").contains("elle"));
+    }
+
+    /**
+     * The server writes `page.locator('#id').fill(…)` for a control it reached
+     * by id. Reading only getByRole lost every `enter` of a form-filling walk
+     * and reported each as "no vocabulary equivalent" — the step existed, the
+     * parser could not see the call.
+     */
+    @Test
+    @DisplayName("a fill without a role is still an enter, named from the snapshot")
+    void recoversAFillWithoutARole() {
+        login();
+        reachTheScreen();
+        ok("browser_snapshot", "{}", tree("""
+                - generic [ref=b1]:
+                  - generic [ref=b2]: Fatura No
+                  - textbox [ref=b3]"""));
+        ok("browser_type", "{\"target\": \"b3\", \"text\": \"11113\"}",
+                ran("await page.locator('#invoiceNo').fill('11113');"));
+
+        assertThat(TapeRenderer.render(calls, MAIN_MENU, List.of()).steps())
+                .contains("enter \"Fatura No\" \"11113\"");
+    }
+
+    /**
+     * A literal date written with plain `enter` is the mistake DateVerb
+     * rewrites at generation time; the shape is known here, so the right verb
+     * is written in the first place.
+     */
+    @Test
+    @DisplayName("a date is entered with the date verb")
+    void usesTheDateVerb() {
+        login();
+        reachTheScreen();
+        ok("browser_snapshot", "{}", tree("""
+                - generic [ref=c1]:
+                  - generic [ref=c2]: Fatura Tarihi
+                  - textbox [ref=c3]"""));
+        ok("browser_type", "{\"target\": \"c3\", \"text\": \"28/10/2026\"}",
+                ran("await page.getByLabel('Fatura Tarihi').fill('28/10/2026');"));
+
+        assertThat(TapeRenderer.render(calls, MAIN_MENU, List.of()).steps())
+                .contains("enter date \"Fatura Tarihi\" \"28/10/2026\"");
+    }
+
+    /**
+     * "Oluşturma Tipi" is a fork between two screens, not a grid row: the
+     * catalog calls it navigation and the vocabulary drives it with `choose`,
+     * which exists precisely because selectRow matches on a table cell and
+     * cannot see a radio in a plain form section. Reading every radio as a
+     * row wrote no step at all for it.
+     */
+    @Test
+    @DisplayName("a radio outside a grid is a choose, not a row")
+    void readsAFormRadioAsAChoice() {
+        login();
+        reachTheScreen();
+        ok("browser_snapshot", "{}", tree("""
+                - generic [ref=d1]:
+                  - generic [ref=d2]: Oluşturma Tipi
+                  - radio "Bilgi Girişi" [ref=d3]
+                  - radio "Dosya Yükleme" [ref=d4]"""));
+        ok("browser_click", "{\"target\": \"d3\"}",
+                ran("await page.getByRole('radio', { name: 'Bilgi Girişi' }).click();"));
+
+        assertThat(TapeRenderer.render(calls, MAIN_MENU, List.of()).steps())
+                .contains("choose \"Bilgi Girişi\"");
+    }
+
+    /** The same element inside a grid stays a row pick. */
+    @Test
+    @DisplayName("a radio inside a grid is still a row")
+    void keepsAGridRadioAsARow() {
+        login();
+        reachTheScreen();
+        ok("browser_snapshot", "{}", tree("""
+                - rowgroup [ref=e1]:
+                  - row [ref=e2]:
+                    - cell [ref=e3]:
+                      - radio [ref=e4]
+                    - cell "151732" [ref=e5]
+                    - cell "ccsdf" [ref=e6]
+                  - row [ref=e7]:
+                    - cell "151732" [ref=e8]
+                    - cell "11113" [ref=e9]"""));
+        ok("browser_click", "{\"target\": \"e4\"}",
+                ran("await page.getByRole('row').getByRole('radio').click();"));
+
+        assertThat(TapeRenderer.render(calls, MAIN_MENU, List.of()).steps())
+                .contains("select row \"ccsdf\"");
     }
 
     /** The detail dialog, label and value as siblings in one cell. */
