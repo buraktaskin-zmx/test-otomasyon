@@ -3,8 +3,10 @@ package orchestrator.explore;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -93,8 +95,10 @@ public final class TapeRenderer {
      * @param calls   the tape's entries, in order
      * @param mainMenu the top-level menu from the tape header; the first click
      *                 on it is where the login ends and the scenario begins
+     * @param expectations the scenario's own BEKLENEN lines, which is where
+     *                     the THEN comes from — see {@link #appendVerifies}
      */
-    public static Rendered render(List<Call> calls, String mainMenu) {
+    public static Rendered render(List<Call> calls, String mainMenu, List<String> expectations) {
         List<String> steps = new ArrayList<>();
         List<String> notes = new ArrayList<>();
         Scope scope = new Scope();
@@ -183,9 +187,131 @@ public final class TapeRenderer {
         if (steps.isEmpty()) {
             notes.add("Bu yürüyüşten hiçbir adım çıkarılamadı — ajan ana menüye hiç ulaşmamış olabilir.");
         }
-        notes.add("Doğrulama satırı banttan gelmez: ajan bir iddiayı araç çağrısıyla yapmıyor,"
-                + " snapshot'ı okuyup anlatıyor. Beklenen değeri senaryonun BEKLENEN alanından yazın.");
+        appendVerifies(expectations, scope, steps, notes);
         return new Rendered(steps, notes);
+    }
+
+    /**
+     * The THEN, built from what the ANALYST expects — never from what the
+     * screen showed.
+     *
+     * The distinction is the whole of it. The agent does not assert: it reads
+     * a snapshot and describes it, so a verify derived from the walk would say
+     * the application is right because the application said so, and a defect
+     * would be written into the suite as a passing test. The expectation is
+     * the one input that can contradict the screen, and it is the analyst's.
+     *
+     * What the tape contributes is the other half: whether the label exists on
+     * the screen the walk ENDED on. A verify naming a field that was never
+     * shown spends its full timeout and blames the wrong thing, and that is
+     * knowable here, before anyone runs it.
+     *
+     * The two are then compared. When they disagree the analyst's value is
+     * used and the difference is reported — because a disagreement means
+     * either the expectation is stale or the application is wrong, and those
+     * need opposite fixes.
+     */
+    private static void appendVerifies(List<String> expectations, Scope scope,
+                                       List<String> steps, List<String> notes) {
+        if (expectations == null || expectations.isEmpty()) {
+            notes.add("Senaryonun BEKLENEN alanı boş, doğrulama satırı üretilmedi —"
+                    + " bir THEN'i olmayan senaryo test değildir.");
+            return;
+        }
+        Map<String, String> onScreen = scope.labelledValues();
+        for (String expectation : expectations) {
+            if (expectation == null || expectation.isBlank()) {
+                continue;
+            }
+            String label = longestLabelIn(expectation, onScreen.keySet());
+            if (label == null) {
+                notes.add("\"" + expectation.trim() + "\" bir doğrulama satırına çevrilemedi:"
+                        + " ajanın son gördüğü ekranda bu adda bir alan yok. Satırı elle yazın.");
+                continue;
+            }
+            String value = valueIn(expectation, label);
+            if (value.isBlank()) {
+                notes.add("\"" + expectation.trim() + "\" içinde '" + label
+                        + "' alanı bulundu ama beklenen değer okunamadı. Satırı elle yazın.");
+                continue;
+            }
+            steps.add(verifyFor(label, value));
+
+            String shown = onScreen.getOrDefault(label, "");
+            if (!shown.isBlank() && !fold(shown).equals(fold(value))) {
+                notes.add("'" + label + "' için beklediğiniz değer \"" + value
+                        + "\", ajanın gördüğü \"" + shown + "\". Sizinki yazıldı —"
+                        + " ya beklenti bayat ya uygulama hatalı, ve ikisi zıt düzeltme ister.");
+            }
+        }
+    }
+
+    /** gg/aa/yyyy, which {@code enter date} and its verify take as meaning. */
+    private static final Pattern DATE = Pattern.compile("^\\d{1,2}[./-]\\d{1,2}[./-]\\d{4}$");
+
+    /** 1.925,96 with an optional currency, which the amount verify normalises. */
+    private static final Pattern AMOUNT =
+            Pattern.compile("^[0-9][0-9.]*,[0-9]{2}(\\s*[A-Z]{2,3})?$");
+
+    /** The verb the value's own shape asks for, as the type table does. */
+    private static String verifyFor(String label, String value) {
+        if (DATE.matcher(value).matches()) {
+            return "verify the \"" + label + "\" has date \"" + value + "\"";
+        }
+        if (AMOUNT.matcher(value).matches()) {
+            return "verify the \"" + label + "\" has amount \"" + value + "\"";
+        }
+        return "verify the \"" + label + "\" field equals \"" + value + "\"";
+    }
+
+    /**
+     * The longest on-screen label the expectation names.
+     *
+     * Longest, because the short one is inside the long one on these screens:
+     * an expectation about "Orijinal Fatura Tutarı" also contains "Fatura
+     * Tutarı", and the shorter match would verify a different row of the same
+     * dialog.
+     */
+    private static String longestLabelIn(String expectation, java.util.Set<String> labels) {
+        String folded = fold(expectation);
+        String best = null;
+        for (String label : labels) {
+            if (folded.contains(fold(label)) && (best == null || label.length() > best.length())) {
+                best = label;
+            }
+        }
+        return best;
+    }
+
+    /**
+     * What the analyst wrote after the label, with the sentence's tail off.
+     *
+     * "Bayi Kodu 151732 oldugunu doğrula" is a sentence, not a field and a
+     * value, so the value is whatever sits between the label and the first
+     * word that is plainly part of the asking. The list is short and only
+     * grows when a real expectation is not read — a longer list would start
+     * eating values.
+     */
+    private static final List<String> TAIL = List.of(
+            "oldugunu", "olduğunu", "olmali", "olmalı", "dogrula", "doğrula",
+            "dogrulanmali", "doğrulanmalı", "gorunmeli", "görünmeli", "gosterilmeli",
+            "gösterilmeli", "yazmali", "yazmalı", "olarak", "seklinde", "şeklinde");
+
+    private static String valueIn(String expectation, String label) {
+        String folded = fold(expectation);
+        int at = folded.indexOf(fold(label));
+        String rest = expectation.substring(Math.min(expectation.length(), at + label.length())).trim();
+
+        int cut = rest.length();
+        for (String tail : TAIL) {
+            Matcher word = Pattern.compile("(?i)(^|\\s)" + Pattern.quote(tail) + "(\\s|$|\\.)")
+                    .matcher(fold(rest));
+            if (word.find()) {
+                cut = Math.min(cut, word.start(1) == word.start() ? word.start() : word.start() + 1);
+            }
+        }
+        return rest.substring(0, Math.max(0, Math.min(cut, rest.length()))).trim()
+                .replaceAll("^[:\\-–—\\s]+", "").replaceAll("[.,;\\s]+$", "").trim();
     }
 
     /** A control that opens a list rather than doing something on its own. */
@@ -286,9 +412,32 @@ public final class TapeRenderer {
         return value.replace("\\'", "'").replace("\\\"", "\"").trim();
     }
 
+    /**
+     * Turkish letters folded to ASCII before anything is compared.
+     *
+     * Analysts write expectations without them constantly — this walk's own
+     * BEKLENEN line says "oldugunu dogrula" — and the screen says "Fatura
+     * Tutarı". Without folding, the label is simply not found and a perfectly
+     * good expectation is reported as unmatched. ScreenLabels does the same
+     * thing on the executor side and for the same reason.
+     *
+     * Only the COMPARISON is folded. Whatever is written into a step keeps the
+     * screen's own spelling, because that is what the step has to match.
+     */
+    private static final String TURKISH = "çğıöşüâîû";
+    private static final String ASCII = "cgiosuaiu";
+
     private static String fold(String value) {
-        return value == null ? "" : value.replaceAll("\\s+", " ").trim()
-                .toLowerCase(Locale.forLanguageTag("tr-TR"));
+        if (value == null) {
+            return "";
+        }
+        String lowered = value.toLowerCase(Locale.forLanguageTag("tr-TR"));
+        StringBuilder out = new StringBuilder(lowered.length());
+        for (char letter : lowered.toCharArray()) {
+            int at = TURKISH.indexOf(letter);
+            out.append(at >= 0 ? ASCII.charAt(at) : letter);
+        }
+        return out.toString().replaceAll("\\s+", " ").trim();
     }
 
     /**
@@ -363,6 +512,21 @@ public final class TapeRenderer {
                 }
             }
             return "";
+        }
+
+        /**
+         * The label/value pairs of the screen the walk ended on.
+         *
+         * Newest first and merged, because the dialog a scenario asserts on
+         * is usually the last thing read while the grid behind it was read a
+         * call or two earlier — and an expectation may name either.
+         */
+        Map<String, String> labelledValues() {
+            Map<String, String> pairs = new LinkedHashMap<>();
+            for (AriaSnapshot snapshot : recent) {
+                snapshot.labelledValues().forEach(pairs::putIfAbsent);
+            }
+            return pairs;
         }
 
         String roleOf(String ref) {

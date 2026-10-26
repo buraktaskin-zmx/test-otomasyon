@@ -92,6 +92,19 @@ public final class AriaSnapshot {
                     + "((?:\\s*\\[[^\\]]*])*)"
                     + "\\s*:?\\s*(.*)$");
 
+    /**
+     * A whole line wrapped in single quotes, which YAML does when the scalar
+     * would otherwise be ambiguous.
+     *
+     * Every sortable column header on these grids is in that shape, because
+     * its accessible name contains a colon: {@code - 'columnheader "Bayi
+     * Kodu: activate to sort column ascending" [ref=f1e599]':}. Left wrapped,
+     * the line matches nothing, the node is dropped, and its child attaches
+     * to the GRANDparent — which quietly made all six column headers siblings
+     * and had "Bayi Kodu" report the value of the header next to it.
+     */
+    private static final Pattern WRAPPED = Pattern.compile("^(\\s*-\\s+)'(.*)'(:?)\\s*$");
+
     /** Where the tree starts inside the tool result's text block. */
     private static final String SNAPSHOT_HEADING = "### Snapshot";
 
@@ -123,7 +136,7 @@ public final class AriaSnapshot {
             if (line.isBlank() || line.contains("/url:")) {
                 continue;
             }
-            Matcher match = LINE.matcher(line);
+            Matcher match = LINE.matcher(unwrap(line));
             if (!match.matches()) {
                 continue;
             }
@@ -166,6 +179,15 @@ public final class AriaSnapshot {
             text = text.replace("\\n", "\n").replace("\\\"", "\"");
         }
         return text;
+    }
+
+    /** Takes a single-quoted line back to the plain one, {@code ''} and all. */
+    private static String unwrap(String line) {
+        Matcher wrapped = WRAPPED.matcher(line);
+        if (!wrapped.matches()) {
+            return line;
+        }
+        return wrapped.group(1) + wrapped.group(2).replace("''", "'") + wrapped.group(3);
     }
 
     private static String unescape(String value) {
@@ -343,6 +365,30 @@ public final class AriaSnapshot {
         }
         return mine.stream().filter(cell -> !cell.isBlank() && !elsewhere.contains(cell)).findFirst()
                 .orElseGet(() -> mine.stream().filter(cell -> !cell.isBlank()).findFirst().orElse(""));
+    }
+
+    /**
+     * Every label on this screen that has a value sitting beside it.
+     *
+     * Used to decide whether an expectation an analyst WROTE can be checked on
+     * the screen the walk ended on: the label has to exist there, or the
+     * verify would spend its timeout on a field that was never shown. The
+     * values come along for a cross-check — never to become the expectation,
+     * because an expectation read off the application is a bug promoted to a
+     * passing test.
+     */
+    public Map<String, String> labelledValues() {
+        Map<String, String> pairs = new LinkedHashMap<>();
+        for (Node node : nodes) {
+            if (node.text().isBlank()) {
+                continue;
+            }
+            String value = valueBeside(node.ref());
+            if (!value.isBlank()) {
+                pairs.putIfAbsent(node.text(), value);
+            }
+        }
+        return pairs;
     }
 
     private int ancestorWithRole(int index, String role) {

@@ -766,6 +766,12 @@ export interface ExploreRequest {
   password?: string;
   smsCode?: string;
   mainMenu?: string;
+  /** The scenario's own BEKLENEN lines. They are where the rendered THEN
+   *  comes from: the agent never asserts, so an expectation derived from the
+   *  walk would say the application is right because the application said so.
+   *  The tape is used only to check the label was on the screen the walk
+   *  ended on, and to report a value that disagrees. */
+  expected?: string[];
 }
 
 /** POST /api/v1/explore 200 body.

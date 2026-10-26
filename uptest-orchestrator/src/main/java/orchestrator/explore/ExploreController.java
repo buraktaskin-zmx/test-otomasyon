@@ -420,7 +420,8 @@ public class ExploreController {
      * that, and a flow that is already logged in needs none of them.
      */
     public record Instruction(String text, String url, String cif, String userId,
-                              String password, String smsCode, String mainMenu) {
+                              String password, String smsCode, String mainMenu,
+                              List<String> expected) {
     }
 
     /**
@@ -510,7 +511,8 @@ public class ExploreController {
             // an agent that skipped a step produces a scenario that skips it
             // too, and this run's own tape caught exactly that happening. The
             // analyst reads the lines and decides.
-            TapeRenderer.Rendered rendered = TapeRenderer.render(tape.calls(), body.mainMenu());
+            TapeRenderer.Rendered rendered =
+                    TapeRenderer.render(tape.calls(), body.mainMenu(), body.expected());
             return ResponseEntity.ok(Map.of(
                     "answer", answer,
                     "tapeId", tape.id(),

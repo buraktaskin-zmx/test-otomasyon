@@ -225,6 +225,7 @@ export function ProductPanel({
       password: chosenUser.password,
       smsCode: TEST_SMS_CODE,
       mainMenu: category ? category.toLocaleUpperCase("tr-TR") : undefined,
+      expected: scenario.doc.expected,
     });
     if (!result.ok) {
       if (result.error === BROWSER_CLOSED) {

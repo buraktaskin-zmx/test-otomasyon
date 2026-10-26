@@ -110,7 +110,7 @@ class TapeRendererTest {
         ok("browser_click", "{\"target\": \"f1e665\"}",
                 ran("await page.getByRole('link', { name: 'Detay', exact: true }).click();"));
 
-        TapeRenderer.Rendered rendered = TapeRenderer.render(calls, MAIN_MENU);
+        TapeRenderer.Rendered rendered = TapeRenderer.render(calls, MAIN_MENU, List.of());
 
         assertThat(rendered.steps()).containsExactly(
                 "navigate to \"NAKİT YÖNETİMİ\" \"Firma Fatura İşlemleri\"",
@@ -130,7 +130,7 @@ class TapeRendererTest {
         login();
         reachTheScreen();
 
-        TapeRenderer.Rendered rendered = TapeRenderer.render(calls, MAIN_MENU);
+        TapeRenderer.Rendered rendered = TapeRenderer.render(calls, MAIN_MENU, List.of());
 
         assertThat(rendered.steps()).containsExactly(
                 "navigate to \"NAKİT YÖNETİMİ\" \"Firma Fatura İşlemleri\"");
@@ -163,7 +163,7 @@ class TapeRendererTest {
         ok("browser_click", "{\"target\": \"rad1\"}",
                 ran("await page.getByRole('row').getByRole('radio').click();"));
 
-        assertThat(TapeRenderer.render(calls, MAIN_MENU).steps())
+        assertThat(TapeRenderer.render(calls, MAIN_MENU, List.of()).steps())
                 .contains("select row \"belge5\"");
     }
 
@@ -178,7 +178,7 @@ class TapeRendererTest {
         reachTheScreen();
         failed("browser_click", "{\"target\": \"f1e393\"}", "Error: Ref f1e393 not found");
 
-        TapeRenderer.Rendered rendered = TapeRenderer.render(calls, MAIN_MENU);
+        TapeRenderer.Rendered rendered = TapeRenderer.render(calls, MAIN_MENU, List.of());
 
         assertThat(rendered.notes()).anySatisfy(note ->
                 assertThat(note).contains("browser_click").contains("error"));
@@ -195,8 +195,93 @@ class TapeRendererTest {
         login();
         reachTheScreen();
 
-        assertThat(TapeRenderer.render(calls, MAIN_MENU).notes())
+        assertThat(TapeRenderer.render(calls, MAIN_MENU, List.of()).notes())
                 .anySatisfy(note -> assertThat(note).contains("BEKLENEN"));
+    }
+
+    /** The detail dialog, label and value as siblings in one cell. */
+    private void detailDialog() {
+        ok("browser_snapshot", "{}", tree("""
+                - dialog [ref=d1]:
+                  - row [ref=r1]:
+                    - cell "Bayi Kodu 151732" [ref=c1]:
+                      - generic [ref=g1]:
+                        - generic [ref=g2]: Bayi Kodu
+                        - generic [ref=g3]: "151732"
+                  - row [ref=r2]:
+                    - cell "Vade Tarihi 19/10/2026" [ref=c2]:
+                      - generic [ref=g4]:
+                        - generic [ref=g5]: Vade Tarihi
+                        - generic [ref=g6]: 19/10/2026
+                  - row [ref=r3]:
+                    - cell "Fatura Tutarı 100,00 TL" [ref=c3]:
+                      - generic [ref=g7]:
+                        - generic [ref=g8]: Fatura Tutarı
+                        - generic [ref=g9]: 100,00 TL"""));
+    }
+
+    /**
+     * The THEN is the analyst's, and the verb is the value's.
+     *
+     * The third expectation is written without Turkish characters on purpose:
+     * that is how they arrive, and this walk's own BEKLENEN line says
+     * "oldugunu dogrula".
+     */
+    @Test
+    @DisplayName("the expectation becomes a verify, with the verb its value asks for")
+    void derivesVerifiesFromTheExpectation() {
+        login();
+        reachTheScreen();
+        detailDialog();
+
+        TapeRenderer.Rendered rendered = TapeRenderer.render(calls, MAIN_MENU, List.of(
+                "Bayi Kodu 151732 oldugunu doğrula",
+                "Vade Tarihi 19/10/2026 olmalı",
+                "Fatura Tutari 100,00 TL olmali"));
+
+        assertThat(rendered.steps()).contains(
+                "verify the \"Bayi Kodu\" field equals \"151732\"",
+                "verify the \"Vade Tarihi\" has date \"19/10/2026\"",
+                "verify the \"Fatura Tutarı\" has amount \"100,00 TL\"");
+    }
+
+    /**
+     * A verify naming a field the walk never saw would spend its whole
+     * timeout and blame the wrong thing. That is knowable here.
+     */
+    @Test
+    @DisplayName("an expectation about a field nobody saw is refused, not guessed")
+    void refusesAnExpectationWithNoFieldOnScreen() {
+        login();
+        reachTheScreen();
+        detailDialog();
+
+        TapeRenderer.Rendered rendered =
+                TapeRenderer.render(calls, MAIN_MENU, List.of("Garanti Tutarı 5,00 TL olmalı"));
+
+        assertThat(rendered.steps()).noneMatch(step -> step.startsWith("verify"));
+        assertThat(rendered.notes()).anySatisfy(note ->
+                assertThat(note).contains("Garanti Tutarı").contains("elle"));
+    }
+
+    /**
+     * The analyst's value wins and the difference is reported. Taking the
+     * screen's instead would write a live defect into the suite as a passing
+     * test — the one thing an oracle must never do.
+     */
+    @Test
+    @DisplayName("an expectation that disagrees with the screen keeps the analyst's value and says so")
+    void keepsTheAnalystsValueAndReportsTheDisagreement() {
+        login();
+        reachTheScreen();
+        detailDialog();
+
+        TapeRenderer.Rendered rendered = TapeRenderer.render(calls, MAIN_MENU,
+                List.of("Bayi Kodu 999999 oldugunu doğrula"));
+
+        assertThat(rendered.steps()).contains("verify the \"Bayi Kodu\" field equals \"999999\"");
+        assertThat(rendered.notes()).anySatisfy(note ->
+                assertThat(note).contains("999999").contains("151732"));
     }
 
     /**
@@ -208,7 +293,7 @@ class TapeRendererTest {
     void reportsAWalkThatWentNowhere() {
         login();
 
-        TapeRenderer.Rendered rendered = TapeRenderer.render(calls, MAIN_MENU);
+        TapeRenderer.Rendered rendered = TapeRenderer.render(calls, MAIN_MENU, List.of());
 
         assertThat(rendered.steps()).isEmpty();
         assertThat(rendered.notes()).anySatisfy(note ->

@@ -177,6 +177,33 @@ class AriaSnapshotTest {
     }
 
     /**
+     * YAML wraps a scalar it would otherwise read as something else, and every
+     * sortable column header is in that shape because its accessible name
+     * contains a colon. Unwrapped, the node is dropped and its child attaches
+     * to the GRANDparent — which made all six headers siblings and had
+     * "Bayi Kodu" report the header beside it as its value.
+     */
+    @Test
+    @DisplayName("a single-quoted line is read like any other, and keeps the tree's shape")
+    void readsQuotedLines() {
+        AriaSnapshot snapshot = AriaSnapshot.of("""
+                ### Snapshot
+                ```yaml
+                - row [ref=e1]:
+                  - 'columnheader "Bayi Kodu: activate to sort column ascending" [ref=e2]':
+                    - generic [ref=e3]: Bayi Kodu
+                  - 'columnheader "Fatura No: activate to sort column ascending" [ref=e4]':
+                    - generic [ref=e5]: Fatura No
+                ```
+                """);
+
+        assertThat(snapshot.node("e2")).get()
+                .extracting(AriaSnapshot.Node::role).isEqualTo("columnheader");
+        assertThat(snapshot.valueBeside("e3")).isEmpty();
+        assertThat(snapshot.labelledValues()).doesNotContainKey("Bayi Kodu");
+    }
+
+    /**
      * Results that are not snapshots reach this class constantly — refusal
      * sentences, errors, a click's one-line confirmation. Losing a whole walk
      * because one entry is not a tree would be the wrong trade.
