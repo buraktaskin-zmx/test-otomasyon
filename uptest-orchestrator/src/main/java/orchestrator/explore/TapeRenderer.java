@@ -97,6 +97,9 @@ public final class TapeRenderer {
             "browser_snapshot", "browser_find", "browser_wait_for", "browser_navigate",
             "browser_console_messages", "browser_network_requests", "browser_take_screenshot");
 
+    /** A failed look at the page is a retry, not a failed action. */
+    private static final List<String> SILENT_FAILURES = List.of("browser_snapshot", "browser_find");
+
     /** One {@code await page…} line, taken apart. */
     private record Act(String role, String name, boolean exact, String innerRole, String value,
                        String locator) {
@@ -130,6 +133,7 @@ public final class TapeRenderer {
         }
 
         java.util.Set<Integer> premature = prematureClicks(calls);
+        List<String> keys = new ArrayList<>();
 
         boolean started = false;
         for (int i = 0; i < calls.size(); i++) {
@@ -145,6 +149,9 @@ public final class TapeRenderer {
             if (SILENT.contains(call.tool())) {
                 continue;
             }
+            if (!"OK".equals(call.outcome()) && SILENT_FAILURES.contains(call.tool())) {
+                continue;
+            }
             if (!"OK".equals(call.outcome())) {
                 notes.add("#" + call.seq() + " " + call.tool() + " " + call.outcome().toLowerCase(Locale.ROOT)
                         + " oldu, adıma çevrilmedi.");
@@ -154,6 +161,10 @@ public final class TapeRenderer {
             Act act = firstAct(call).orElse(null);
             if (act == null) {
                 if (!started) {
+                    continue;
+                }
+                if ("browser_press_key".equals(call.tool())) {
+                    keys.add("#" + call.seq());
                     continue;
                 }
                 notes.add("#" + call.seq() + " " + call.tool()
@@ -183,6 +194,13 @@ public final class TapeRenderer {
                 continue;
             }
 
+            // The calendar the agent opens to correct a date. `enter date`
+            // drives the widget itself, so the icon and the day cell are
+            // implementation of a step that is already written.
+            if (act.isClick() && isCalendarClick(act)) {
+                continue;
+            }
+
             // Pressed too early, and pressed again once the form was filled.
             // See prematureClicks.
             if (premature.contains(i)) {
@@ -203,7 +221,7 @@ public final class TapeRenderer {
             // A dropdown is two clicks: open the control, then pick the option.
             if (act.isClick() && (isTrigger(act.role()) || isTrigger(scope.roleOf(ref))
                     || act.role().isEmpty())) {
-                int at = nextActing(calls, i, scope);
+                int at = optionAfter(calls, i, ref, scope);
                 Act option = at < 0 ? null : firstAct(calls.get(at)).orElse(null);
                 if (option != null && "option".equals(option.role())) {
                     String chosen = scope.caption(option, refOf(calls.get(at)));
@@ -232,10 +250,6 @@ public final class TapeRenderer {
                 // clicks a date box before typing into it, which rendered as
                 // `click "Başlangıç Vadesi"` above its own `enter date`.
                 if ("textbox".equals(act.role()) || "textbox".equals(scope.roleOf(ref))) {
-                    if (at < 0 || !ref.equals(refOf(calls.get(at)))) {
-                        notes.add("#" + call.seq() + " bir metin kutusuna tıklandı ama ardından"
-                                + " ne yazıldı ne seçildi; satır yazılmadı.");
-                    }
                     continue;
                 }
             }
@@ -319,6 +333,10 @@ public final class TapeRenderer {
             steps.add(enterFor(field, act.value()));
         }
 
+        if (!keys.isEmpty()) {
+            notes.add(String.join(", ", keys) + " klavye tuşu basışları için vocabulary'de karşılık"
+                    + " yok, satır üretilmedi (ajanın alanı düzeltme çabası olabilir).");
+        }
         if (steps.isEmpty()) {
             notes.add("Bu yürüyüşten hiçbir adım çıkarılamadı — ajan ana menüye hiç ulaşmamış olabilir.");
         }
@@ -554,6 +572,8 @@ public final class TapeRenderer {
                 continue;
             }
             boolean changed = false;
+            boolean anyAct = false;
+            boolean stayed = staysOnPage(calls, i, ref);
             for (int j = i + 1; j < calls.size(); j++) {
                 Call later = calls.get(j);
                 if (!"OK".equals(later.outcome())) {
@@ -565,17 +585,87 @@ public final class TapeRenderer {
                 }
                 if (!act.isClick() || "option".equals(act.role())) {
                     changed = true;
+                    anyAct = true;
                     continue;
                 }
                 if (ref.equals(refOf(later)) && fold(act.name()).equals(fold(first.name()))) {
-                    if (changed) {
+                    if (changed || (stayed && anyAct)) {
                         early.add(i);
                     }
                     break;
                 }
+                anyAct = true;
             }
         }
         return early;
+    }
+
+    /**
+     * Whether the page the click was meant to leave still has the element.
+     *
+     * A reference dies with its page, so the first snapshot taken after the
+     * click either lacks it (the page moved on) or still carries it (the
+     * application refused and stayed). Measured: "Devam" pressed with a
+     * mangled date in the form — the screen painted "Geçerli bir tarih
+     * giriniz." and kept the same link — then pressed again once the date
+     * was corrected by clicking through the calendar. Nothing was typed
+     * between the two presses, so "something was filled in between" could
+     * not see it.
+     */
+    private static boolean staysOnPage(List<Call> calls, int from, String ref) {
+        for (int j = from + 1; j < calls.size(); j++) {
+            Call next = calls.get(j);
+            if (!"browser_snapshot".equals(next.tool()) || !"OK".equals(next.outcome())
+                    || next.args() == null || next.args().contains("target")) {
+                continue;
+            }
+            AriaSnapshot parsed = AriaSnapshot.of(next.result());
+            return !parsed.isEmpty() && parsed.node(ref).isPresent();
+        }
+        return false;
+    }
+
+    /** The calendar's own controls: its icon, and a bare day number. */
+    private static boolean isCalendarClick(Act act) {
+        if ("img".equals(act.role()) && "...".equals(act.name())) {
+            return true;
+        }
+        return "link".equals(act.role()) && act.name().matches("\\d{1,2}");
+    }
+
+    /**
+     * The option a dropdown was finally given, looking past what the agent
+     * did on the way.
+     *
+     * Opening a Select2 then typing into its search box, then opening it
+     * again, then clicking the option is one choice. Reading only the NEXT
+     * call took the typing for the answer: the choice came out as
+     * {@code click "Seçiniz"} and {@code enter "Seçiniz" "151732"}, the second
+     * naming the widget's own search box as if it were a field. Gives up at
+     * the first call that is neither the same trigger nor typing into a
+     * Select2 — the agent moved on without choosing.
+     */
+    private static int optionAfter(List<Call> calls, int from, String ref, Scope scope) {
+        for (int j = from + 1; j < calls.size() && j <= from + 12; j++) {
+            Call call = calls.get(j);
+            scope.remember(call);
+            if (SILENT.contains(call.tool()) || !"OK".equals(call.outcome())) {
+                continue;
+            }
+            Act act = firstAct(call).orElse(null);
+            if (act == null) {
+                continue;
+            }
+            if ("option".equals(act.role())) {
+                return j;
+            }
+            boolean reopened = act.isClick() && ref.equals(refOf(call));
+            boolean typedIntoSearch = !act.isClick() && act.locator().contains("select2");
+            if (!reopened && !typedIntoSearch) {
+                return -1;
+            }
+        }
+        return -1;
     }
 
     private static Act clickOf(Call call) {

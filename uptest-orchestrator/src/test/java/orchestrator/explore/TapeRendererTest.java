@@ -528,6 +528,85 @@ class TapeRendererTest {
         assertThat(rendered.notes()).noneMatch(note -> note.contains("karşılık yok"));
     }
 
+    /**
+     * The second Fatura Oluştur walk (tape of 26 Oct, 15:2x). The agent typed
+     * into a Select2's search box and re-opened it before choosing, mangled a
+     * masked date, was refused by "Devam", corrected the date through the
+     * calendar and pressed the SAME "Devam" again — with nothing typed in
+     * between, so only the refused page still carrying the link proves the
+     * first press failed.
+     */
+    @Test
+    @DisplayName("a Select2 typed into, a refused submit and a calendar fix come out clean")
+    void rendersAWanderingWalk() {
+        login();
+        reachTheScreen();
+        ok("browser_snapshot", "{}", tree("""
+                - generic [ref=f1e630]:
+                  - generic [ref=f1e631]: Bayi Kodu
+                  - combobox [ref=f1e634]:
+                    - textbox "Seçiniz" [ref=f1e635]
+                - generic [ref=f1e690]:
+                  - generic [ref=f1e691]: Fatura Tarihi
+                  - textbox "Fatura Tarihi" [ref=f1e692]
+                  - img "..." [ref=f1e693]
+                - link "Devam" [ref=f1e733]"""));
+        // Open, type into the search box, open again, open again, choose.
+        ok("browser_click", "{\"target\": \"f1e634\"}",
+                ran("await page.locator('#s2id_bayiKodu').getByRole('combobox', { name: 'Seçiniz' }).click();"));
+        ok("browser_type", "{\"target\": \"f1e635\", \"text\": \"151732\", \"slowly\": true}",
+                ran("await page.locator('#select2-bayiKodu-container').pressSequentially('151732');"));
+        ok("browser_click", "{\"target\": \"f1e634\"}",
+                ran("await page.locator('#s2id_bayiKodu').getByRole('combobox', { name: 'Seçiniz' }).click();"));
+        ok("browser_click", "{\"target\": \"f1e759\"}",
+                ran("await page.getByRole('option', { name: 'bayisanko1' }).click();"));
+        ok("browser_snapshot", "{}", tree("""
+                - generic [ref=f1e630]:
+                  - generic [ref=f1e631]: Bayi Kodu
+                  - combobox [ref=f1e760]:
+                    - textbox "bayisanko1" [ref=f1e761]
+                - generic [ref=f1e690]:
+                  - generic [ref=f1e691]: Fatura Tarihi
+                  - textbox "Fatura Tarihi" [ref=f1e692]
+                  - img "..." [ref=f1e693]
+                - link "Devam" [ref=f1e733]"""));
+        ok("browser_press_key", "{\"key\": \"Tab\"}", ran("await page.keyboard.press('Tab');"));
+        ok("browser_type", "{\"target\": \"f1e692\", \"text\": \"28/10/2026\", \"slowly\": true}",
+                ran("await page.getByRole('textbox', { name: 'Fatura Tarihi' }).pressSequentially('28/10/2026');"));
+        // First press: the form refuses and the same link stays on the page.
+        ok("browser_click", "{\"target\": \"f1e733\"}",
+                ran("await page.getByRole('link', { name: 'Devam' }).click();"));
+        ok("browser_snapshot", "{}", tree("""
+                - generic [ref=f1e690]:
+                  - generic [ref=f1e691]: Fatura Tarihi
+                  - textbox "Fatura Tarihi" [ref=f1e692]: 81/02/0262
+                  - generic [ref=f1e1082]: Geçerli bir tarih giriniz.
+                - link "Devam" [ref=f1e733]"""));
+        ok("browser_press_key", "{\"key\": \"Escape\"}", ran("await page.keyboard.press('Escape');"));
+        ok("browser_click", "{\"target\": \"f1e692\"}",
+                ran("await page.getByRole('textbox', { name: 'Fatura Tarihi' }).click();"));
+        failed("browser_snapshot", "{\"target\": \"f1e1091\"}", "Error: Ref f1e1091 not found");
+        ok("browser_press_key", "{\"key\": \"Delete\"}", ran("await page.keyboard.press('Delete');"));
+        ok("browser_click", "{\"target\": \"f1e693\"}",
+                ran("await page.locator('#billDateFC').getByRole('img', { name: '...' }).click();"));
+        ok("browser_click", "{\"target\": \"f1e1258\"}",
+                ran("await page.getByRole('link', { name: '28' }).click();"));
+        ok("browser_click", "{\"target\": \"f1e733\"}",
+                ran("await page.getByRole('link', { name: 'Devam' }).click();"));
+        ok("browser_snapshot", "{}", tree("- heading \"Onay\" [ref=z1]"));
+
+        TapeRenderer.Rendered rendered = TapeRenderer.render(calls, MAIN_MENU, List.of());
+
+        assertThat(rendered.steps()).containsExactly(
+                "navigate to \"NAKİT YÖNETİMİ\" \"Firma Fatura İşlemleri\"",
+                "select \"bayisanko1\" from \"Bayi Kodu\"",
+                "enter date \"Fatura Tarihi\" \"28/10/2026\"",
+                "click \"Devam\"");
+        assertThat(rendered.notes()).noneMatch(note -> note.contains("error")
+                || note.contains("hata oldu") || note.contains("oldu, adıma"));
+        assertThat(rendered.notes()).filteredOn(note -> note.contains("klavye")).hasSize(1);
+    }
+
     /** The detail dialog, label and value as siblings in one cell. */
     private void detailDialog() {
         ok("browser_snapshot", "{}", tree("""
