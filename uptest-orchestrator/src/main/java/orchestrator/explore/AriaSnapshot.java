@@ -320,11 +320,27 @@ public final class AriaSnapshot {
                 return false;
             }
             if (next.parent() == node.parent()) {
-                return "combobox".equals(next.role()) || "textbox".equals(next.role())
-                        || "spinbutton".equals(next.role());
+                // The box may be the sibling itself or sit inside it: the
+                // application wraps a Select2 in a container of its own, and
+                // requiring the control to be the DIRECT neighbour rejected
+                // the real label of a real dropdown.
+                if (isControl(next)) {
+                    return true;
+                }
+                for (int j = i + 1; j < nodes.size() && nodes.get(j).indent() > next.indent(); j++) {
+                    if (isControl(nodes.get(j))) {
+                        return true;
+                    }
+                }
+                return false;
             }
         }
         return false;
+    }
+
+    private static boolean isControl(Node node) {
+        return "combobox".equals(node.role()) || "textbox".equals(node.role())
+                || "spinbutton".equals(node.role());
     }
 
     /** The nodes directly inside this one, in document order. */

@@ -206,6 +206,10 @@ public final class TapeRenderer {
                 String[] set = dateSetBy(calls, i, act);
                 if (set != null) {
                     steps.add("enter date \"" + set[0] + "\" \"" + set[1] + "\"");
+                } else {
+                    notes.add("#" + call.seq() + " takvimden " + act.name() + ". gün seçildi ama"
+                            + " hangi alanı ve hangi ayı doldurduğu okunamadı; 'enter date'"
+                            + " satırını elle ekleyin.");
                 }
                 continue;
             }

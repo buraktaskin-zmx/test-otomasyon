@@ -755,6 +755,54 @@ class TapeRendererTest {
                 "enter date \"Başlangıç Vadesi\" \"27/10/2026\"");
     }
 
+    /**
+     * Tape of 26 Oct, 16:4x. The real page wraps a Select2 in a container of
+     * its own, so the label's next sibling is NOT the combobox but holds it.
+     * Requiring the direct neighbour rejected the agent's own correct name
+     * for the control, and with no snapshot after the choice (the agent went
+     * straight on) the dropdown was either called "Kurum" or not written.
+     */
+    @Test
+    @DisplayName("a label whose box sits in a wrapper still names its dropdown")
+    void namesADropdownWhoseBoxIsWrapped() {
+        login();
+        reachTheScreen();
+        ok("browser_snapshot", "{}", tree("""
+                - generic [ref=w1]:
+                  - generic [ref=w2]: Fatura Tipi
+                  - generic [ref=w3]:
+                    - combobox [ref=w4]:
+                      - textbox "Seçiniz" [ref=w5]"""));
+        calls.add(new TapeRenderer.Call(++seq, "browser_click",
+                "{\"target\": \"w4\", \"element\": \"Fatura Tipi combobox\"}", "OK",
+                ran("await page.locator('#select2-billType-container').click();")));
+        ok("browser_click", "{\"target\": \"w9\", \"element\": \"Normal\"}",
+                ran("await page.getByRole('option', { name: 'Normal' }).click();"));
+        ok("browser_snapshot", "{}", tree("""
+                - generic [ref=k1]:
+                  - generic [ref=k2]: Kurum
+                  - generic [ref=k3]: Normal"""));
+
+        assertThat(TapeRenderer.render(calls, MAIN_MENU, List.of()).steps())
+                .contains("select \"Normal\" from \"Fatura Tipi\"")
+                .noneMatch(step -> step.contains("\"Kurum\""));
+    }
+
+    /** A calendar day whose box cannot be read is reported, never dropped silently. */
+    @Test
+    @DisplayName("a calendar day with no readable box is reported")
+    void reportsAnUnreadableCalendarDay() {
+        login();
+        reachTheScreen();
+        ok("browser_click", "{\"target\": \"f1e948\"}",
+                ran("await page.getByRole('link', { name: '28' }).click();"));
+
+        TapeRenderer.Rendered rendered = TapeRenderer.render(calls, MAIN_MENU, List.of());
+
+        assertThat(rendered.steps()).noneMatch(step -> step.startsWith("click \"28\""));
+        assertThat(rendered.notes()).anySatisfy(note -> assertThat(note).contains("28").contains("elle"));
+    }
+
     /** The detail dialog, label and value as siblings in one cell. */
     private void detailDialog() {
         ok("browser_snapshot", "{}", tree("""
