@@ -795,6 +795,34 @@ export interface ExploreAnswerResponse {
   notes: string[];
 }
 
+/** POST /api/v1/explore/gherkin -- TapeGherkinController.Request. Made AFTER
+ *  the walk has answered, so the analyst reads the answer while the model
+ *  writes the scenario from the recorded tape. */
+export interface TapeGherkinRequest {
+  tapeId: string;
+  app?: string;
+  flow?: string;
+  mainMenu?: string;
+  /** The scenario as the analyst wrote it (docAsText). */
+  scenario: string;
+  expected?: string[];
+}
+
+/** POST /api/v1/explore/gherkin 200 body. Same `gherkin` shape as the walk's
+ *  own answer: step lines, no keywords, no login line.
+ *
+ *  `source` says who wrote it: "ai" is the model working from the tape and
+ *  checked word by word against it; "kural" is the code renderer's draft,
+ *  shown when the model could not be used -- the first note says why.
+ *  `notes` carries the checks the AI draft still fails, one per line. */
+export interface TapeGherkinResponse {
+  gherkin: string;
+  notes: string[];
+  valid: boolean;
+  source: "ai" | "kural";
+  attempts: number;
+}
+
 /** POST /api/v1/explore/catalog 200 body -- TWO keys, neither optional:
  *  `catalog` is never null (yamlOnly() falls back to ""), `problems` may be
  *  an empty array but is never absent. */

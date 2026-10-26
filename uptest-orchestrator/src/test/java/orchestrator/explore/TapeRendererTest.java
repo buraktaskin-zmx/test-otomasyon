@@ -267,9 +267,12 @@ class TapeRendererTest {
     void refusesAChoiceItCannotName() {
         login();
         reachTheScreen();
+        // The label is NOT in the same container as the box, so no structure
+        // says which field this is: only its neighbour in reading order does.
         ok("browser_snapshot", "{}", tree("""
                 - generic [ref=a1]:
                   - generic [ref=a2]: Orijinal Fatura Tutarı
+                - generic [ref=a9]:
                   - combobox [ref=a3]:
                     - textbox "Seçiniz" [ref=a4]"""));
         ok("browser_click", "{\"target\": \"a4\"}",
@@ -823,6 +826,58 @@ class TapeRendererTest {
         assertThat(TapeRenderer.render(calls, MAIN_MENU, List.of()).steps())
                 .contains("select \"Sanko DBS Ödemeleri\" from \"Firma Seçimi\"")
                 .noneMatch(step -> step.contains("\"Kurum\""));
+    }
+
+    /**
+     * The agent called the control something that is not exactly its label
+     * ("Firma Seçimi dropdown kutusu"), and no snapshot after the choice shows
+     * the value in a box: the walk went straight to the next screen. Neither
+     * the agent's words nor the effect name the field — the box the agent
+     * opened does, by sitting inside what the label "Firma Seçimi" introduces.
+     */
+    @Test
+    @DisplayName("a dropdown nobody named is named by the label that owns its box")
+    void namesADropdownByStructure() {
+        login();
+        reachTheScreen();
+        ok("browser_snapshot", "{}", tree("""
+                - generic [ref=f1e368]:
+                  - generic [ref=f1e369]: Firma Seçimi
+                  - combobox [ref=f1e372]:
+                    - textbox "Seçiniz" [ref=f1e373]"""));
+        calls.add(new TapeRenderer.Call(++seq, "browser_click",
+                "{\"target\": \"f1e373\", \"element\": \"Firma listesi\"}", "OK",
+                ran("await page.getByRole('textbox', { name: 'Seçiniz' }).click();")));
+        ok("browser_click", "{\"target\": \"f1e530\"}",
+                ran("await page.getByRole('option', { name: 'Sanko DBS Ödemeleri' }).click();"));
+        ok("browser_snapshot", "{}", tree("""
+                - generic [ref=f1e627]:
+                  - generic [ref=f1e628]: Kurum
+                  - generic [ref=f1e629]: Sanko DBS Ödemeleri"""));
+
+        assertThat(TapeRenderer.render(calls, MAIN_MENU, List.of()).steps())
+                .contains("select \"Sanko DBS Ödemeleri\" from \"Firma Seçimi\"");
+    }
+
+    /** A decorated name still finds its label. */
+    @Test
+    @DisplayName("the agent's name only has to contain the label")
+    void acceptsADecoratedName() {
+        login();
+        reachTheScreen();
+        ok("browser_snapshot", "{}", tree("""
+                - generic [ref=g1]:
+                  - generic [ref=g2]: Firma Seçimi
+                  - combobox [ref=g3]:
+                    - textbox "Seçiniz" [ref=g4]"""));
+        calls.add(new TapeRenderer.Call(++seq, "browser_click",
+                "{\"target\": \"g4\", \"element\": \"Firma Seçimi açılır kutusu\"}", "OK",
+                ran("await page.getByRole('textbox', { name: 'Seçiniz' }).click();")));
+        ok("browser_click", "{\"target\": \"g9\"}",
+                ran("await page.getByRole('option', { name: 'APPLE A.Ş.' }).click();"));
+
+        assertThat(TapeRenderer.render(calls, MAIN_MENU, List.of()).steps())
+                .contains("select \"APPLE A.Ş.\" from \"Firma Seçimi\"");
     }
 
     /** A calendar day whose box cannot be read is reported, never dropped silently. */

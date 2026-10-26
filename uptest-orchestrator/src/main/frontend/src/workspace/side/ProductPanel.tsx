@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PanelHead } from "./PanelHead";
 import { ProductTree, categoryKey } from "../../product/ProductTree";
 import type { TreeSelection } from "../../product/ProductTree";
@@ -8,6 +8,7 @@ import type { useProducts } from "../../hooks/useProducts";
 import type { useTestUsers } from "../../hooks/useTestUsers";
 import {
   BROWSER_CLOSED, addScreen, createMenu, createScenarioFile, explore, exportScenarios, moveScenario,
+  tapeGherkin,
 } from "../../api/endpoints";
 import type { MoveTarget } from "../../product/ScenarioTable";
 import { NewScenario } from "../../product/NewScenario";
@@ -15,6 +16,20 @@ import { useAsyncAction } from "../../hooks/useAsyncAction";
 import { docAsText } from "../../lib/scenarioProse";
 import { useToast } from "../../ui/Toast";
 import type { Origin, RunLogin } from "../../api/types";
+
+/** A walk that finished, kept until the analyst asks for its Gherkin. */
+interface FinishedWalk {
+  tapeId: string;
+  app: string;
+  flow?: string;
+  mainMenu?: string;
+  scenario: string;
+  expected: string[];
+  /** The code renderer's draft that came with the walk -- shown if the
+   *  model cannot be used. */
+  fallbackGherkin: string;
+  fallbackNotes: string[];
+}
 
 /** Where the agent logs in, per application -- the same pages NGC.java and
  *  NGI.java open. */
@@ -188,11 +203,23 @@ export function ProductPanel({
      analyst presses save. */
   const [aiGherkin, setAiGherkin] = useState("");
   const [aiNotes, setAiNotes] = useState<string[]>([]);
+  /* The Gherkin is written ON REQUEST, never by itself: once a walk has
+     finished, a "Gherkin oluştur" button appears and the analyst decides
+     whether this walk is worth turning into a scenario. A walk that went
+     wrong costs no model call that way. The finished walk is held here until
+     then; the counter drops an answer that arrives for a scenario no longer
+     open, or for a walk that has since been run again. */
+  const [aiGherkinBusy, setAiGherkinBusy] = useState(false);
+  const [finishedWalk, setFinishedWalk] = useState<FinishedWalk | null>(null);
+  const gherkinRequest = useRef(0);
   useEffect(() => {
+    gherkinRequest.current++;
     setAiAnswer("");
     setAiClosed(false);
     setAiGherkin("");
     setAiNotes([]);
+    setAiGherkinBusy(false);
+    setFinishedWalk(null);
   }, [selection?.path]);
 
   const aiRun = useAsyncAction(async () => {
@@ -213,10 +240,13 @@ export function ProductPanel({
       docAsText(scenario.doc),
     ].join("\n");
 
+    gherkinRequest.current++;
     setAiAnswer("");
     setAiClosed(false);
     setAiGherkin("");
     setAiNotes([]);
+    setAiGherkinBusy(false);
+    setFinishedWalk(null);
     const result = await explore({
       text,
       url: LOGIN_URL[selection.app.toLowerCase()],
@@ -236,9 +266,55 @@ export function ProductPanel({
       return;
     }
     setAiAnswer(result.body.answer);
-    setAiGherkin(result.body.gherkin ?? "");
-    setAiNotes(result.body.notes ?? []);
+    setFinishedWalk({
+      tapeId: result.body.tapeId,
+      app: selection.app,
+      flow: selection.flow ?? undefined,
+      mainMenu: category ? category.toLocaleUpperCase("tr-TR") : undefined,
+      scenario: docAsText(scenario.doc),
+      expected: scenario.doc.expected,
+      fallbackGherkin: result.body.gherkin ?? "",
+      fallbackNotes: result.body.notes ?? [],
+    });
   });
+
+  /* "Gherkin oluştur": one model call over the finished walk's tape. Should
+     it fail outright, the code renderer's draft that came with the walk is
+     shown instead, with the reason. */
+  const generateGherkin = () => {
+    const walk = finishedWalk;
+    if (!walk || aiGherkinBusy) return;
+    const ticket = ++gherkinRequest.current;
+    const fallBack = (why: string) => {
+      setAiGherkin(walk.fallbackGherkin);
+      setAiNotes(["AI ile Gherkin üretilemedi (" + why + "); kural tabanlı taslak gösteriliyor.",
+        ...walk.fallbackNotes]);
+    };
+    setAiGherkin("");
+    setAiNotes([]);
+    setAiGherkinBusy(true);
+    void tapeGherkin({
+      tapeId: walk.tapeId,
+      app: walk.app,
+      flow: walk.flow,
+      mainMenu: walk.mainMenu,
+      scenario: walk.scenario,
+      expected: walk.expected,
+    }).then((made) => {
+      if (ticket !== gherkinRequest.current) return;
+      if (made.ok) {
+        setAiGherkin(made.body.gherkin ?? "");
+        setAiNotes(made.body.notes ?? []);
+      } else {
+        fallBack(made.error);
+      }
+      setAiGherkinBusy(false);
+    }).catch((failure: unknown) => {
+      if (ticket !== gherkinRequest.current) return;
+      fallBack(String(failure));
+      setAiGherkinBusy(false);
+    });
+  };
 
   /* Senaryolar veritabanında; git'e girmeleri için .feature olarak yazılır.
      Hiçbir dosya silinmez -- veritabanında artık olmayan dosyalar yalnızca
@@ -441,6 +517,9 @@ export function ProductPanel({
                   aiAnswer={aiAnswer}
                   aiClosed={aiClosed}
                   aiGherkin={aiGherkin}
+                  aiGherkinBusy={aiGherkinBusy}
+                  canGenerateGherkin={finishedWalk !== null && !aiRun.busy}
+                  onGenerateGherkin={generateGherkin}
                   aiNotes={aiNotes}
                   onSave={async (edit) => {
                     const result = await products.saveScenario(

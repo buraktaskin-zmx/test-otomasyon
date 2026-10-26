@@ -338,6 +338,41 @@ public final class AriaSnapshot {
         return false;
     }
 
+    /**
+     * The label whose control this reference is, or sits inside; blank when
+     * none introduces it.
+     *
+     * Ownership by structure: a label owns the sibling that follows it, and
+     * everything inside that sibling.
+     */
+    public String ownerLabel(String ref) {
+        Integer target = byRef.get(ref);
+        if (target == null) {
+            return "";
+        }
+        for (Node label : nodes) {
+            if (label.caption().isBlank() || !labelsAControl(label.ref())) {
+                continue;
+            }
+            int at = byRef.get(label.ref());
+            for (int i = at + 1; i < nodes.size(); i++) {
+                Node next = nodes.get(i);
+                if (next.parent() != label.parent()) {
+                    continue;
+                }
+                int end = i + 1;
+                while (end < nodes.size() && nodes.get(end).indent() > next.indent()) {
+                    end++;
+                }
+                if (target >= i && target < end) {
+                    return label.caption();
+                }
+                break;
+            }
+        }
+        return "";
+    }
+
     private static boolean isControl(Node node) {
         return "combobox".equals(node.role()) || "textbox".equals(node.role())
                 || "spinbutton".equals(node.role());

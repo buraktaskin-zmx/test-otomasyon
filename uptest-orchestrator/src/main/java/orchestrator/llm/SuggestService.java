@@ -4,6 +4,7 @@ import orchestrator.catalog.CatalogModel;
 import orchestrator.product.ProductModel;
 import orchestrator.product.Rule;
 import orchestrator.validation.ScenarioValidator;
+import orchestrator.validation.ValidationError;
 import orchestrator.validation.ValidationResult;
 import orchestrator.vocabulary.Vocabulary;
 import org.springframework.beans.factory.annotation.Value;
@@ -16,6 +17,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.function.Function;
 
 /**
  * Generate a scenario, check it, and let the model fix its own mistakes.
@@ -159,11 +161,25 @@ public class SuggestService {
     private Suggestion one(String system, String userMessage, CatalogModel catalog,
                            ProductModel product, Vocabulary vocabulary, String loginStep,
                            String intent, VariationPlanner.Variation variation, int repairs) {
+        return one(system, userMessage, catalog, product, vocabulary, loginStep, intent, variation,
+                repairs, draft -> List.of());
+    }
+
+    /**
+     * @param extra a check of the caller's own, run beside the validator and
+     *              treated exactly like it: its findings make the draft
+     *              invalid and reach the repair turn. Empty for every path
+     *              except the walk's, where it is the provenance check.
+     */
+    private Suggestion one(String system, String userMessage, CatalogModel catalog,
+                           ProductModel product, Vocabulary vocabulary, String loginStep,
+                           String intent, VariationPlanner.Variation variation, int repairs,
+                           Function<String, List<ValidationError>> extra) {
         List<String> log = new ArrayList<>();
 
         String draft = settle(llm.ask(system, userMessage), loginStep, catalog, vocabulary,
                 variation, intent);
-        ValidationResult result = validator.validate(draft, vocabulary, catalog, intent, product);
+        ValidationResult result = check(draft, vocabulary, catalog, intent, product, extra);
         int attempts = 1;
         log.add(describe(attempts, result));
 
@@ -173,12 +189,51 @@ public class SuggestService {
             // repeating it invites a fresh scenario instead of a fix.
             draft = settle(llm.ask(system, prompts.repair(draft, result)), loginStep, catalog,
                     vocabulary, variation, intent);
-            result = validator.validate(draft, vocabulary, catalog, intent, product);
+            result = check(draft, vocabulary, catalog, intent, product, extra);
             attempts++;
             log.add(describe(attempts, result));
         }
 
         return new Suggestion(draft, result.valid(), result, attempts, log);
+    }
+
+    private ValidationResult check(String draft, Vocabulary vocabulary, CatalogModel catalog,
+                                   String intent, ProductModel product,
+                                   Function<String, List<ValidationError>> extra) {
+        ValidationResult result = validator.validate(draft, vocabulary, catalog, intent, product);
+        List<ValidationError> more = extra.apply(draft);
+        if (more.isEmpty()) {
+            return result;
+        }
+        List<ValidationError> all = new ArrayList<>(result.errors());
+        all.addAll(more);
+        return ValidationResult.failed(result.stepCount(), all);
+    }
+
+    /**
+     * A scenario written FROM A RECORDED WALK rather than from intent alone.
+     *
+     * Same pipeline as {@link #suggest} — the shared system prompt, the same
+     * rewriters, the same validator and repair turn — with two differences
+     * that are the whole point: the user turn carries the walk as evidence
+     * (built by the caller), and {@code provenance} runs beside the validator,
+     * so a label or value that appears nowhere in the walk, the catalog or the
+     * analyst's text is a finding the model must fix rather than a line that
+     * times out in a browser.
+     *
+     * The catalog is NOT handed to the validator here, only to the model (it
+     * is inside {@code userMessage}). A walk crosses screens — the list where
+     * the firm is chosen, then the form — and a catalog describes one, so its
+     * label check would refuse "Firma Seçimi" on the Fatura Oluştur form's
+     * catalog, and the repair turn would then "fix" a line the walk proved
+     * right. Which labels exist is answered by the walk itself, through
+     * {@code provenance}; grammar, assertions and the rest still run.
+     */
+    public Suggestion suggestFromWalk(String userMessage, String intent, Vocabulary vocabulary,
+                                      ProductContext product,
+                                      Function<String, List<ValidationError>> provenance) {
+        return one(prompts.system(vocabulary), userMessage, null, product.product(), vocabulary,
+                null, intent, null, maxRepairs, provenance);
     }
 
     /**

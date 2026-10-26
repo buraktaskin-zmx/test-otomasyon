@@ -28,6 +28,9 @@ export function ScenarioDetail({
   aiAnswer,
   aiClosed,
   aiGherkin,
+  aiGherkinBusy,
+  canGenerateGherkin,
+  onGenerateGherkin,
   aiNotes,
   onSave,
 }: {
@@ -45,6 +48,13 @@ export function ScenarioDetail({
   aiClosed: boolean;
   /** The walk rendered into steps -- a proposal, no login line, no assertion. */
   aiGherkin: string;
+  /** The walk has answered and the model is writing its Gherkin from the
+   *  tape -- a second request, so the answer is already on screen. */
+  aiGherkinBusy: boolean;
+  /** A walk finished and its Gherkin can be asked for. Never automatic: the
+   *  analyst decides whether this walk is worth a scenario. */
+  canGenerateGherkin: boolean;
+  onGenerateGherkin: () => void;
   /** What the render could not express. Empty is normal; silent is not. */
   aiNotes: string[];
   /** Saves the fields sent; resolves to true when it was saved. */
@@ -62,6 +72,11 @@ export function ScenarioDetail({
     setEditing(null);
     setApplied(false);
   }, [detail?.path]);
+
+  // A new walk's proposal is a new proposal, even after the last one was saved.
+  useEffect(() => {
+    setApplied(false);
+  }, [aiGherkin]);
 
   if (!detail) {
     return <p className="registry-empty">{busy ? "Okunuyor…" : "Senaryo okunamadı."}</p>;
@@ -224,11 +239,36 @@ export function ScenarioDetail({
             </>
           ) : null}
 
+          {aiGherkinBusy ? (
+            <p className="sd-note">Gherkin üretiliyor…</p>
+          ) : canGenerateGherkin ? (
+            <header className="sd-pane-head">
+              <span className="sd-pane-gap" />
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={editing !== null}
+                title="Ajanın bu koşusunu Gherkin senaryosuna çevirir (bir AI çağrısı)"
+                onClick={onGenerateGherkin}
+              >
+                {proposal ? "Gherkin'i yeniden oluştur" : "Gherkin oluştur"}
+              </button>
+            </header>
+          ) : null}
+
+          {/* Notes with no proposal: the generation produced nothing to save,
+              and saying why beats an empty space under the answer. */}
+          {!aiGherkinBusy && !proposal && aiNotes.length > 0 ? (
+            aiNotes.map((note, index) => (
+              <p className="sd-note" key={index}>{note}</p>
+            ))
+          ) : null}
+
           {/* The walk, written back out as steps. Shown BESIDE the stored
               Gherkin rather than over it: a reviewed scenario being replaced
               by a second agent run, silently, is the thing SourceSnapshot
               already refuses to do for rules. The analyst presses save. */}
-          {proposal && !applied ? (
+          {proposal && !applied && !aiGherkinBusy ? (
             <>
               <header className="sd-pane-head">
                 <span className="sd-pane-title">ÖNERİLEN GHERKİN</span>

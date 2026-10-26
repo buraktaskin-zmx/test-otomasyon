@@ -33,6 +33,8 @@ import type {
   SuggestManyResponse,
   SuggestRequest,
   SuggestResponse,
+  TapeGherkinRequest,
+  TapeGherkinResponse,
   ValidationResult,
   VocabularyRefreshResponse,
   VocabularyResponse,
@@ -278,6 +280,11 @@ export const endChat = (sessionId: string) =>
  *  between every action. */
 export const explore = (request: ExploreRequest) =>
   api<ExploreAnswerResponse>("POST", "/api/v1/explore", request);
+
+/** A minute or so: one model call (plus one repair turn) over the walk's
+ *  recorded tape. Made after `explore` has answered. */
+export const tapeGherkin = (request: TapeGherkinRequest) =>
+  api<TapeGherkinResponse>("POST", "/api/v1/explore/gherkin", request);
 
 export const exploreForCatalog = (request: ExploreRequest) =>
   api<ExploreCatalogResponse>("POST", "/api/v1/explore/catalog", request);

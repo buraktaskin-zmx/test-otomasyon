@@ -364,6 +364,187 @@ public class PromptBuilder {
     }
 
     /**
+     * The user turn for a scenario written FROM A RECORDED WALK.
+     *
+     * <p>The system prompt is the shared one, and three of its rules are
+     * wrong for this mode: rule 7 asks for a login line (the run grafts it),
+     * rule 8 asks to fill every catalogued field (the walk decides which were
+     * filled), and rule 9 asks for date offsets (the analysts chose literal
+     * dates for these). A contradiction is not settled by adding a third rule
+     * somewhere else, so each one is cancelled HERE, by name, in the only turn
+     * that knows this is a walk — the same move the batch path makes for rule
+     * 5. What the model may still get wrong is backed by code: the provenance
+     * check refuses any quoted word the walk, the catalog and the analyst's
+     * text never contained.
+     *
+     * @param catalogYaml the catalog of the screen, or null when there is none;
+     *                    reference only — the walk outranks it
+     * @param scenario    the scenario as the analyst wrote it
+     * @param expected    its BEKLENEN lines, the only source of a THEN
+     * @param evidence    {@code TapeEvidence.digest}
+     * @param draft       the steps the code renderer made from the same walk
+     * @param draftNotes  what the renderer said it could not express
+     */
+    public String fromWalk(String catalogYaml, String scenario, List<String> expected, String evidence,
+                           List<String> draft, List<String> draftNotes) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(WALK_RULES).append('\n').append(WALK_EXAMPLES).append('\n');
+
+        sb.append("SCREEN CATALOG (YAML) — reference only; the walk below outranks it:\n");
+        sb.append(catalogYaml == null || catalogYaml.isBlank()
+                ? "  (bu ekranın kataloğu yok — etiketleri yalnızca yürüyüşten al)\n"
+                : catalogYaml + "\n");
+
+        sb.append("\nTHE SCENARIO AS THE ANALYST WROTE IT:\n").append(scenario == null ? "" : scenario.trim())
+                .append("\n\nBEKLENEN (the ONLY source of verify lines):\n");
+        if (expected == null || expected.isEmpty()) {
+            sb.append("  (boş — verify yazma)\n");
+        } else {
+            for (String line : expected) {
+                sb.append("  - ").append(line).append('\n');
+            }
+        }
+
+        sb.append("\nWALK EVIDENCE:\n").append(evidence == null ? "" : evidence);
+
+        sb.append("\nCODE DRAFT (made by code from the same walk; usually right, its notes say where not):\n");
+        if (draft == null || draft.isEmpty()) {
+            sb.append("  (boş)\n");
+        } else {
+            for (String step : draft) {
+                sb.append("  ").append(step).append('\n');
+            }
+        }
+        if (draftNotes != null && !draftNotes.isEmpty()) {
+            sb.append("DRAFT NOTES:\n");
+            for (String note : draftNotes) {
+                sb.append("  - ").append(note).append('\n');
+            }
+        }
+        sb.append("\nWrite the .feature file now. Output nothing but the file contents.\n");
+        return sb.toString();
+    }
+
+    private static final String WALK_RULES = """
+            THIS SCENARIO IS WRITTEN FROM A RECORDED WALK.
+            An agent has already performed it in a real browser. Below is what the
+            agent did, step by step, and what the screens showed. Write the .feature
+            that replays the walk's SUCCESSFUL path with the step patterns above.
+
+            RULES FOR THIS MODE — where they differ from the general rules, THESE win:
+            A. NO LOGIN STEP. This cancels rule 7's login: the run inserts the login
+               from the test user chosen at run time. Start with `navigate to`.
+            B. WRITE THE PATH THAT WORKED, NOT EVERY ATTEMPT. Leave out:
+               - a click the application refused and the agent pressed again later
+                 (a "… giriniz." / "… seçiniz." message after it is the sign) —
+                 keep only the press that went through;
+               - a "Tamam" that closed an error dialog;
+               - typing into a dropdown's search box, and re-opening the same
+                 dropdown: opening it and clicking an option is ONE
+                 `select "<option>" from "<label>"`;
+               - a click into a text box before typing into it;
+               - the calendar icon ("...") and a clicked day number: a date is ONE
+                 `enter date "<label>" "<gg/aa/yyyy>"`;
+               - key presses (Tab, Escape, Delete, Control+a);
+               - tab switching, closing tabs, retries after a "Ref … not found".
+            C. FILL THE FORM TOP TO BOTTOM, in the order EKRANLARDA GÖRÜLEN ALAN
+               ETİKETLERİ lists the fields, each field ONCE, with the LAST value the
+               walk gave it. Only fields the walk actually filled — this cancels
+               rule 8's "fill every catalogued field".
+            D. INVENT NOTHING. Every label, option and button in quotes is spelled
+               exactly as the evidence shows it; every value is one the walk typed
+               or chose. A checker rejects any quoted text that appears nowhere in
+               the walk, the catalog or the analyst's text.
+            E. DATES ARE LITERAL. Write a date exactly as the walk entered it,
+               gg/aa/yyyy, with `enter date`. This scenario EXPLICITLY asks for
+               absolute dates — do NOT turn them into offsets like "+3 gün"; this
+               cancels rule 9's offsets. Verify one with
+               `verify the "<label>" has date "<gg/aa/yyyy>"`.
+            F. An amount typed into two boxes (lira, then kuruş) is ONE
+               `enter amount "<label>" "<lira>,<kuruş>"`.
+            G. A dropdown's label is the label printed beside it ON THE SCREEN WHERE
+               IT WAS CHOSEN — never a word printed on a later screen. If the agent
+               called it "Firma Seçimi combobox", the label is "Firma Seçimi".
+            H. VERIFY ONLY WHAT BEKLENEN SAYS, after the last action, one `verify`
+               per BEKLENEN line that names a field and a value, the label spelled
+               as the screen printed it. Add no checks of your own. A BEKLENEN line
+               that names no field (for example a bare "oldugunu doğrula") is not a
+               check — skip it.
+            I. If the walk never managed something the scenario asks for, do not
+               pretend it did: leave the step out. Never write a step for something
+               the evidence does not show.
+            J. Exactly one "Scenario:". No "Scenario Outline", no "Examples", no
+               "#" comment lines, no `wait` steps.
+            """;
+
+    private static final String WALK_EXAMPLES = """
+            EXAMPLE 1 — the shape of a good result (a different screen, written by an
+            analyst; the login line is left out exactly as rule A asks):
+
+            Feature: Online DBS Fatura Oluştur
+              Scenario: Bayi seçilip fatura oluşturulur
+                Given navigate to "NAKİT YÖNETİMİ" "Online DBS İşlemleri"
+                And select row "FORD DBS ODEMELERI"
+                And click "Fatura Oluştur"
+                And choose "Bilgi Girişi"
+                And select "93002" from "Bayi Kodu"
+                And enter date "Başlangıç Vadesi" "19/09/2026"
+                And enter "Fatura No" "11"
+                And enter "Orijinal Fatura Numarası" "1111"
+                And select "TL" from "Döviz Cinsi"
+                And enter "Taksit Adedi" "3"
+                And enter amount "Toplam Tutar" "200,00"
+                And enter amount "Orijinal Fatura Tutarı" "66,00"
+                And select "Ay" from "Taksit Periyot Birimi"
+                And enter "Taksit Periyodu" "2"
+                And enter "Fatura Dönemi" "2"
+                And enter date "Fatura Tarihi" "30/09/2026"
+                And select "Normal" from "Fatura Tipi"
+                And click "Devam"
+                Then verify the "Bayi Kodu" field equals "93002"
+                And verify the "Toplam Tutar" has amount "200,00"
+
+            EXAMPLE 2 — a wandering walk, and the scenario it becomes.
+            Walk (shortened):
+              #16 browser_click | ajan: "Firma Seçimi combobox" | çalışan: …getByRole('textbox', { name: 'Seçiniz' }).click();
+              #19 browser_click | ajan: "Sanko DBS Ödemeleri" | çalışan: …getByRole('option', { name: 'Sanko DBS Ödemeleri' }).click();
+              #20 browser_click | ajan: "Fatura Oluştur" | çalışan: …getByRole('link', { name: 'Fatura Oluştur' }).click();
+              #23 browser_click | ajan: "Bilgi Girişi radio butonu" | çalışan: …getByRole('radio', { name: 'Bilgi Girişi' }).click();
+              #26 browser_click | ajan: "Bayi Kodu combobox" | çalışan: …locator('#select2-bayiKodu-container').click();
+              #28 browser_type | ajan: "Bayi Kodu arama kutusu" | text: "151732" | ✗ TimeoutError
+              #32 browser_click | ajan: "Bayi Kodu combobox" | çalışan: …locator('#select2-bayiKodu-container').click();
+              #34 browser_click | ajan: "bayisanko1" | çalışan: …getByRole('option', { name: 'bayisanko1' }).click();
+              #36 browser_type | ajan: "Fatura No alanı" | text: "11113" | çalışan: …fill('11113');
+              #37 browser_type | ajan: "Toplam Tutar - lira kutusu" | text: "1000" | çalışan: …pressSequentially('1000');
+              #38 browser_type | ajan: "Toplam Tutar - kuruş kutusu" | text: "50" | çalışan: …locator('#toplamTutar-decimal').pressSequentially('50');
+              #40 browser_click | ajan: "Devam butonu" | çalışan: …getByRole('link', { name: 'Devam' }).click();
+              #41 browser_press_key | key: "Escape"
+              #44 set_date | ajan: … | date: "27/10/2026"
+              #46 browser_click | ajan: "Devam butonu" | çalışan: …getByRole('link', { name: 'Devam' }).click();
+            Screens showed, in order: "Firma Seçimi", then "Bayi Kodu", "Başlangıç Vadesi",
+            "Fatura No", "Toplam Tutar"; after #40 the form printed "Başlangıç vadesi seçiniz."
+            Result:
+
+            Feature: Firma Fatura İşlemleri
+              Scenario: fatura oluştur
+                Given navigate to "NAKİT YÖNETİMİ" "Firma Fatura İşlemleri"
+                And select "Sanko DBS Ödemeleri" from "Firma Seçimi"
+                And click "Fatura Oluştur"
+                And choose "Bilgi Girişi"
+                And select "bayisanko1" from "Bayi Kodu"
+                And enter date "Başlangıç Vadesi" "27/10/2026"
+                And enter "Fatura No" "11113"
+                And enter amount "Toplam Tutar" "1000,50"
+                And click "Devam"
+
+            Why: the search-box typing (#28) and the re-open (#32) are one select; #40
+            was refused ("… seçiniz.") and pressed again at #46, so "Devam" is written
+            once, at the end; the date was set late (#44) but the screen prints
+            "Başlangıç Vadesi" right after "Bayi Kodu", so that is where it goes; the
+            Escape is not a step.
+            """;
+
+    /**
      * The repair turn. The model gets its own draft back with the validator's
      * verdict, which is cheap — validation costs milliseconds and no browser —
      * and fixes the common failure of a nearly-right step pattern.

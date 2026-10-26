@@ -279,6 +279,14 @@ public final class TapeRenderer {
                     if (field.isBlank()) {
                         field = scope.labelOfChosen(chosen);
                     }
+                    // Last resort, and exact rather than guessed: the box the
+                    // agent OPENED sits inside the box that its label
+                    // introduces. That is structure, not proximity — the
+                    // "Döviz Cinsi → Orijinal Fatura Tutarı" mistake came
+                    // from climbing by position, which this does not do.
+                    if (field.isBlank()) {
+                        field = scope.ownerLabel(ref);
+                    }
                     if (field.isBlank()) {
                         notes.add("#" + call.seq() + " bir listeden \"" + chosen + "\" seçildi ama"
                                 + " hangi alanın listesi olduğu kesinleşmedi; satır yazılmadı."
@@ -989,7 +997,7 @@ public final class TapeRenderer {
     private static final String TURKISH = "çğıöşüâîû";
     private static final String ASCII = "cgiosuaiu";
 
-    private static String fold(String value) {
+    static String fold(String value) {
         if (value == null) {
             return "";
         }
@@ -1137,11 +1145,30 @@ public final class TapeRenderer {
             if (candidate == null || candidate.isBlank()) {
                 return "";
             }
+            // The agent decorates the label with whatever word it likes
+            // ("Firma Seçimi combobox", "… dropdown", "… alanı"), so the label
+            // only has to be CONTAINED in what it said, and the longest one
+            // wins: "Fatura Tarihi" must not be taken for "Tarih".
+            String said = fold(candidate);
+            String best = "";
             for (AriaSnapshot snapshot : recent) {
                 for (AriaSnapshot.Node node : snapshot.nodes()) {
-                    if (fold(node.caption()).equals(fold(candidate)) && snapshot.labelsAControl(node.ref())) {
-                        return node.caption();
+                    String caption = node.caption();
+                    if (caption.length() >= 3 && said.contains(fold(caption))
+                            && caption.length() > best.length() && snapshot.labelsAControl(node.ref())) {
+                        best = caption;
                     }
+                }
+            }
+            return best;
+        }
+
+        /** The label that introduces the box this reference sits in, or blank. */
+        String ownerLabel(String ref) {
+            for (AriaSnapshot snapshot : recent) {
+                String label = snapshot.ownerLabel(ref);
+                if (!label.isBlank()) {
+                    return label;
                 }
             }
             return "";
