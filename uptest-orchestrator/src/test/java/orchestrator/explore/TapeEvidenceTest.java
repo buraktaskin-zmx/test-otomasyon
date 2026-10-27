@@ -99,6 +99,46 @@ class TapeEvidenceTest {
         assertThat(errors).isEmpty();
     }
 
+    /**
+     * Banko İşlemleri, 27 Oct: the model copied the whole BEKLENEN sentence
+     * into one `text is displayed`. It passed the old check because the
+     * sentence is in the scenario text; for this step only the screen counts.
+     */
+    @Test
+    @DisplayName("text is displayed must be text a screen showed, not the analyst's sentence")
+    void holdsTextIsDisplayedToTheScreen() {
+        String screen = "- generic [ref=f1e406]: Hızlı Tarih Seçim\n- link \"Detaylı Arama\" [ref=f1e412]";
+        String analyst = "Hızlı Tarih Seçim alanı görünür durumdadır - Sağ tarafta Detaylı Arama"
+                + " bağlantısı görünür durumdadır";
+
+        String wrong = "Feature: x\n  Scenario: y\n"
+                + "    And verify \"" + analyst + "\" text is displayed\n";
+        String right = """
+                Feature: x
+                  Scenario: y
+                    Then verify "Hızlı Tarih Seçim" text is displayed
+                    And verify "Detaylı Arama" text is displayed
+                """;
+
+        assertThat(Provenance.checkAgainstWalk(wrong, screen, analyst)).hasSize(1)
+                .first().satisfies(error -> assertThat(error.message()).contains("EKRANDA"));
+        assertThat(Provenance.checkAgainstWalk(right, screen, analyst)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a BEKLENEN line joining two checks with a spaced dash becomes two")
+    void splitsJoinedExpectations() {
+        assertThat(TapeGherkinController.splitExpectations(List.of(
+                "Hızlı Tarih Seçim alanı görünür durumdadır - Sağ tarafta Detaylı Arama bağlantısı görünür",
+                "Toplam Tutar 1.000,00 TL",
+                "Fatura Tipi e-Fatura olmalı")))
+                .containsExactly(
+                        "Hızlı Tarih Seçim alanı görünür durumdadır",
+                        "Sağ tarafta Detaylı Arama bağlantısı görünür",
+                        "Toplam Tutar 1.000,00 TL",
+                        "Fatura Tipi e-Fatura olmalı");
+    }
+
     @Test
     @DisplayName("a tape file reads back into calls, and a malformed id reads nothing")
     void readsATapeBack() throws Exception {

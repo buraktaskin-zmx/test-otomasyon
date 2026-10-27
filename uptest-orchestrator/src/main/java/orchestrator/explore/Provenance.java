@@ -39,16 +39,37 @@ public final class Provenance {
      *                tape, the catalog YAML, the analyst's scenario text
      */
     public static List<ValidationError> check(String feature, String... sources) {
+        return checkAgainstWalk(feature, null, sources);
+    }
+
+    /**
+     * The same check, with one step held to a stricter source.
+     *
+     * {@code verify "…" text is displayed} looks for its text ON THE SCREEN,
+     * so "the analyst wrote it" is no evidence at all: the model copied a
+     * whole BEKLENEN sentence — "Hızlı Tarih Seçim alanı görünür durumdadır -
+     * Sağ tarafta Detaylı Arama bağlantısı görünür durumdadır" — into one
+     * verify, it passed this check because the sentence is in the scenario
+     * text, and the step then hunted the page for a sentence no page prints.
+     * For that step only {@code screen} counts.
+     *
+     * @param screen what the walk's screens showed — the tape's results, NOT
+     *               the whole file, whose header carries the instruction and
+     *               with it the analyst's sentences; null to apply no
+     *               stricter rule
+     */
+    public static List<ValidationError> checkAgainstWalk(String feature, String screen, String... sources) {
         StringBuilder corpus = new StringBuilder();
         for (String source : sources) {
             if (source != null) {
-                // The tape stores results as JSON inside JSON, so quotes and
-                // line breaks arrive escaped; neither matters to a word search.
-                corpus.append(TapeRenderer.fold(source.replace("\\\"", "\"").replace("\\n", "\n")))
-                        .append('\n');
+                corpus.append(searchable(source)).append('\n');
             }
         }
+        if (screen != null) {
+            corpus.append(searchable(screen));
+        }
         String known = corpus.toString();
+        String shown = screen == null ? null : searchable(screen);
 
         List<ValidationError> errors = new ArrayList<>();
         String[] lines = feature == null ? new String[0] : feature.split("\\R");
@@ -61,6 +82,18 @@ public final class Provenance {
             // The login is grafted by the run from the chosen test user; it is
             // not part of the walk and its values are not in the tape.
             if (body.startsWith("login")) {
+                continue;
+            }
+            if (shown != null && body.startsWith("verify \"") && body.endsWith("\" text is displayed")) {
+                String text = body.substring("verify \"".length(), body.length() - "\" text is displayed".length());
+                if (!shown.contains(TapeRenderer.fold(text))) {
+                    errors.add(new ValidationError(i + 1, body,
+                            "\"" + text + "\" ajanın gördüğü hiçbir ekranda yazmıyor. Bu adım metni"
+                                    + " EKRANDA arar: Beklenen cümlesini değil, ekranda yazan kısa"
+                                    + " metni yazın (bir alanın etiketi, bir bağlantının adı). Bir"
+                                    + " satırda birden çok kontrol varsa her biri ayrı bir verify olur.",
+                            List.of(), ValidationError.Kind.UNKNOWN_LABEL, text));
+                }
                 continue;
             }
             Matcher quoted = QUOTED.matcher(body);
@@ -77,6 +110,14 @@ public final class Provenance {
             }
         }
         return errors;
+    }
+
+    /**
+     * Folded for a word search. The tape stores results as JSON inside JSON,
+     * so quotes and line breaks arrive escaped; neither matters here.
+     */
+    private static String searchable(String source) {
+        return TapeRenderer.fold(source.replace("\\\"", "\"").replace("\\n", "\n"));
     }
 
     private static boolean seen(String value, String step, String known) {

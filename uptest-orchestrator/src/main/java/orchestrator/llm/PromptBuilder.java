@@ -466,10 +466,23 @@ public class PromptBuilder {
                IT WAS CHOSEN — never a word printed on a later screen. If the agent
                called it "Firma Seçimi combobox", the label is "Firma Seçimi".
             H. VERIFY ONLY WHAT BEKLENEN SAYS, after the last action, one `verify`
-               per BEKLENEN line that names a field and a value, the label spelled
-               as the screen printed it. Add no checks of your own. A BEKLENEN line
-               that names no field (for example a bare "oldugunu doğrula") is not a
-               check — skip it.
+               per BEKLENEN line. Add no checks of your own. Pick the step by what
+               the line asks:
+               - a field HOLDS a value ("Bayi Kodu 151732", "Fatura Tipi: Normal"):
+                   verify the "<label>" field equals "<value>"
+                 (`has amount` for an amount, `has date` for a date);
+               - something IS SHOWN / VISIBLE ("… görünür", "… görünür durumdadır",
+                 "… görüntülenir", "… yer alır"):
+                   verify "<the SHORT text the screen prints>" text is displayed
+                 That step searches the PAGE for the text, so the text is the
+                 field's label or the link's caption EXACTLY as the screen prints
+                 it — never the analyst's sentence, never words like "alanı",
+                 "bağlantısı", "butonu", "görünür durumdadır". When the screen's
+                 spelling and the analyst's differ, use the screen's.
+               - a POSITION ("sağ tarafta", "üstte", "yanında") cannot be checked
+                 by any step: write the visibility check, leave the position out.
+               A BEKLENEN line that names nothing checkable (for example a bare
+               "oldugunu doğrula") is not a check — skip it.
             I. If the walk never managed something the scenario asks for, do not
                pretend it did: leave the step out. Never write a step for something
                the evidence does not show.
@@ -542,6 +555,24 @@ public class PromptBuilder {
             once, at the end; the date was set late (#44) but the screen prints
             "Başlangıç Vadesi" right after "Bayi Kodu", so that is where it goes; the
             Escape is not a step.
+
+            EXAMPLE 3 — a screen that is only LOOKED AT, and visibility checks.
+            BEKLENEN (already split, one check per line):
+              - Hızlı Tarih Seçim alanı görünür durumdadır
+              - Sağ tarafta Detaylı Arama bağlantısı görünür durumdadır
+            The screens showed the labels "Hızlı Tarih Seçim" and "Detaylı Arama".
+            Result:
+
+            Feature: Banko İşlemleri
+              Scenario: Filtre alanları görünür
+                Given navigate to "NAKİT YÖNETİMİ" "Banko İşlemleri"
+                And click "Ödeme İşlemleri"
+                Then verify "Hızlı Tarih Seçim" text is displayed
+                And verify "Detaylı Arama" text is displayed
+
+            WRONG — never write this; the step would hunt the page for a whole
+            sentence no screen prints:
+                And verify "Hızlı Tarih Seçim alanı görünür durumdadır - Sağ tarafta Detaylı Arama bağlantısı görünür durumdadır" text is displayed
             """;
 
     /**

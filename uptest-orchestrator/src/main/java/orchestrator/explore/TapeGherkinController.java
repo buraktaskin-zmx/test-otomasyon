@@ -93,7 +93,7 @@ public class TapeGherkinController {
         }
         TapeFile.Loaded tape = loaded.get();
         String mainMenu = blank(body.mainMenu()) ? tape.mainMenu() : body.mainMenu();
-        List<String> expected = body.expected() == null ? List.of() : body.expected();
+        List<String> expected = splitExpectations(body.expected());
 
         TapeRenderer.Rendered draft = TapeRenderer.render(tape.calls(), mainMenu, expected);
 
@@ -116,7 +116,8 @@ public class TapeGherkinController {
         try {
             made = suggest.suggestFromWalk(user, intent, vocabulary.get(),
                     SuggestService.ProductContext.NONE,
-                    feature -> Provenance.check(feature, tape.raw(), catalog, intent, mainMenu));
+                    feature -> Provenance.checkAgainstWalk(feature, screenOf(tape), tape.raw(), catalog,
+                            intent, mainMenu));
         } catch (RuntimeException failed) {
             Throwable root = failed;
             while (root.getCause() != null && root.getCause() != root) {
@@ -146,6 +147,52 @@ public class TapeGherkinController {
         answer.put("source", "ai");
         answer.put("attempts", made.attempts());
         return ResponseEntity.ok(answer);
+    }
+
+    /**
+     * What the walk's screens showed: every result, and nothing from the
+     * tape's header — the header carries the instruction, which carries the
+     * analyst's own sentences, and those must not count as "on screen".
+     */
+    static String screenOf(TapeFile.Loaded tape) {
+        StringBuilder shown = new StringBuilder();
+        for (TapeRenderer.Call call : tape.calls()) {
+            if (call.result() != null) {
+                shown.append(call.result()).append('\n');
+            }
+        }
+        return shown.toString();
+    }
+
+    /** " - " between two checks on one BEKLENEN line, the way analysts write them. */
+    private static final Pattern JOINED = Pattern.compile("\\s+[-–—]\\s+");
+
+    /**
+     * One BEKLENEN line per check.
+     *
+     * Analysts join checks on one line — "Hızlı Tarih Seçim alanı görünür
+     * durumdadır - Sağ tarafta Detaylı Arama bağlantısı görünür durumdadır" —
+     * and the model, told "one verify per BEKLENEN line", wrote ONE verify
+     * holding both sentences. Splitting here is deterministic; asking the
+     * model to split is a request. Only a dash with spaces round it splits:
+     * "1.000,00" and "e-Fatura" keep theirs.
+     */
+    static List<String> splitExpectations(List<String> lines) {
+        List<String> out = new ArrayList<>();
+        if (lines == null) {
+            return out;
+        }
+        for (String line : lines) {
+            if (line == null) {
+                continue;
+            }
+            for (String part : JOINED.split(line)) {
+                if (!part.isBlank()) {
+                    out.add(part.trim());
+                }
+            }
+        }
+        return out;
     }
 
     /** The renderer's draft, with the reason it is what the analyst is reading. */
