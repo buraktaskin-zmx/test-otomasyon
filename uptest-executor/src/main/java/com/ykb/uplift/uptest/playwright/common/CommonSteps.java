@@ -18,7 +18,7 @@ public class CommonSteps {
     }
 
     private CommonActions actions() {
-        if (actions == null) actions = new CommonActions(ctx.page);
+        if (actions == null) actions = new CommonActions(ctx.page).expecting(ctx.expectedTexts);
         return actions;
     }
 

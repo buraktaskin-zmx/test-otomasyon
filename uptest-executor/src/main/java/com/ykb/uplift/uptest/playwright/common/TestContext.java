@@ -20,4 +20,12 @@ public class TestContext {
     public Browser browser;
     public BrowserContext context;
     public Page page;
+
+    /**
+     * Every text this scenario asserts with `verify "…" text is displayed`,
+     * read from the feature file before the first step. Lets a click tell an
+     * EXPECTED refusal (a negative scenario that goes on to assert the
+     * message) from an unexpected one (the form silently did not submit).
+     */
+    public java.util.Set<String> expectedTexts = new java.util.HashSet<>();
 }

@@ -11,8 +11,11 @@ import com.microsoft.playwright.options.WaitForSelectorState;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -77,6 +80,72 @@ public class CommonActions {
         this.page = page;
     }
 
+    /** Texts the scenario goes on to assert; see {@link TestContext#expectedTexts}. */
+    private Set<String> expectedTexts = Set.of();
+
+    public CommonActions expecting(Set<String> texts) {
+        this.expectedTexts = texts == null ? Set.of() : texts;
+        return this;
+    }
+
+    /**
+     * The line a form paints under a field it refuses: "Fatura tarihi
+     * giriniz.", "Başlangıç vadesi seçiniz.", "Geçerli bir tarih giriniz.".
+     * Anchored on the whole text and on the full stop, so the "Seçiniz"
+     * placeholder of every dropdown never matches.
+     */
+    private static final Pattern FORM_REFUSAL = Pattern.compile(
+            "^\\s*\\S.{2,160}\\s(giriniz|seçiniz)\\.\\s*$",
+            Pattern.CASE_INSENSITIVE);
+
+    /** The refusal lines visible on the page right now. Never throws. */
+    private List<String> formRefusals() {
+        try {
+            return page.getByText(FORM_REFUSAL)
+                    .filter(new Locator.FilterOptions().setVisible(true))
+                    .allInnerTexts().stream()
+                    .map(String::trim)
+                    .distinct()
+                    .toList();
+        } catch (RuntimeException navigating) {
+            // The click may have started a navigation; a page in flight has
+            // nothing to refuse.
+            return List.of();
+        }
+    }
+
+    /**
+     * Refusal lines that appeared because of the click — checked at once,
+     * since the form validates inside the click handler, and once more a
+     * moment later for one that animates in.
+     */
+    private List<String> refusalsCausedSince(List<String> before) {
+        List<String> fresh = new ArrayList<>(formRefusals());
+        fresh.removeAll(before);
+        if (fresh.isEmpty()) {
+            page.waitForTimeout(REFUSAL_GRACE_MS);
+            fresh = new ArrayList<>(formRefusals());
+            fresh.removeAll(before);
+        }
+        return fresh;
+    }
+
+    private static final double REFUSAL_GRACE_MS = 400;
+
+    /** Whether the scenario goes on to assert one of these lines. */
+    private boolean expected(List<String> refusals) {
+        for (String refusal : refusals) {
+            String shown = refusal.toLowerCase(Locale.forLanguageTag("tr-TR"));
+            for (String text : expectedTexts) {
+                String wanted = text.toLowerCase(Locale.forLanguageTag("tr-TR")).trim();
+                if (!wanted.isEmpty() && (shown.contains(wanted) || wanted.contains(shown))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     // ======================= GENERIC ACTIONS ===============================
 
 
@@ -138,6 +207,7 @@ public class CommonActions {
                     + String.join(" | ", target.allInnerTexts()));
         }
 
+        List<String> before = formRefusals();
         try {
             target.first().click();
         } catch (RuntimeException failed) {
@@ -150,6 +220,27 @@ public class CommonActions {
                 throw missingClickTarget(label, failed);
             }
             throw failed;
+        }
+
+        // A click is not finished when the button was pressed; it is finished
+        // when the press DID something. "Devam" on DBS Fatura Oluştur was
+        // pressed with both dates empty, the form painted "… giriniz." and
+        // stayed where it was — and the step went green, the verifies after it
+        // read the SAME form's boxes and passed too, and the run failed four
+        // steps later on a date nobody had looked at. A refusal the scenario
+        // goes on to assert (a negative scenario checking "11 karakter
+        // uzunluğunda bir değer giriniz.") is the expected outcome and passes.
+        List<String> refused = refusalsCausedSince(before);
+        if (!refused.isEmpty()) {
+            if (expected(refused)) {
+                System.out.println("[uptest] click: '" + label + "' formu beklenen sekilde reddetti: "
+                        + String.join(" | ", refused));
+            } else {
+                throw new AssertionError("'" + label + "' tiklandi ama form GONDERILMEDI; ekran sunu"
+                        + " yaziyor: " + String.join(" | ", refused)
+                        + " — bu alanlar bos ya da gecersiz. Beklenen bir hataysa senaryoda"
+                        + " dogrulayin: verify \"<mesaj>\" text is displayed");
+            }
         }
         return this;
     }
@@ -342,6 +433,24 @@ public class CommonActions {
         return this;
     }
 
+    /**
+     * Which element took the value, and what it holds as the step ends.
+     *
+     * A date "entered" on DBS Fatura Oluştur read back as entered inside the
+     * step and as "" four steps later, on #billDate. Two different things
+     * explain that — the label resolved to a DIFFERENT element than the one
+     * the form submits, or something cleared the right one afterwards — and
+     * only the element's id tells them apart. One line per enter, no wait.
+     */
+    private static void logEntered(String label, Locator field, String how) {
+        try {
+            System.out.println("[uptest] enter: '" + label + "' -> #" + field.getAttribute("id")
+                    + " (" + how + ") = '" + field.inputValue() + "'");
+        } catch (RuntimeException unreadable) {
+            // Logging must never fail the step it describes.
+        }
+    }
+
     public CommonActions enter(String label, String value) {
         failFastOnErrorDialog("enter");
         Locator field = page.getByLabel(label);
@@ -360,6 +469,7 @@ public class CommonActions {
         // right one.
         try {
             if (isDatePicker(field) && pickFromCalendar(label, field, value)) {
+                logEntered(label, field, "takvim");
                 failFastOnErrorDialog("enter (sonrasi)");
                 return this;
             }
@@ -390,6 +500,7 @@ public class CommonActions {
         }
 
         closeDatePicker();
+        logEntered(label, field, "yazma");
         // Checked again afterwards: these forms validate against the server on
         // blur, so the dialog this very step provoked would otherwise be
         // reported against the NEXT step — or against none at all, when this is

@@ -7,8 +7,15 @@ import io.cucumber.java.After;
 import io.cucumber.java.Before;
 import io.cucumber.java.Scenario;
 
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class Hooks {
 
@@ -33,7 +40,8 @@ public class Hooks {
     }
 
     @Before
-    public void setUp() {
+    public void setUp(Scenario scenario) {
+        ctx.expectedTexts = expectedTexts(scenario);
         ctx.playwright = Playwright.create();
         ctx.browser = ctx.playwright.chromium().launch(launchOptions());
         ctx.context = ctx.browser.newContext();
@@ -62,6 +70,31 @@ public class Hooks {
             options.setChannel(channel);
         }
         return options;
+    }
+
+    private static final Pattern VERIFY_TEXT = Pattern.compile("verify \"([^\"]+)\" text is displayed");
+
+    /**
+     * The texts the scenario's file asserts as displayed. Read from the file
+     * because a step cannot see the steps after it, and a click needs to know
+     * whether the refusal it just caused is the one the scenario is about to
+     * check. Never fails the scenario: no file, no expectations.
+     */
+    private static Set<String> expectedTexts(Scenario scenario) {
+        Set<String> texts = new HashSet<>();
+        try {
+            URI uri = scenario.getUri();
+            if (uri == null || !"file".equalsIgnoreCase(uri.getScheme())) {
+                return texts;
+            }
+            Matcher match = VERIFY_TEXT.matcher(Files.readString(Paths.get(uri), StandardCharsets.UTF_8));
+            while (match.find()) {
+                texts.add(match.group(1));
+            }
+        } catch (Exception unreadable) {
+            System.out.println("[uptest] senaryo dosyasi okunamadi: " + unreadable.getMessage());
+        }
+        return texts;
     }
 
     private static String env(String name, String fallback) {
