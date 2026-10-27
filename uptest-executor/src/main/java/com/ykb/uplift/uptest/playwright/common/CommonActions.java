@@ -150,6 +150,7 @@ public class CommonActions {
 
 
     public CommonActions click(String label) {
+        closeDatePicker();
         // While a modal is up, its overlay swallows every click on the page
         // behind it — Playwright then retries for 30 s and reports a timeout on
         // an element that was perfectly visible, which says nothing about the
@@ -411,16 +412,59 @@ public class CommonActions {
      * the first step that really clicks: "Toplam Tutar" spent 30 s being told
      * that an <a data-date="29"> was intercepting its pointer events.
      *
-     * Escape rather than a click elsewhere, and only while the calendar is
-     * actually up: an unconditional Escape would also dismiss the error dialog
-     * that negative scenarios need to read and close with "Tamam".
+     * Only while the calendar is actually up: an unconditional Escape would
+     * also dismiss the error dialog that negative scenarios need to read and
+     * close with "Tamam".
+     *
+     * And CHECKED, in three tries. A single Escape was the whole of it, and it
+     * left the calendar open over "Fatura Tipi" on DBS Fatura Oluştur: the
+     * select spent its timeout clicking into the calendar, and the moment a
+     * person closed the calendar by hand the very same select went through.
+     * Escape only works while focus is in the date box — after a day was
+     * clicked it sits in the calendar — so the calendar's own close button
+     * ("Tamam", what a person presses) goes first, then a mousedown outside
+     * (jQuery UI closes on one; dispatched, so nothing is actually clicked),
+     * then Escape.
      */
     private void closeDatePicker() {
         Locator picker = page.locator(DATE_PICKER);
-        if (picker.count() > 0 && picker.first().isVisible()) {
-            page.keyboard().press("Escape");
+        if (!isUp(picker)) {
+            return;
+        }
+        Locator done = picker.locator("button.ui-datepicker-close");
+        if (done.count() > 0 && done.first().isVisible()) {
+            done.first().click();
+        }
+        if (closed(picker)) {
+            return;
+        }
+        page.locator("body").dispatchEvent("mousedown");
+        if (closed(picker)) {
+            return;
+        }
+        page.keyboard().press("Escape");
+        if (!closed(picker)) {
+            throw new AssertionError("Takvim acik kaldi ve kapatilamadi; altindaki alanlara"
+                    + " tiklanamaz. (Tamam, dis tiklama ve Escape denendi.)");
         }
     }
+
+    private static boolean isUp(Locator picker) {
+        return picker.count() > 0 && picker.first().isVisible();
+    }
+
+    /** Waits a moment for the calendar's close animation; true once it is gone. */
+    private static boolean closed(Locator picker) {
+        try {
+            picker.first().waitFor(new Locator.WaitForOptions()
+                    .setState(WaitForSelectorState.HIDDEN).setTimeout(PICKER_CLOSE_MS));
+            return true;
+        } catch (RuntimeException stillOpen) {
+            return false;
+        }
+    }
+
+    private static final double PICKER_CLOSE_MS = 1500;
 
     public CommonActions navigateToUrl(String url) {
         Page.NavigateOptions options = new Page.NavigateOptions();
@@ -1881,6 +1925,10 @@ public class CommonActions {
     }
 
     private void failFastOnErrorDialog(String action) {
+        // A calendar left open by the previous step — or one that opened a
+        // moment after it ended — covers the fields below it. Closed before
+        // every action that this guard already runs ahead of.
+        closeDatePicker();
         Locator dialog = visibleDialog();
         if (dialog == null) {
             return;
