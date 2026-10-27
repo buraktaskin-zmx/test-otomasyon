@@ -37,6 +37,16 @@ public class NGC {
     private static final double LOGIN_BOX_MS = 5_000;
 
     /**
+     * The pause before asking again.
+     *
+     * Asking the instant a connection was reset asks the same thing of a
+     * server that has just refused it, and the refresh a person does is never
+     * that quick. Seven seconds, so a retry is a retry rather than a second
+     * hammer blow.
+     */
+    private static final double RETRY_PAUSE_MS = 7_000;
+
+    /**
      * The login page, asked for again when the request itself fails.
      *
      * The test environment answers the first request of a fresh browser with
@@ -53,6 +63,9 @@ public class NGC {
     private void openLoginPage() {
         Throwable last = null;
         for (int attempt = 1; attempt <= LOGIN_PAGE_ATTEMPTS; attempt++) {
+            if (attempt > 1) {
+                page.waitForTimeout(RETRY_PAUSE_MS);
+            }
             try {
                 page.navigate(LOGIN_URL, new Page.NavigateOptions().setTimeout(NAVIGATE_MS));
             } catch (RuntimeException refused) {
@@ -60,7 +73,7 @@ public class NGC {
                 last = refused;
                 System.out.println("[uptest] login: giris sayfasi acilmadi (" + attempt + "/"
                         + LOGIN_PAGE_ATTEMPTS + ") — " + oneLine(refused.getMessage())
-                        + " | hemen yeniden isteniyor");
+                        + " | " + (int) (RETRY_PAUSE_MS / 1000) + " sn sonra yeniden istenecek");
                 continue;
             }
             try {

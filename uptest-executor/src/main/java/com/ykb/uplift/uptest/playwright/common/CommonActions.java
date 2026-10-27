@@ -438,7 +438,6 @@ public class CommonActions {
         // the date box, lets a re-open happen, and only then looks again.
         for (int round = 1; round <= PICKER_CLOSE_ROUNDS; round++) {
             String how = dismiss(picker);
-            blurActiveElement();
             page.waitForTimeout(PICKER_SETTLE_MS);
             if (!isUp(picker)) {
                 if (round > 1) {
@@ -449,24 +448,74 @@ public class CommonActions {
             System.out.println("[uptest] takvim: kapatildi (" + how + ") ama yeniden acildi — tur " + round);
         }
         throw new AssertionError("Takvim kapatildikca yeniden aciliyor; altindaki alanlara tiklanamaz."
-                + " (Tamam, dis tiklama ve Escape denendi, odak tarih kutusundan alindi.)");
+                + " (jQuery hide, Escape, Tamam ve dis tiklama denendi; odak tarih kutusundan alindi.)");
     }
 
-    /** One attempt to close the calendar; says which of the three did it. */
+    /**
+     * One attempt to close the calendar; says which way did it.
+     *
+     * Order is the whole of it, and the first version had it backwards. The
+     * widget is jQuery UI's, and it reopens the moment its input regains
+     * focus — which is what jQuery itself does after a day is clicked, so a
+     * close followed by a blur closed it and then let it come straight back.
+     *
+     * So: ask jQUERY to hide it and blur the input it belongs to, in one go,
+     * because that is the pair that has to happen together. Only when jQuery
+     * is not reachable do the imitations follow, and they are ordered by what
+     * they need: Escape while focus is still in the box, then the widget's
+     * own "Tamam", then a mousedown outside (dispatched, so nothing is really
+     * clicked) — and the blur comes LAST there, once the thing is shut.
+     */
     private String dismiss(Locator picker) {
+        if (hideThroughJQuery()) {
+            if (closed(picker)) {
+                return "jQuery";
+            }
+        }
+        page.keyboard().press("Escape");
+        if (closed(picker)) {
+            blurActiveElement();
+            return "Escape";
+        }
         Locator done = picker.locator("button.ui-datepicker-close");
         if (done.count() > 0 && done.first().isVisible()) {
             done.first().click();
             if (closed(picker)) {
+                blurActiveElement();
                 return "Tamam";
             }
         }
         page.locator("body").dispatchEvent("mousedown");
-        if (closed(picker)) {
-            return "dis tiklama";
+        blurActiveElement();
+        return closed(picker) ? "dis tiklama" : "hicbiri";
+    }
+
+    /**
+     * Closes the calendar through the widget's own API and takes the focus off
+     * the input it belongs to.
+     *
+     * The same reasoning as driving a Select2 through its rendered control
+     * rather than its hidden select: this is the widget, so this is how it is
+     * told to close. Returns false when jQuery is not reachable under either
+     * name, and the imitations above take over.
+     */
+    private boolean hideThroughJQuery() {
+        try {
+            Object hidden = page.evaluate("""
+                    () => {
+                      const jq = window.jQuery || window.$;
+                      if (!jq || !jq.datepicker || typeof jq.datepicker._hideDatepicker !== 'function') {
+                        return false;
+                      }
+                      const input = jq.datepicker._lastInput;
+                      jq.datepicker._hideDatepicker();
+                      if (input && typeof input.blur === 'function') { input.blur(); }
+                      return true;
+                    }""");
+            return Boolean.TRUE.equals(hidden);
+        } catch (RuntimeException unavailable) {
+            return false;
         }
-        page.keyboard().press("Escape");
-        return closed(picker) ? "Escape" : "hicbiri";
     }
 
     /** Takes focus off whatever has it, so a focus handler cannot re-open the calendar. */
