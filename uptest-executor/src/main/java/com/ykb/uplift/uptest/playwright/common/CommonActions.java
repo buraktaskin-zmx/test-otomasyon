@@ -1,5 +1,6 @@
 package com.ykb.uplift.uptest.playwright.common;
 
+import com.microsoft.playwright.Frame;
 import com.microsoft.playwright.Locator;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.assertions.LocatorAssertions;
@@ -1194,10 +1195,85 @@ public class CommonActions {
     }
 
     public CommonActions verifyTextIsDisplayed(String expectedText) {
-        Locator textLocator = page.getByText(expectedText, new Page.GetByTextOptions().setExact(false)).first();
-        assertThat(textLocator).isVisible(
-                new LocatorAssertions.IsVisibleOptions().setTimeout(VERIFY_TIMEOUT_MS));
-        return this;
+        // VISIBLE copies only. `.first()` alone bets that the first match in
+        // document order is the one meant, and on these screens it is often a
+        // hidden duplicate — "Detay" appears eighteen times on Alıcı Listesi
+        // and the first sits in a div the application keeps hidden.
+        //
+        // And in every FRAME, not only the page. A page-level getByText does
+        // not look inside an iframe, and the agent's snapshots of Banko
+        // İşlemleri carry frame references (f1e…): "Hızlı Tarih Seçimi" was on
+        // screen for the agent and "element(s) not found" for this step. One
+        // auto-waiting assertion cannot span frames, so the frames are polled
+        // within the same timeout; the page is checked first on every pass, so
+        // a screen without frames behaves exactly as before.
+        long deadline = System.currentTimeMillis() + (long) VERIFY_TIMEOUT_MS;
+        while (true) {
+            if (visibleCopies(page.mainFrame(), expectedText) > 0) {
+                return this;
+            }
+            for (Frame frame : page.frames()) {
+                if (frame != page.mainFrame() && visibleCopies(frame, expectedText) > 0) {
+                    System.out.println("[uptest] verify text: \"" + expectedText
+                            + "\" bir iframe icinde bulundu (" + frame.url() + ")");
+                    return this;
+                }
+            }
+            if (System.currentTimeMillis() >= deadline) {
+                throw new AssertionError(whereIsText(expectedText));
+            }
+            page.waitForTimeout(250);
+        }
+    }
+
+    /** Visible copies of the text in one frame; 0 while a frame is still loading. */
+    private static int visibleCopies(Frame frame, String text) {
+        try {
+            return frame.getByText(text, new Frame.GetByTextOptions().setExact(false))
+                    .filter(new Locator.FilterOptions().setVisible(true))
+                    .count();
+        } catch (RuntimeException detachedOrLoading) {
+            return 0;
+        }
+    }
+
+    /**
+     * Where the text is, when the step could not see it — counted on the page
+     * AND in every frame.
+     *
+     * "Nowhere", "here but every copy hidden" and "only inside an iframe" need
+     * three different fixes, and Playwright's own message says "element(s) not
+     * found" for the first and the third alike: a page-level getByText does
+     * not look inside frames. Counting is cheap and runs only on failure.
+     */
+    private String whereIsText(String text) {
+        StringBuilder out = new StringBuilder("\"" + text + "\" görünür değil.");
+        try {
+            Locator onPage = page.getByText(text, new Page.GetByTextOptions().setExact(false));
+            out.append(" Sayfada ").append(onPage.count()).append(" eşleşme, ")
+                    .append(onPage.filter(new Locator.FilterOptions().setVisible(true)).count())
+                    .append(" görünür.");
+            int index = 0;
+            for (Frame frame : page.frames()) {
+                if (frame == page.mainFrame()) {
+                    continue;
+                }
+                index++;
+                Locator inFrame = frame.getByText(text, new Frame.GetByTextOptions().setExact(false));
+                int count = inFrame.count();
+                if (count > 0) {
+                    out.append(" iframe #").append(index).append(" (").append(frame.url()).append("): ")
+                            .append(count).append(" eşleşme, ")
+                            .append(inFrame.filter(new Locator.FilterOptions().setVisible(true)).count())
+                            .append(" görünür.");
+                }
+            }
+            out.append(" Sayfada ").append(index).append(" iframe var.");
+        } catch (RuntimeException unreadable) {
+            out.append(" (sayım yapılamadı: ").append(unreadable.getMessage()).append(')');
+        }
+        System.out.println("[uptest] verify text: " + out);
+        return out.toString();
     }
 
     // Amount fields: normalize then compare numerically
