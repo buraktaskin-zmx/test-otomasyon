@@ -431,23 +431,56 @@ public class CommonActions {
         if (!isUp(picker)) {
             return;
         }
+        // Closing is not enough; it has to STAY closed. The calendar was seen
+        // closed and then open again over "Fatura Tipi", its date box focused
+        // with the text selected: focus went back to the box and the box opens
+        // its calendar on focus. So each round closes it, takes the focus off
+        // the date box, lets a re-open happen, and only then looks again.
+        for (int round = 1; round <= PICKER_CLOSE_ROUNDS; round++) {
+            String how = dismiss(picker);
+            blurActiveElement();
+            page.waitForTimeout(PICKER_SETTLE_MS);
+            if (!isUp(picker)) {
+                if (round > 1) {
+                    System.out.println("[uptest] takvim: " + round + ". turda kapali kaldi (" + how + ")");
+                }
+                return;
+            }
+            System.out.println("[uptest] takvim: kapatildi (" + how + ") ama yeniden acildi — tur " + round);
+        }
+        throw new AssertionError("Takvim kapatildikca yeniden aciliyor; altindaki alanlara tiklanamaz."
+                + " (Tamam, dis tiklama ve Escape denendi, odak tarih kutusundan alindi.)");
+    }
+
+    /** One attempt to close the calendar; says which of the three did it. */
+    private String dismiss(Locator picker) {
         Locator done = picker.locator("button.ui-datepicker-close");
         if (done.count() > 0 && done.first().isVisible()) {
             done.first().click();
-        }
-        if (closed(picker)) {
-            return;
+            if (closed(picker)) {
+                return "Tamam";
+            }
         }
         page.locator("body").dispatchEvent("mousedown");
         if (closed(picker)) {
-            return;
+            return "dis tiklama";
         }
         page.keyboard().press("Escape");
-        if (!closed(picker)) {
-            throw new AssertionError("Takvim acik kaldi ve kapatilamadi; altindaki alanlara"
-                    + " tiklanamaz. (Tamam, dis tiklama ve Escape denendi.)");
+        return closed(picker) ? "Escape" : "hicbiri";
+    }
+
+    /** Takes focus off whatever has it, so a focus handler cannot re-open the calendar. */
+    private void blurActiveElement() {
+        try {
+            page.evaluate("() => { const e = document.activeElement;"
+                    + " if (e && e !== document.body && typeof e.blur === 'function') e.blur(); }");
+        } catch (RuntimeException navigating) {
+            // Nothing focused to speak of on a page in flight.
         }
     }
+
+    private static final int PICKER_CLOSE_ROUNDS = 3;
+    private static final double PICKER_SETTLE_MS = 400;
 
     private static boolean isUp(Locator picker) {
         return picker.count() > 0 && picker.first().isVisible();
