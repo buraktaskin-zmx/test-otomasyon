@@ -154,8 +154,14 @@ All test-side code lives in `uptest-executor/src/main/java/` under the package
 - NGC page object: `PW/ngc/steps/util/NGC.java`
 - NGI steps: `PW/ngi/steps/NGISteps.java` — one step (`login to ngi`)
 - NGI page object: `PW/ngi/steps/util/NGI.java`
-- Common: `PW/common/` — CommonSteps (18 shared steps), CommonActions (all the
-  Playwright logic), Hooks, TestContext, RunContext
+- Common: `PW/common/` — CommonSteps (18 shared steps), CommonActions (the
+  Playwright logic's public face), Hooks, TestContext, RunContext.
+  CommonActions keeps every public step and hands the work to package-private
+  parts by purpose: `DatePicker` (calendar + masked typing), `ErrorDialogs`
+  (the modal guard), `ValueFields` (label -> value element), `Verifications`
+  (the verify steps), `RadioActions` (select row / choose / check), `Uploads`,
+  `FailureExplanations` ("not found, the screen has these"). A lesson below
+  that names `CommonActions.x` means the method now living in one of these.
 - Components: `PW/components/` — grid/Grid+GridElement, selectbox/account,
   end/EndPage
 
@@ -200,14 +206,22 @@ Elsewhere:
   deliberately keeps OUT of the published vocabulary: they read a screen, they do
   not describe a test, and the generator must never emit them. That exclusion is
   why a hand count of `@Given/@When/@Then` (22) disagrees with
-  `GET /api/v1/vocabulary` (20).
+  `GET /api/v1/vocabulary` (20). Split by purpose: `ControlTraits` (what a
+  container is, read off its DOM), `Discovered` (the field model),
+  `CatalogYaml` (the output), `ScanDiagnostics` (`UPTEST_DISCOVERY_DEBUG`).
 - Run history (orchestrator): `orchestrator/persistence/` holds the entities and
   repositories, `orchestrator/run/RunStore` is the ONLY bean in the run path
   that touches JPA, and `orchestrator/run/Redactor` strips the cif and userid
   out of every path that writes scenario text down. H2 file mode, schema by
   `ddl-auto=update`, orchestrator only — the executor never gets a database.
   Details in the server-side document.
-- MCP exploration agent (orchestrator): `orchestrator/explore/` + `.mcp.json`
+- MCP exploration agent (orchestrator): `orchestrator/explore/` + `.mcp.json`.
+  The agent's prompts (`SYSTEM`, `ANSWER_RULES`, `CATALOG_RULES`, `CLOSING`)
+  live in `AgentPrompts`, the draft checks (`problems()`) in
+  `CatalogDraftChecks`; a lesson below that says `ExploreController.SYSTEM`
+  means `AgentPrompts.SYSTEM`. The walk-to-Gherkin renderer is `TapeRenderer`
+  with `PlaywrightLine` (the echoed line, parsed), `TapeScope` (the snapshots a
+  reference resolves in) and `ExpectedVerifies` (the THEN from BEKLENEN).
 - Scenario chat (orchestrator): `orchestrator/chat/` — writing a scenario by
   talking about it. **No browser**: it is the generator with the repair turn
   pointed at a PERSON. `SuggestService.suggestOnce` generates once, and
@@ -1099,6 +1113,16 @@ one answer to "which screen am I looking at".
   copy-pasteable commands.
 - Keep scenarios clean/readable (analysts edit them). Complexity → page object.
 - Generic over hardcoded: derive locators from labels/attributes, not fixed ids.
+- **A Java class stays under ~800 lines.** When one grows past it, split it by
+  PURPOSE into package-private parts and keep the original class as the public
+  face: every public method keeps its signature and hands the work on, so no
+  caller changes. Move bodies verbatim — only visibility and wiring change —
+  and prove it was a move: every original line must reappear in the new files.
+  Two traps met doing exactly this: a test that reaches a private method by
+  REFLECTION on the original class (`CatalogSinkDisplayTest` →
+  `ExploreController.problems`) needs a same-signature forwarder left behind;
+  and imports picked by "the name appears in the file" also match names that
+  appear only in comments.
 
 ## Sharing between NGC and NGI (common layer)
 
