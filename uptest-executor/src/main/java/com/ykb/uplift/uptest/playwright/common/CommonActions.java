@@ -33,7 +33,6 @@ public class CommonActions {
 
     private final Page page;
 
-
     // The parts this class hands work to, each one a purpose of its own.
     private final DatePicker datePicker;
     private final ErrorDialogs dialogs;
@@ -42,6 +41,7 @@ public class CommonActions {
     private final Verifications verifications;
     private final RadioActions radios;
     private final Uploads uploads;
+    private final Dropdowns dropdowns;
 
     public CommonActions(Page page) {
         this.page = page;
@@ -52,9 +52,11 @@ public class CommonActions {
         this.verifications = new Verifications(page, fields, explain);
         this.radios = new RadioActions(page, dialogs);
         this.uploads = new Uploads(page, dialogs);
+        this.dropdowns = new Dropdowns(page, fields);
     }
 
     private static final String DIALOG_DISMISS = ErrorDialogs.DIALOG_DISMISS;
+    private static final double SELECT_CONFIRM_MS = Dropdowns.SELECT_CONFIRM_MS;
 
     /** Texts the scenario goes on to assert; see {@link TestContext#expectedTexts}. */
     private Set<String> expectedTexts = Set.of();
@@ -124,7 +126,6 @@ public class CommonActions {
 
     // ======================= GENERIC ACTIONS ===============================
 
-
     public CommonActions click(String label) {
         closeDatePicker();
         // While a modal is up, its overlay swallows every click on the page
@@ -189,10 +190,24 @@ public class CommonActions {
         // clicks the box and the list opens. Only reached when NO button or
         // link carries the name right now AND the name labels a Select2 field,
         // so every click that worked before still takes the path below.
-        if (target.count() == 0 && isSelect2Field(label)) {
-            openSelect2(label);
-            System.out.println("[uptest] click: '" + label + "' bir acilir liste; liste acildi");
-            return this;
+        //
+        // WAITED FOR, never asked once. `navigate to` returns the moment it has
+        // clicked the menu link, so this step can start while the next page is
+        // still arriving — and count() answers about the DOM as it stands that
+        // instant. Asked too early it said "no such dropdown", the step fell
+        // through to the 30 s button search, and by the time the failure
+        // listed the screen's buttons the page had long arrived: a message
+        // that read like "right page, wrong word". So first wait for EITHER a
+        // button/link with the name OR the label's own text; a button that
+        // turns up ends the wait at once and is clicked as it always was.
+        if (target.count() == 0) {
+            awaitButtonOrLabel(label, target);
+            boolean labelOnPage = page.getByText(label, new Page.GetByTextOptions().setExact(true)).count() > 0;
+            if (target.count() == 0 && labelOnPage && awaitSelect2Field(label)) {
+                openSelect2(label);
+                System.out.println("[uptest] click: '" + label + "' bir acilir liste; liste acildi");
+                return this;
+            }
         }
 
         List<String> before = formRefusals();
@@ -256,8 +271,6 @@ public class CommonActions {
      */
     private static final double EXACT_NAME_MS = 3000;
 
-
-
     public CommonActions navigateToUrl(String url) {
         Page.NavigateOptions options = new Page.NavigateOptions();
         options.setTimeout(1000);
@@ -304,6 +317,16 @@ public class CommonActions {
             System.out.println("[uptest] enter: '" + label + "' arama kutusuna '" + value + "' yazildi");
             failFastOnErrorDialog("enter (sonrasi)");
             return this;
+        }
+        // The same dropdown, list closed: refused, as designed — but by name.
+        // Left to fill(), Playwright found the hidden native <select> behind
+        // the widget and said "Element is not an <input>", which names neither
+        // the cause nor either of the two ways out.
+        if (isSelect2Field(label)) {
+            throw new AssertionError("'" + label + "' bir acilir liste; icine dogrudan yazilamaz."
+                    + " ARAMAK icin once listeyi acin: click \"" + label + "\" ve hemen ardindan"
+                    + " enter \"" + label + "\" \"" + value + "\"."
+                    + " SECMEK icin: select \"<secenek>\" from \"" + label + "\".");
         }
 
         Locator field = page.getByLabel(label);
@@ -531,53 +554,6 @@ public class CommonActions {
         return this;
     }
 
-    /**
-     * How long the widget gets to show the value that was just chosen. Doubles
-     * as the pause the application needs to react to the choice.
-     */
-    private static final double SELECT_CONFIRM_MS = 10000;
-
-    /** Opens the widget, clicks the matching option, and checks it took. */
-    private void selectFromSelect2(String optionText, String label) {
-        openSelect2(label);
-        String want = optionText.trim();
-
-        List<Locator> options = page.locator("li.select2-results__option").all();
-        Locator chosen = null;
-        for (Locator option : options) {
-            if (option.innerText().trim().equals(want)) {
-                chosen = option;
-                break;
-            }
-        }
-        if (chosen == null) {
-            // A contained match before giving up: an option often prints more
-            // than the thing being chosen ("93002 - FORD BAYİ").
-            for (Locator option : options) {
-                if (option.innerText().contains(want)) {
-                    chosen = option;
-                    break;
-                }
-            }
-        }
-        if (chosen == null) {
-            throw new AssertionError("'" + label + "' icin '" + optionText
-                    + "' secenegi yok. Listelenen: " + String.join(" | ", page
-                    .locator("li.select2-results__option").allInnerTexts()));
-        }
-
-        chosen.click();
-
-        // The click is not the point — the value landing is. A selection that
-        // silently fails to stick has cost three separate debugging rounds on
-        // this app: the step went green and the damage surfaced fields later,
-        // on whatever the app was supposed to load in response. Auto-waiting
-        // here also gives that reaction time to happen before the next field.
-        assertThat(findValueElement(label).locator(".select2-selection"))
-                .containsText(want,
-                        new LocatorAssertions.ContainsTextOptions().setTimeout(SELECT_CONFIRM_MS));
-    }
-
     // Account picker rendered as a Select2 v4 combobox (rich rows:
     // text / branch / accountnumber), NOT a native <select>: the real
     // #...Idx select is aria-hidden, so the generic `select` step cannot drive
@@ -635,42 +611,8 @@ public class CommonActions {
         return this;
     }
 
-    // Opens the Select2 v4 widget belonging to a field, by its label. Shared by
-    // the account picker and by ordinary dropdowns: both are the same widget,
-    // they differ only in how the caller then matches an option (digits for an
-    // account, text for a dropdown). The list renders at <body> level, so
-    // callers read the options page-wide, not inside the field container.
-    private void openSelect2(String label) {
-        Locator container = findValueElement(label);
-        container.locator(".select2-selection").click();
-        page.waitForSelector("li.select2-results__option");
-    }
-
-    /** Whether this label belongs to a Select2 v4 dropdown. Does not wait. */
-    private boolean isSelect2Field(String label) {
-        try {
-            return findValueElement(label).locator(".select2-selection").count() > 0;
-        } catch (RuntimeException notAField) {
-            return false;
-        }
-    }
-
-    /**
-     * The search box of this label's dropdown when its list is OPEN, else
-     * null. Select2 v4 renders the open list at body level and marks its
-     * container "--open"; one list is open at a time.
-     */
-    private Locator openSelect2Search(String label) {
-        if (!isSelect2Field(label)) {
-            return null;
-        }
-        Locator search = page.locator(".select2-container--open .select2-search__field");
-        return (search.count() > 0 && search.first().isVisible()) ? search.first() : null;
-    }
-
     /** Slow enough for the widget's keyup filter to keep up; same as masked typing. */
     private static final double TYPE_DELAY_MS = 60;
-
 
     // ============ STEPS WHOSE WORK LIVES IN THE CLASSES ABOVE ============
 
@@ -767,6 +709,30 @@ public class CommonActions {
 
     private Locator findValueElement(String label) {
         return fields.findValueElement(label);
+    }
+
+    private void selectFromSelect2(String optionText, String label) {
+        dropdowns.selectFromSelect2(optionText, label);
+    }
+
+    private void openSelect2(String label) {
+        dropdowns.openSelect2(label);
+    }
+
+    private void awaitButtonOrLabel(String label, Locator target) {
+        dropdowns.awaitButtonOrLabel(label, target);
+    }
+
+    private boolean awaitSelect2Field(String label) {
+        return dropdowns.awaitSelect2Field(label);
+    }
+
+    private boolean isSelect2Field(String label) {
+        return dropdowns.isSelect2Field(label);
+    }
+
+    private Locator openSelect2Search(String label) {
+        return dropdowns.openSelect2Search(label);
     }
 
     private AssertionError missingClickTarget(String label, Throwable cause) {

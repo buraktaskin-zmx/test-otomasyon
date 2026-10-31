@@ -159,7 +159,8 @@ All test-side code lives in `uptest-executor/src/main/java/` under the package
   CommonActions keeps every public step and hands the work to package-private
   parts by purpose: `DatePicker` (calendar + masked typing), `ErrorDialogs`
   (the modal guard), `ValueFields` (label -> value element), `Verifications`
-  (the verify steps), `RadioActions` (select row / choose / check), `Uploads`,
+  (the verify steps), `RadioActions` (select row / choose / check), `Dropdowns`
+  (Select2: open, choose, search), `Uploads`,
   `FailureExplanations` ("not found, the screen has these"). A lesson below
   that names `CommonActions.x` means the method now living in one of these.
 - Components: `PW/components/` — grid/Grid+GridElement, selectbox/account,

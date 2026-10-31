@@ -440,9 +440,16 @@ public class PromptBuilder {
                  keep only the press that went through;
                - a "Tamam" that closed an error dialog;
                - typing into a dropdown's search box, and re-opening the same
-                 dropdown: opening it and clicking an option is ONE
-                 `select "<option>" from "<label>"`;
-               - a click into a text box before typing into it;
+                 dropdown, WHEN AN OPTION WAS THEN CLICKED: opening it and
+                 clicking an option is ONE `select "<option>" from "<label>"`;
+               - a click into a text box before typing into it. A click that
+                 OPENS A DROPDOWN is not that — see the next rule.
+               When the walk SEARCHED a dropdown and chose nothing (opened it,
+               typed into its search box, then only looked at the list), that
+               search IS the scenario: write exactly
+                 `click "<label>"` then `enter "<label>" "<what was typed>"`,
+               both, in that order, with the dropdown's own label. The `enter`
+               is refused without the `click` right before it.
                - the calendar icon ("...") and a clicked day number: a date is ONE
                  `enter date "<label>" "<gg/aa/yyyy>"`;
                - key presses (Tab, Escape, Delete, Control+a);
