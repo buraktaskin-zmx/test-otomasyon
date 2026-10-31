@@ -201,8 +201,14 @@ final class DatePicker {
             }
             System.out.println("[uptest] takvim: kapatildi (" + how + ") ama yeniden acildi — tur " + round);
         }
-        throw new AssertionError("Takvim kapatildikca yeniden aciliyor; altindaki alanlara tiklanamaz."
-                + " (jQuery hide, Escape, Tamam ve dis tiklama denendi; odak tarih kutusundan alindi.)");
+        // Reported, not thrown. This runs ahead of EVERY action, so a wrong
+        // "the calendar is up" stops every step of a run — which is what
+        // happened when an empty calendar div counted as an open one. A
+        // calendar that really covers a field still fails the next click, and
+        // Playwright then names the element that intercepted it.
+        System.out.println("[uptest] takvim: kapatilamadi (jQuery hide, Escape, Tamam ve dis tiklama"
+                + " denendi); adim devam ediyor — ortulen bir alana tiklanirsa o adim ortuyu adiyla"
+                + " bildirecek");
     }
 
     /**
@@ -285,8 +291,23 @@ final class DatePicker {
     private static final int PICKER_CLOSE_ROUNDS = 3;
     private static final double PICKER_SETTLE_MS = 400;
 
+    /**
+     * A calendar is up when its DAY GRID is on screen — not merely its div.
+     *
+     * jQuery UI appends {@code #ui-datepicker-div} to the page as soon as any
+     * date field is initialised, EMPTY and without display:none; its border
+     * alone gives it a box, so Playwright calls it visible. On Firma Fatura
+     * İşlemleri (date fields in the collapsed "Detaylı Arama") that empty div
+     * read as an open calendar, nothing could "close" it because nothing was
+     * open — the log said "kapatildi (hicbiri)" three times — and the guard
+     * then failed `select row "ccsdf"` on a screen with no calendar at all.
+     */
     private static boolean isUp(Locator picker) {
-        return picker.count() > 0 && picker.first().isVisible();
+        if (picker.count() == 0 || !picker.first().isVisible()) {
+            return false;
+        }
+        Locator grid = picker.first().locator(".ui-datepicker-calendar");
+        return grid.count() > 0 && grid.first().isVisible();
     }
 
     /** Waits a moment for the calendar's close animation; true once it is gone. */
