@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { tokenizeGherkinLine } from "../lib/gherkin";
 import type { ScenarioDoc } from "../lib/scenarioProse";
 import type { ScenarioDetail as Detail, ScenarioEdit, SourceChange } from "../api/types";
@@ -437,15 +438,18 @@ function DocList({
 export function DocEditor({
   doc,
   onChange,
+  afterTitle,
 }: {
   doc: ScenarioDoc;
   onChange: (doc: ScenarioDoc) => void;
+  /** Shown right under the name -- the new-scenario form's "Başlık". */
+  afterTitle?: ReactNode;
 }) {
   const set = <K extends keyof ScenarioDoc>(key: K, value: ScenarioDoc[K]) =>
     onChange({ ...doc, [key]: value });
   return (
     <div className="sd-doc">
-      <label className="sd-doc-label" htmlFor="sdTitle">Başlık</label>
+      <label className="sd-doc-label" htmlFor="sdTitle">İsim</label>
       <input
         id="sdTitle"
         className="search"
@@ -453,6 +457,7 @@ export function DocEditor({
         placeholder="Yeni liste bilgileri onay özetinde görünür"
         onChange={(event) => set("title", event.target.value)}
       />
+      {afterTitle}
       <ListEditor label="Kural" items={doc.rules} placeholder="R-YL-006"
                   onChange={(items) => set("rules", items)} />
       <ListEditor label="Ön koşul" items={doc.preconditions}
@@ -482,7 +487,7 @@ function TextEditor({
 }) {
   return (
     <div className="sd-doc-block">
-      <span className="sd-doc-label">{label} <small>(her satır bir madde)</small></span>
+      <span className="sd-doc-label">{label}</span>
       <textarea
         className="search sd-edit sd-edit-medium"
         value={items.join("\n")}

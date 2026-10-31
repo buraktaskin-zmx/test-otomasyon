@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { DocEditor } from "./ScenarioDetail";
+import { HeadingCombobox } from "./HeadingCombobox";
 import { writeDoc } from "../lib/scenarioProse";
 import type { ScenarioDoc } from "../lib/scenarioProse";
+import type { ScenarioHeading } from "../api/types";
 
 /*
   "+" beside a screen: a new scenario, written either as the five
@@ -21,19 +23,24 @@ function skeleton(screen: string, title: string): string {
 
 export function NewScenario({
   screen,
+  headings,
   onSave,
   onCancel,
 }: {
   /** The screen's display name, used for the Feature line. */
   screen: string;
-  /** Resolves to true when the file was created. */
-  onSave: (feature: string) => Promise<boolean>;
+  /** The screen's own headings, offered in "Başlık". */
+  headings: ScenarioHeading[];
+  /** Resolves to true when the file was created. `heading` is a name, blank
+   *  for başlıksız; a new name is made into a heading by the server. */
+  onSave: (feature: string, heading: string) => Promise<boolean>;
   onCancel: () => void;
 }) {
   const [mode, setMode] = useState<"prose" | "gherkin">("prose");
   const [doc, setDoc] = useState<ScenarioDoc>(EMPTY);
   const [name, setName] = useState("");
   const [steps, setSteps] = useState("");
+  const [heading, setHeading] = useState("");
   const [saving, setSaving] = useState(false);
 
   const title = mode === "prose" ? doc.title : name;
@@ -50,7 +57,7 @@ export function NewScenario({
 
   const save = async () => {
     setSaving(true);
-    await onSave(build());
+    await onSave(build(), heading.trim());
     setSaving(false);
   };
 
@@ -73,7 +80,11 @@ export function NewScenario({
       </div>
 
       {mode === "prose" ? (
-        <DocEditor doc={doc} onChange={setDoc} />
+        <DocEditor
+          doc={doc}
+          onChange={setDoc}
+          afterTitle={<HeadingCombobox value={heading} headings={headings} onChange={setHeading} />}
+        />
       ) : (
         <div className="sd-doc">
           <input
@@ -82,6 +93,7 @@ export function NewScenario({
             placeholder="Senaryo adı"
             onChange={(event) => setName(event.target.value)}
           />
+          <HeadingCombobox value={heading} headings={headings} onChange={setHeading} />
           <textarea
             className="search sd-edit"
             spellCheck={false}

@@ -20,6 +20,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
@@ -330,6 +331,49 @@ public class ProductService {
         return store.move(safe(app), product, path, toProduct, toFlow);
     }
 
+    /** Every "Başlık" of one product's screens, each screen's in creation order. */
+    public List<ScenarioStore.Heading> headings(String app, String product) {
+        return store.headings(safe(app), product);
+    }
+
+    /** {@link #addHeading}: the heading, or why there is none. Exactly one is non-null. */
+    public record HeadingResult(ScenarioStore.HeadingAdded added, String refused) {
+    }
+
+    /**
+     * "+ Başlık": a heading on one screen. A name the screen already has
+     * (case and I/İ/ı ignored) answers with that heading rather than a twin.
+     */
+    public HeadingResult addHeading(String app, String product, String flow, String name) {
+        String cleanName = name == null ? "" : name.trim().replaceAll("\\s+", " ");
+        if (cleanName.isEmpty() || cleanName.length() > 80) {
+            return new HeadingResult(null, "Başlık adı 1-80 karakter olmalı");
+        }
+        if (flow == null || flow.isBlank()) {
+            return new HeadingResult(null, "Başlık bir ekrana eklenir; ekran seçilmedi");
+        }
+        return store.addHeading(safe(app), product, flow, cleanName)
+                .map(added -> new HeadingResult(added, null))
+                .orElse(new HeadingResult(null, "Ekran tanımlı değil: " + flow));
+    }
+
+    /**
+     * Groups a scenario under one of its screen's headings.
+     *
+     * @param headingId null or blank for "Başlıksız"
+     */
+    public Created assignHeading(String app, String product, String path, String headingId) {
+        UUID id = null;
+        if (headingId != null && !headingId.isBlank()) {
+            try {
+                id = UUID.fromString(headingId.trim());
+            } catch (IllegalArgumentException notAnId) {
+                return new Created(null, "Geçersiz başlık: " + headingId);
+            }
+        }
+        return store.assignHeading(safe(app), product, path, id);
+    }
+
     /**
      * A NEW scenario on a screen, named the way the files were: the next
      * two-digit number on that screen plus the title's slug
@@ -338,6 +382,18 @@ public class ProductService {
      * @return the new scenario's path
      */
     public Created createScenario(String app, String product, String flow, String text) {
+        return createScenario(app, product, flow, text, null);
+    }
+
+    /**
+     * {@link #createScenario(String, String, String, String)} under a
+     * heading NAME: an existing heading of that screen when one matches,
+     * otherwise a new one -- made only once the scenario itself has passed
+     * every check, so a refused scenario leaves no empty heading behind.
+     * Blank means başlıksız.
+     */
+    public Created createScenario(String app, String product, String flow, String text,
+                                  String heading) {
         Optional<ScenarioStore.Menu> menu = store.menu(safe(app), product == null ? "" : product);
         if (menu.isEmpty()) {
             return new Created(null, "Ürün bulunamadı: " + app + "/" + product);
@@ -372,7 +428,15 @@ public class ProductService {
         // the rules as they stand, so that IS the reviewed state.
         List<SourceSnapshot.Source> reviewed =
                 SourceSnapshot.capture(fields, load(app, product).orElse(null));
-        return store.createScenario(safe(app), product, flow, fileName, fields, null, reviewed)
+        UUID headingId = null;
+        if (heading != null && !heading.isBlank()) {
+            HeadingResult made = addHeading(app, product, flow, heading);
+            if (made.refused() != null) {
+                return new Created(null, made.refused());
+            }
+            headingId = made.added().heading().id();
+        }
+        return store.createScenario(safe(app), product, flow, fileName, fields, null, reviewed, headingId)
                 .map(stored -> new Created(stored.path(), null))
                 .orElse(new Created(null, "Ekran tanımlı değil: " + flow));
     }

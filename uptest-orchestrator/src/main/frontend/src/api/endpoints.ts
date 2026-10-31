@@ -23,6 +23,7 @@ import type {
   SaveUserRequest,
   ScenarioDetail,
   ScenarioEdit,
+  ScenarioHeading,
   TestUser,
   TestUsersResponse,
   RunDetail,
@@ -198,12 +199,34 @@ export const addScreen = (app: string, product: string, name: string) =>
     { name },
   );
 
-/** "+" beside a screen: a new scenario file there; answers with its path. */
-export const createScenarioFile = (app: string, product: string, flow: string, feature: string) =>
+/** "+" beside a screen: a new scenario file there; answers with its path.
+ *  `heading` is a "Başlık" NAME -- an existing one of that screen, or a new
+ *  one made on save; blank leaves the scenario başlıksız. */
+export const createScenarioFile = (app: string, product: string, flow: string, feature: string,
+                                   heading = "") =>
   api<{ path: string }>(
     "POST",
     "/api/v1/products/" + encodeURIComponent(app) + "/" + encodeURIComponent(product) + "/scenarios",
-    { flow, feature },
+    { flow, feature, heading },
+  );
+
+/** "+ Başlık": a heading on one screen. A name the screen already has
+ *  answers with that heading (`existed: true`) instead of a twin. */
+export const createHeading = (app: string, product: string, flow: string, name: string) =>
+  api<ScenarioHeading & { existed: boolean }>(
+    "POST",
+    "/api/v1/products/" + encodeURIComponent(app) + "/" + encodeURIComponent(product) + "/headings",
+    { flow, name },
+  );
+
+/** The ⇄ menu's "Başlık" half: `heading` null means "Başlıksız". */
+export const setScenarioHeading = (app: string, product: string, path: string,
+                                   heading: string | null) =>
+  api<{ path: string }>(
+    "POST",
+    "/api/v1/products/" + encodeURIComponent(app) + "/" + encodeURIComponent(product)
+      + "/scenario/heading?path=" + encodeURIComponent(path),
+    { heading },
   );
 
 /** "Taşı": moves a scenario to another declared screen of the same app. */

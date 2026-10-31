@@ -7,8 +7,8 @@ import { ScenarioTable } from "../../product/ScenarioTable";
 import type { useProducts } from "../../hooks/useProducts";
 import type { useTestUsers } from "../../hooks/useTestUsers";
 import {
-  BROWSER_CLOSED, addScreen, createMenu, createScenarioFile, explore, exportScenarios, moveScenario,
-  tapeGherkin,
+  BROWSER_CLOSED, addScreen, createHeading, createMenu, createScenarioFile, explore, exportScenarios,
+  moveScenario, setScenarioHeading, tapeGherkin,
 } from "../../api/endpoints";
 import type { MoveTarget } from "../../product/ScenarioTable";
 import { NewScenario } from "../../product/NewScenario";
@@ -171,6 +171,32 @@ export function ProductPanel({
     toast("Senaryo " + target.label + " ekranına taşındı");
   };
 
+  /* "+ Başlık": a heading on the selected screen. A name the screen already
+     has comes back as that heading, so there is nothing to refuse. */
+  const addHeading = async (name: string): Promise<boolean> => {
+    if (!selection?.flow) return false;
+    const result = await createHeading(selection.app, selection.product, selection.flow, name);
+    if (!result.ok) {
+      toast("Başlık eklenemedi: " + result.error, true);
+      return false;
+    }
+    await products.openRegistry(selection.app, selection.product);
+    toast(result.body.existed
+      ? "“" + result.body.name + "” başlığı zaten vardı"
+      : "“" + result.body.name + "” başlığı eklendi");
+    return true;
+  };
+
+  const assignHeading = async (row: { path: string }, heading: string | null) => {
+    if (!selection) return;
+    const result = await setScenarioHeading(selection.app, selection.product, row.path, heading);
+    if (!result.ok) {
+      toast("Başlık değiştirilemedi: " + result.error, true);
+      return;
+    }
+    await products.openRegistry(selection.app, selection.product);
+  };
+
   /* Changing screen closes whatever scenario was open. Without this the
      detail view would survive into a screen the file does not belong to,
      and the breadcrumb above it would be lying. */
@@ -190,6 +216,11 @@ export function ProductPanel({
   const rows = selection?.flow
     ? (registry?.scenarios ?? []).filter((row) => row.flow === selection.flow)
     : registry?.scenarios ?? [];
+
+  /* Headings belong to a screen: the selected one's, or every screen's when
+     the whole menu is listed. `?? []` for a server that predates them. */
+  const headings = (registry?.headings ?? [])
+    .filter((heading) => !selection?.flow || heading.flow === selection.flow);
 
   /* AI ile çalıştır: the same POST /explore as Ekran Keşfi's Serbest Gözlem.
      What that panel asks a person to type -- address, login, main menu, which
@@ -479,10 +510,11 @@ export function ProductPanel({
               {creating && selection.flow ? (
                 <NewScenario
                   screen={screen?.name || selection.flow}
+                  headings={headings}
                   onCancel={() => setCreating(false)}
-                  onSave={async (feature) => {
+                  onSave={async (feature, heading) => {
                     const result = await createScenarioFile(
-                      selection.app, selection.product, selection.flow!, feature);
+                      selection.app, selection.product, selection.flow!, feature, heading);
                     if (!result.ok) {
                       toast("Kaydedilemedi: " + result.error, true);
                       return false;
@@ -532,7 +564,11 @@ export function ProductPanel({
               ) : (
                 <ScenarioTable
                   scenarios={rows}
+                  headings={headings}
                   busy={busy}
+                  canAddHeading={Boolean(selection.flow)}
+                  onAddHeading={addHeading}
+                  onSetHeading={(scenario, heading) => void assignHeading(scenario, heading)}
                   onOpen={(scenario) =>
                     setSelection({ ...selection, flow: scenario.flow, path: scenario.path })}
                   targetsFor={targetsFor}

@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
@@ -84,7 +85,15 @@ public class ProductController {
     public record MoveTarget(String product, String flow) {
     }
 
-    public record NewScenario(String flow, String feature) {
+    /** {@code heading}: a "Başlık" NAME, optional -- blank means başlıksız. */
+    public record NewScenario(String flow, String feature, String heading) {
+    }
+
+    public record NewHeading(String flow, String name) {
+    }
+
+    /** {@code heading}: a heading id, or null for "Başlıksız". */
+    public record HeadingChoice(String heading) {
     }
 
     /** "+" beside a screen: a new scenario file there (see ProductService.createScenario). */
@@ -92,7 +101,8 @@ public class ProductController {
     public ResponseEntity<?> createScenario(@PathVariable String app, @PathVariable String product,
                                             @RequestBody NewScenario body) {
         ProductService.Created created = products.createScenario(app, product,
-                body == null ? null : body.flow(), body == null ? null : body.feature());
+                body == null ? null : body.flow(), body == null ? null : body.feature(),
+                body == null ? null : body.heading());
         if (created.refused() != null) {
             return ResponseEntity.badRequest().body(Map.of("error", created.refused()));
         }
@@ -110,6 +120,45 @@ public class ProductController {
             return ResponseEntity.badRequest().body(Map.of("error", moved.refused()));
         }
         return ResponseEntity.ok(Map.of("path", moved.key()));
+    }
+
+    /**
+     * "+ Başlık": a heading on one screen. 201 for a new one, 200 when the
+     * screen already had a heading of that name -- the body is the heading
+     * either way, so the caller need not care which.
+     */
+    @PostMapping("/{app}/{product}/headings")
+    public ResponseEntity<?> addHeading(@PathVariable String app, @PathVariable String product,
+                                        @RequestBody NewHeading body) {
+        ProductService.HeadingResult result = products.addHeading(app, product,
+                body == null ? null : body.flow(), body == null ? null : body.name());
+        if (result.refused() != null) {
+            return ResponseEntity.badRequest().body(Map.of("error", result.refused()));
+        }
+        Map<String, Object> heading = heading(result.added().heading());
+        heading.put("existed", result.added().existed());
+        return ResponseEntity.status(result.added().existed() ? 200 : 201).body(heading);
+    }
+
+    /** The ⇄ menu's "Başlık" half: groups a scenario under a heading of its screen, or none. */
+    @PostMapping("/{app}/{product}/scenario/heading")
+    public ResponseEntity<?> assignHeading(@PathVariable String app, @PathVariable String product,
+                                           @RequestParam String path,
+                                           @RequestBody HeadingChoice body) {
+        ProductService.Created assigned = products.assignHeading(app, product, path,
+                body == null ? null : body.heading());
+        if (assigned.refused() != null) {
+            return ResponseEntity.badRequest().body(Map.of("error", assigned.refused()));
+        }
+        return ResponseEntity.ok(Map.of("path", assigned.key()));
+    }
+
+    private static Map<String, Object> heading(ScenarioStore.Heading heading) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("id", heading.id().toString());
+        row.put("flow", heading.flow());
+        row.put("name", heading.name());
+        return row;
     }
 
     /** "+ Ekran ekle": declares a screen on this product (see ProductService.addScreen). */
@@ -164,9 +213,13 @@ public class ProductController {
 
         Map<String, Object> body = new LinkedHashMap<>(summary(model, knownCatalogs));
         body.put("screens", screens(model, cards, knownCatalogs));
+        body.put("headings", products.headings(app, product).stream()
+                .map(ProductController::heading).toList());
         body.put("scenarios", registered.stream().map(entry -> {
             Map<String, Object> row = row(entry.card(), model,
                     products.changes(entry.stored(), model));
+            UUID heading = entry.stored().headingId();
+            row.put("heading", heading == null ? null : heading.toString());
             // The Ön koşul column shows these, item by item, as written --
             // so the Açıklama column leaves them out.
             row.put("preconditions", entry.fields().preconditions());

@@ -3,6 +3,8 @@ package orchestrator.product;
 import orchestrator.persistence.MainMenuEntity;
 import orchestrator.persistence.MainMenuRepository;
 import orchestrator.persistence.ScenarioEntity;
+import orchestrator.persistence.ScenarioHeadingEntity;
+import orchestrator.persistence.ScenarioHeadingRepository;
 import orchestrator.persistence.ScenarioRepository;
 import orchestrator.persistence.ScreenEntity;
 import orchestrator.persistence.ScreenRepository;
@@ -14,6 +16,7 @@ import tools.jackson.databind.ObjectMapper;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -45,13 +48,28 @@ public class ScenarioStore {
                        String description, List<Screen> screens) {
     }
 
+    /**
+     * @param headingId the screen's "Başlık" it is grouped under; null when
+     *                  it has none, and also when the stored id names no
+     *                  heading of its own screen -- an id left dangling
+     *                  reads as "başlıksız", never as an error
+     */
     public record Stored(UUID id, long version, String flow, String fileName,
                          ScenarioFields fields, String sourcePath,
-                         List<SourceSnapshot.Source> reviewed, Instant reviewedAt) {
+                         List<SourceSnapshot.Source> reviewed, Instant reviewedAt,
+                         UUID headingId) {
 
         public String path() {
             return flow + "/" + fileName;
         }
+    }
+
+    /** A "Başlık" on one screen. */
+    public record Heading(UUID id, String flow, String name) {
+    }
+
+    /** {@link #addHeading}: the heading, and whether it was already there. */
+    public record HeadingAdded(Heading heading, boolean existed) {
     }
 
     public enum Outcome { SAVED, NOT_FOUND, CONFLICT }
@@ -62,15 +80,18 @@ public class ScenarioStore {
     private final MainMenuRepository menus;
     private final ScreenRepository screens;
     private final ScenarioRepository scenarios;
+    private final ScenarioHeadingRepository headings;
 
     /** The Boot-managed Jackson mapper, injected as RunStore's is. */
     private final ObjectMapper mapper;
 
     public ScenarioStore(MainMenuRepository menus, ScreenRepository screens,
-                         ScenarioRepository scenarios, ObjectMapper mapper) {
+                         ScenarioRepository scenarios, ScenarioHeadingRepository headings,
+                         ObjectMapper mapper) {
         this.menus = menus;
         this.screens = screens;
         this.scenarios = scenarios;
+        this.headings = headings;
         this.mapper = mapper;
     }
 
@@ -99,9 +120,31 @@ public class ScenarioStore {
         if (flows.isEmpty()) {
             return List.of();
         }
+        Map<UUID, UUID> headingScreens = headings.findByScreenIdInOrderByCreatedAtAscIdAsc(flows.keySet())
+                .stream().collect(Collectors.toMap(ScenarioHeadingEntity::getId,
+                        ScenarioHeadingEntity::getScreenId));
         return scenarios.findByScreenIdInOrderByFileNameAsc(flows.keySet()).stream()
-                .map(entity -> stored(entity, flows.get(entity.getScreenId())))
+                .map(entity -> stored(entity, flows.get(entity.getScreenId()),
+                        ownHeading(entity, headingScreens)))
                 .sorted((a, b) -> a.path().compareTo(b.path()))
+                .toList();
+    }
+
+    /** Every screen's headings in one menu, each screen's in the order they were made. */
+    @Transactional(readOnly = true)
+    public List<Heading> headings(String app, String key) {
+        Optional<MainMenuEntity> menu = menus.findByAppAndProductKey(app, key);
+        if (menu.isEmpty()) {
+            return List.of();
+        }
+        Map<UUID, String> flows = screens.findByMenuIdOrderBySortOrderAscFlowAsc(menu.get().getId())
+                .stream().collect(Collectors.toMap(ScreenEntity::getId, ScreenEntity::getFlow));
+        if (flows.isEmpty()) {
+            return List.of();
+        }
+        return headings.findByScreenIdInOrderByCreatedAtAscIdAsc(flows.keySet()).stream()
+                .map(heading -> new Heading(heading.getId(), flows.get(heading.getScreenId()),
+                        heading.getName()))
                 .toList();
     }
 
@@ -119,6 +162,65 @@ public class ScenarioStore {
     @Transactional(readOnly = true)
     public Optional<Stored> scenario(String app, String key, String path) {
         return locate(app, key, path).map(found -> stored(found.entity, found.flow));
+    }
+
+    /**
+     * A heading on one screen. A name already there -- compared with case
+     * and the Turkish I/İ/ı ignored -- is handed back instead of a second one
+     * being made.
+     *
+     * @return empty when the screen does not exist
+     */
+    @Transactional
+    public Optional<HeadingAdded> addHeading(String app, String key, String flow, String name) {
+        return screen(app, key, flow).map(screen -> {
+            String wanted = headingKey(name);
+            for (ScenarioHeadingEntity existing : headings.findByScreenIdOrderByCreatedAtAscIdAsc(screen.getId())) {
+                if (headingKey(existing.getName()).equals(wanted)) {
+                    return new HeadingAdded(new Heading(existing.getId(), flow, existing.getName()), true);
+                }
+            }
+            ScenarioHeadingEntity saved = headings.save(new ScenarioHeadingEntity(screen.getId(), name));
+            return new HeadingAdded(new Heading(saved.getId(), flow, saved.getName()), false);
+        });
+    }
+
+    /**
+     * Groups a scenario under one of its OWN screen's headings, or under none.
+     *
+     * @param headingId null for "Başlıksız"
+     * @return the scenario's path, or null with {@code refused} explaining why
+     */
+    @Transactional
+    public ProductService.Created assignHeading(String app, String key, String path, UUID headingId) {
+        Optional<Located> found = locate(app, key, path);
+        if (found.isEmpty()) {
+            return new ProductService.Created(null, "Senaryo bulunamadı: " + path);
+        }
+        ScenarioEntity entity = found.get().entity;
+        if (headingId != null) {
+            Optional<ScenarioHeadingEntity> heading = headings.findById(headingId);
+            if (heading.isEmpty() || !heading.get().getScreenId().equals(entity.getScreenId())) {
+                return new ProductService.Created(null, "Bu ekranda böyle bir başlık yok");
+            }
+        }
+        entity.setHeadingId(headingId);
+        entity.touch();
+        return new ProductService.Created(path, null);
+    }
+
+    /**
+     * The form a heading name is compared in: spaces collapsed, lower case,
+     * and I/İ/ı/i all one letter. "Fatura İptal", "FATURA IPTAL" and
+     * "fatura iptal" are the same heading.
+     */
+    static String headingKey(String name) {
+        if (name == null) {
+            return "";
+        }
+        return name.trim().replaceAll("\\s+", " ")
+                .toLowerCase(Locale.forLanguageTag("tr-TR"))
+                .replace('ı', 'i');
     }
 
     /** The file names already taken on one screen, to number a new one. */
@@ -159,8 +261,24 @@ public class ScenarioStore {
     public Optional<Stored> createScenario(String app, String key, String flow, String fileName,
                                            ScenarioFields fields, String sourcePath,
                                            List<SourceSnapshot.Source> reviewed) {
+        return createScenario(app, key, flow, fileName, fields, sourcePath, reviewed, null);
+    }
+
+    /**
+     * {@link #createScenario(String, String, String, String, ScenarioFields, String, List)},
+     * grouped under {@code headingId} -- which must be a heading of that
+     * screen, or it is ignored and the scenario starts out başlıksız.
+     */
+    @Transactional
+    public Optional<Stored> createScenario(String app, String key, String flow, String fileName,
+                                           ScenarioFields fields, String sourcePath,
+                                           List<SourceSnapshot.Source> reviewed, UUID headingId) {
         return screen(app, key, flow).map(screen -> {
             ScenarioEntity entity = new ScenarioEntity(screen.getId(), fileName, sourcePath);
+            if (headingId != null && headings.findById(headingId)
+                    .filter(heading -> heading.getScreenId().equals(screen.getId())).isPresent()) {
+                entity.setHeadingId(headingId);
+            }
             write(entity, fields);
             if (reviewed != null) {
                 entity.setReviewedSources(toJson(reviewed));
@@ -271,6 +389,8 @@ public class ScenarioStore {
                     "Hedef ekranda aynı adlı bir senaryo var: " + entity.getFileName());
         }
         entity.setScreenId(target.get().getId());
+        // Headings belong to a screen: the old one's means nothing here.
+        entity.setHeadingId(null);
         entity.touch();
         return new ProductService.Created(toFlow + "/" + entity.getFileName(), null);
     }
@@ -305,9 +425,23 @@ public class ScenarioStore {
     }
 
     private Stored stored(ScenarioEntity entity, String flow) {
+        UUID heading = entity.getHeadingId() == null ? null : headings.findById(entity.getHeadingId())
+                .filter(found -> found.getScreenId().equals(entity.getScreenId()))
+                .map(ScenarioHeadingEntity::getId)
+                .orElse(null);
+        return stored(entity, flow, heading);
+    }
+
+    private Stored stored(ScenarioEntity entity, String flow, UUID heading) {
         return new Stored(entity.getId(), entity.getVersion() == null ? 0 : entity.getVersion(),
                 flow, entity.getFileName(), fieldsOf(entity), entity.getSourcePath(),
-                fromJson(entity.getReviewedSources()), entity.getReviewedAt());
+                fromJson(entity.getReviewedSources()), entity.getReviewedAt(), heading);
+    }
+
+    /** The scenario's heading when it is one of its own screen's, else null. */
+    private static UUID ownHeading(ScenarioEntity entity, Map<UUID, UUID> headingScreens) {
+        UUID heading = entity.getHeadingId();
+        return heading != null && entity.getScreenId().equals(headingScreens.get(heading)) ? heading : null;
     }
 
     private static final TypeReference<List<SourceSnapshot.Source>> SOURCES =

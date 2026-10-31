@@ -368,6 +368,15 @@ export interface RegisteredScenario {
   preconditions: string[];
   /** Any rule or alias this scenario names has moved since it was reviewed. */
   stale: boolean;
+  /** The id of the screen's "Başlık" it is grouped under; null = başlıksız. */
+  heading: string | null;
+}
+
+/** A "Başlık" -- a named group of scenarios on ONE screen. */
+export interface ScenarioHeading {
+  id: string;
+  flow: string;
+  name: string;
 }
 
 /** The natural-language half of a scenario, as the database keeps it. */
@@ -457,6 +466,8 @@ export interface ProductScreen {
 
 export interface ProductRegistry extends ProductSummary {
   screens: ProductScreen[];
+  /** Every screen's headings, each screen's in the order they were made. */
+  headings: ScenarioHeading[];
   scenarios: RegisteredScenario[];
 }
 

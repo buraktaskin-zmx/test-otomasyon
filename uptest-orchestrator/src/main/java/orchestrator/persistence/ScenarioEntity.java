@@ -48,6 +48,14 @@ public class ScenarioEntity {
     @Column(name = "file_name", nullable = false, length = 160)
     private String fileName;
 
+    /**
+     * The screen's "Başlık" this scenario is grouped under, or null for none.
+     * An id that names no heading of the scenario's own screen also reads as
+     * none -- see ScenarioStore.scenarios.
+     */
+    @Column(name = "heading_id")
+    private UUID headingId;
+
     @Column(name = "title", nullable = false, length = Length.LONG32)
     private String title;
 
@@ -129,6 +137,14 @@ public class ScenarioEntity {
 
     public String getFileName() {
         return fileName;
+    }
+
+    public UUID getHeadingId() {
+        return headingId;
+    }
+
+    public void setHeadingId(UUID headingId) {
+        this.headingId = headingId;
     }
 
     public String getTitle() {
