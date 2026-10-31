@@ -1083,6 +1083,12 @@ and leave each independently runnable.
 **All new UI work goes to `uptest-orchestrator/src/main/frontend/`** — React 19
 + TypeScript, built by Vite. Not to `static/app.js`.
 
+**Before touching colour, type or any visual rule, read
+[`uptest-orchestrator/src/main/frontend/DESIGN.md`](uptest-orchestrator/src/main/frontend/DESIGN.md)**
+— the light-blue theme's tokens (name, hex, where used), measured contrast
+ratios, radius/shadow/type rules, and the old-variable → new-token mapping.
+`frontend/CLAUDE.md` holds the folder's own coding rules.
+
 ```
 uptest-orchestrator/src/main/
 ├── frontend/                   ← ALL UI WORK HERE

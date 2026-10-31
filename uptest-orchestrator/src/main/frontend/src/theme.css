@@ -498,6 +498,64 @@ body {
 
 .sc-move-empty { padding: var(--space-2) var(--space-3); font-size: var(--text-xs); color: var(--text-faint); }
 
+/* The ⇄ menu's search and its two halves. Capped in height so the row can
+   tell whether it fits below; `is-up` opens it above the button instead. */
+.sc-move-menu { display: flex; flex-direction: column; max-height: 340px; }
+.sc-move-menu.is-up { top: auto; bottom: calc(100% - 4px); }
+.sc-move-search { margin: 0 var(--space-2) var(--space-1); width: auto; }
+.sc-move-list { overflow-y: auto; min-height: 0; }
+.sc-move-check { display: inline-block; width: 1.2em; color: var(--brand); }
+
+/* "+ Başlık" and the summary above the table */
+.sc-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-2) 0;
+}
+.sc-toolbar-add { display: flex; align-items: center; gap: var(--space-2); }
+.sc-heading-input { width: 260px; }
+.sc-toolbar-summary { font-family: var(--mono); font-size: var(--text-xs); color: var(--text-muted); }
+
+/* A heading row: one cell across the table, the whole of it a button */
+.registry tr.sc-group td { padding: 0; background: var(--surface-2); }
+.sc-group-toggle {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+    padding: var(--space-2) var(--space-3);
+    text-align: left;
+}
+.sc-group-toggle:hover { background: var(--brand-tint); }
+.sc-group-caret { width: 1em; font-size: var(--text-xs); color: var(--text-muted); }
+.sc-group-name { font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.sc-group-count { font-size: var(--text-xs); }
+.registry tr.is-grouped > td:first-child { padding-left: calc(var(--space-3) + 18px); }
+
+/* The new-scenario form's "Başlık" combobox */
+.sc-combo { position: relative; }
+.sc-combo-list {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(100% + 2px);
+    z-index: 20;
+    max-height: 240px;
+    overflow-y: auto;
+    margin: 0;
+    padding: var(--space-1) 0;
+    list-style: none;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow);
+}
+.sc-combo-option { padding: var(--space-2) var(--space-3); font-size: var(--text-sm); cursor: pointer; }
+.sc-combo-option.is-active { background: var(--surface-2); }
+.sc-combo-option.is-add { color: var(--brand); border-top: 1px solid var(--border-soft); }
+
 /* The registered file the editor holds after "Git". */
 .editor-file {
     padding: var(--space-1) var(--space-3);
@@ -1727,3 +1785,182 @@ body {
         border-top: 1px solid var(--border-soft);
     }
 }
+
+/* ============================ AÇIK MAVİ TEMA ============================
+
+   The light-blue theme from DESIGN.md. Values are copied from its token
+   table; nothing here is a colour DESIGN.md does not list.
+
+   Done HERE, not in app.css, on purpose:
+   - app.css is shared with the frozen legacy page; this file is React's
+     only, so /index.html keeps its old look and nothing it does can break.
+   - This block is `:root` at specificity (0,1,0) and loads after app.css,
+     so it wins over app.css's light `:root`. app.css's DARK block is
+     `:root[data-theme="dark"]` at (0,2,0) and still wins over this one,
+     so the dark theme is untouched -- DESIGN.md gives no dark values.
+
+   The OLD variable names keep their meaning (§7 of DESIGN.md): every rule
+   that says var(--brand) or var(--text) moves to the new palette without
+   being edited. New names are added only where the palette has no old one.
+
+   Three choices the palette did not make, each stated in DESIGN.md:
+   - --brand-hover / --brand-active are the palette's own darker blues,
+     --link and --primary-ink, rather than invented tones;
+   - --text-faint is --soft (5.0:1), not --empty (3.14:1): it is used for
+     real words all over this UI, and --empty fails AA as text;
+   - --run, --run-bg and --ok-bg are not in the palette and keep their
+     app.css values. */
+:root {
+    /* Zeminler */
+    --bg:           #F4F8FD;
+    --surface:      #FFFFFF;
+    --surface-2:    #FAFCFE;
+    --surface-alt:  #FAFCFE;
+    --surface-head: #F7FAFD;
+
+    /* Mavi aile */
+    --primary:      #1570EF;
+    --primary-ink:  #0B3F8F;
+    --primary-tint: #E7F0FD;
+    --primary-line: #CDE0F8;
+    --primary-soft: #2E90FA;
+    --link:         #1057C4;
+
+    --brand:        var(--primary);
+    --brand-hover:  var(--link);
+    --brand-active: var(--primary-ink);
+    --brand-tint:   var(--primary-tint);
+    --brand-line:   var(--primary-line);
+    --on-brand:     #FFFFFF;
+
+    /* Metin */
+    --ink-title:  #0B2F5E;
+    --ink:        #15263C;
+    --muted:      #3C5876;
+    --soft:       #5B718F;
+    --ink-mono:   #64748B;   /* the palette calls it --mono; that name is a font here */
+    --empty:      #8093AD;
+
+    --text:       var(--ink);
+    --text-muted: var(--muted);
+    --text-faint: var(--soft);
+
+    /* Çizgiler */
+    --border:      #E2EAF4;
+    --border-soft: #EDF2F8;
+    --row-line:    #F1F5FA;
+    --chip-bg:     #F2F6FC;
+
+    /* Durumlar -- independent of the theme, never blue */
+    --fail:    #D92D20;
+    --fail-bg: #FEF3F2;
+    --warn:    #B54708;
+    --warn-bg: #FFFAEB;
+    --skip:    #667085;
+    --skip-bg: #F2F4F7;
+    --ok:      #067647;   /* başarılı as TEXT */
+    --ok-mark: #099250;   /* başarılı as a dot, icon or stripe */
+
+    /* Biçim */
+    --radius:       16px;
+    --radius-sm:    10px;
+    --radius-badge: 7px;
+    --radius-pill:  999px;
+    --shadow: 0 1px 2px rgba(16, 44, 86, .05);
+
+    /* Inter / JetBrains Mono first, the OS faces behind them. Nothing is
+       downloaded (see the TYPOGRAPHY note at the top of this file): a
+       machine without them renders exactly as before. A family change is
+       safe for the editor -- line-height is a ratio of the SIZE. */
+    --sans: "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system,
+            Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: "JetBrains Mono", "Cascadia Mono", ui-monospace, "Consolas", "SF Mono",
+            "Menlo", monospace;
+}
+
+/* The new names, for the dark theme, made of the dark palette's own values
+   -- so a rule below never meets an undefined variable in dark mode, and no
+   dark colour is invented. */
+:root[data-theme="dark"] {
+    --primary:      var(--brand);
+    --primary-ink:  var(--brand);
+    --primary-tint: var(--brand-tint);
+    --primary-line: var(--brand-line);
+    --link:         var(--brand);
+    --ink-title:    var(--text);
+    --soft:         var(--text-muted);
+    --ink-mono:     var(--text-muted);
+    --empty:        var(--text-faint);
+    --surface-alt:  var(--surface-2);
+    --surface-head: var(--surface-2);
+    --row-line:     var(--border-soft);
+    --chip-bg:      var(--surface-2);
+    --ok-mark:      var(--ok);
+}
+
+/* ---- Üst bar: tinted, not a solid blue band ---- */
+.topbar {
+    background: var(--primary-tint);
+    color: var(--text);
+    border-bottom: 1px solid var(--primary-line);
+}
+.brand-mark { width: 24px; height: 24px; border-radius: var(--radius-badge); background: var(--primary); }
+.brand-mark::after { background: var(--on-brand); }
+.brand-name { color: var(--ink-title); font-weight: 700; }
+
+.tab { color: var(--text-muted); }
+.tab:hover { background: var(--surface); color: var(--text); }
+.tab.is-active { background: var(--surface); color: var(--ink-title); box-shadow: var(--shadow); }
+
+.node-pill,
+.icon-btn {
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+}
+.node-pill:hover,
+.icon-btn:hover { background: var(--surface-alt); border-color: var(--primary-line); }
+/* app.css drew these light, for a dark-blue bar; on white they vanished. */
+.dot-up      { background: var(--ok-mark); }
+.dot-down    { background: var(--fail); }
+.dot-unknown { background: var(--skip); }
+
+/* ---- Aktif öğe: tinted ground + a thin stripe on the left, never a block ---- */
+.rail-item.is-active {
+    color: var(--primary-ink);
+    box-shadow: inset 3px 0 0 var(--primary);
+}
+.tree-row.is-active { color: var(--primary-ink); }
+.tree-row.is-screen.is-active {
+    border-left-color: var(--primary);
+    color: var(--primary-ink);
+    font-weight: 600;
+}
+.side-tab.is-active { color: var(--primary-ink); }
+
+.tree-row.tree-add,
+.tree-row.is-screen .tree-plus { color: var(--link); }
+
+.tree-count {
+    padding: 1px 6px;
+    border-radius: var(--radius-badge);
+    background: var(--chip-bg);
+    color: var(--link);
+    font-family: var(--mono);
+}
+
+/* ---- Başlıklar ---- */
+.registry-title { color: var(--ink-title); font-weight: 700; }
+
+/* ---- Tablo ---- */
+.registry th { background: var(--surface-head); color: var(--soft); }
+.registry td { border-bottom-color: var(--row-line); }
+.registry tr.is-clickable:hover { background: var(--surface-alt); }
+.sc-open { color: var(--text); font-size: var(--text-md); }
+.sc-open:hover { color: var(--link); }
+.sc-path { color: var(--ink-mono); font-size: 11.5px; }
+.rule-chip { border-radius: var(--radius-badge); }
+
+/* seed is GREY in this palette. It used --run (blue), which would now be
+   the same blue as the active menu -- the confusion DESIGN.md forbids. */
+.sc-ready.is-seed { color: var(--skip); }
