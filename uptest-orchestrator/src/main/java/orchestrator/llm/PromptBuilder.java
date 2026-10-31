@@ -462,6 +462,14 @@ public class PromptBuilder {
                exactly as the evidence shows it; every value is one the walk typed
                or chose. A checker rejects any quoted text that appears nowhere in
                the walk, the catalog or the analyst's text.
+               DO NOT COPY NAMES FROM A `çalışan:` LINE. That line is what the
+               browser tool ran, and it SHORTENS names it considers unique
+               enough: it wrote 'APPLE A.Ş' for an option the screen prints as
+               "APPLE A.Ş.", and named a grid row '151732 ccsdf 29/10/2026 234,'
+               — neither exists on the screen. Take an option's, a button's or a
+               label's spelling from the CODE DRAFT or the screen labels, and a
+               row from the CODE DRAFT's `select row "…"` (one cell that tells
+               the row apart, e.g. `select row "ccsdf"`).
             E. DATES ARE LITERAL. Write a date exactly as the walk entered it,
                gg/aa/yyyy, with `enter date`. This scenario EXPLICITLY asks for
                absolute dates — do NOT turn them into offsets like "+3 gün"; this
@@ -490,6 +498,10 @@ public class PromptBuilder {
                  by any step: write the visibility check, leave the position out.
                A BEKLENEN line that names nothing checkable (for example a bare
                "oldugunu doğrula") is not a check — skip it.
+               - something CLOSES, DISAPPEARS or is NOT shown ("… penceresi
+                 kapanır", "… görünmez", "… kaybolur"): no step can check an
+                 absence. NEVER write `verify "<it>" text is displayed` for it —
+                 that asserts the OPPOSITE of what the line says. Skip the line.
             I. If the walk never managed something the scenario asks for, do not
                pretend it did: leave the step out. Never write a step for something
                the evidence does not show.

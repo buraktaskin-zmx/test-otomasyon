@@ -139,6 +139,40 @@ final class Dropdowns {
         return (search.count() > 0 && search.first().isVisible()) ? search.first() : null;
     }
 
+    /**
+     * Whether `select` must drive this field as a Select2 — decided only once
+     * the field is on the page.
+     *
+     * `select` used to ask with count(), which does not wait, and it can run
+     * straight after `navigate to` has clicked a menu link and returned. Asked
+     * before the page arrived, it answered "not a Select2" and took the
+     * native branch: a forced selectOption on the hidden select, by EXACT
+     * label. On Firma Fatura İşlemleri that turned "APPLE A.Ş" into 30 s of
+     * "did not find some options" — the Select2 branch, which also accepts a
+     * contained match, would have chosen "APPLE A.Ş." at once.
+     *
+     * Three signs, cheapest first: the widget itself; the marks Select2 puts
+     * on the native select it wraps (measured on this app:
+     * {@code class="select2-hidden-accessible" data-select2-id="firmIdx"});
+     * and, for a select seen before the script ran, a few seconds for the
+     * widget to appear. Only a plain native select pays that last wait.
+     */
+    boolean awaitIsSelect2(String label) {
+        Locator container = findValueElement(label);
+        try {
+            container.locator("select, .select2-selection").first()
+                    .waitFor(new Locator.WaitForOptions()
+                            .setState(WaitForSelectorState.ATTACHED).setTimeout(CLICK_DECIDE_MS));
+        } catch (RuntimeException neverArrived) {
+            return false;
+        }
+        if (container.locator(".select2-selection").count() > 0
+                || container.locator("select.select2-hidden-accessible, select[data-select2-id]").count() > 0) {
+            return true;
+        }
+        return awaitSelect2Field(label);
+    }
+
     private Locator findValueElement(String label) {
         return fields.findValueElement(label);
     }

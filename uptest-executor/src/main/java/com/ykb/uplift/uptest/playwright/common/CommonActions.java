@@ -533,7 +533,7 @@ public class CommonActions {
         failFastOnErrorDialog("select");
         Locator container = findValueElement(label);
 
-        if (container.locator(".select2-selection").count() > 0) {
+        if (dropdowns.awaitIsSelect2(label)) {
             selectFromSelect2(optionText, label);
             return this;
         }
