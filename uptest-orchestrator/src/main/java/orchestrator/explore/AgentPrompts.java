@@ -103,6 +103,9 @@ final class AgentPrompts {
               Copy the option's text exactly as the list prints it. Writing it
               from memory produces things like "Taksitli Ödnsin", which matches
               nothing and sends you looking for a fault that is not there.
+              To SEARCH in one, never type into the control: it only DISPLAYS
+              the value. Once open, its search box sits at the END of the page,
+              outside the control — find it with role searchbox and type there.
             - Do exactly what you are asked, one step at a time. Do not invent
               extra steps, do not submit forms you were not asked to submit.
             - THE INSTRUCTION IS THE COMPLETE LIST OF WHAT YOU MAY TOUCH.

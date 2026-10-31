@@ -99,7 +99,9 @@ And click {string}
   on-screen text. Example:
   `And navigate to "NAKİT YÖNETİMİ" "Ödeme Oluştur / Talep Et"`
 - `click {string}` — click a **button or link** by its visible text. Example:
-  `And click "Devam"`
+  `And click "Devam"`. When no button or link has that text but a
+  **dropdown's label** does, the click opens that dropdown's list — see the
+  search example under `enter`.
 
 ---
 
@@ -113,7 +115,19 @@ And upload {string} {string}
 ```
 
 - `enter {string} {string}` — type a value into a **text input** identified by
-  its field label. Example: `And enter "Fatura No" "FTR-2026-0001"`
+  its field label. Example: `And enter "Fatura No" "FTR-2026-0001"`.
+  Right after a `click` that opened a dropdown, it types into that list's
+  **search box** instead — to test the search, not to choose:
+
+  ```gherkin
+  And click "Firma Seçimi"
+  And enter "Firma Seçimi" "san"
+  Then verify "Sanko DBS Ödemeleri" text is displayed
+  ```
+
+  To CHOOSE an option use `select … from …`. A lone `enter` on a dropdown
+  (no `click` right before it) is refused, so a scenario meant to select
+  cannot pass by typing a search that chooses nothing.
 - `enter date {string} {string}` — set a **date field**, written as what it
   MEANS rather than as one particular day. The value is resolved **when the
   browser runs**, not when the scenario was written.

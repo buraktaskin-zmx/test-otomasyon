@@ -146,8 +146,12 @@ public class ScenarioValidator {
         }
 
         if (everyStepIsKnown && catalog != null) {
+            // The dropdown the PREVIOUS step opened, if it opened one: a
+            // relationship between two steps, which a one-step check cannot see.
+            String opened = null;
             for (Step step : steps) {
-                checkAgainstCatalog(step, vocabulary, catalog, errors);
+                checkAgainstCatalog(step, vocabulary, catalog, errors, opened);
+                opened = openedDropdown(step, vocabulary, catalog);
             }
             checkAssertionsAreEarned(steps, vocabulary, catalog, intent, product, errors);
         }
@@ -267,6 +271,7 @@ public class ScenarioValidator {
         Set<String> written = new HashSet<>();
         String said = intent == null ? "" : fold(intent);
         List<String> known = knownMessages(catalog, product);
+        List<String> printed = printedByCatalog(catalog);
 
         for (Step step : steps) {
             String text = step.getText().trim();
@@ -279,7 +284,7 @@ public class ScenarioValidator {
             if (pattern.startsWith("verify ") && pattern.endsWith("text is displayed")
                     && !match.arguments().isEmpty()) {
                 checkMessageIsCatalogued(text, match.arguments().get(0),
-                        step.getLocation().getLine(), catalog, known, said, errors);
+                        step.getLocation().getLine(), catalog, known, printed, said, errors);
                 continue;
             }
 
@@ -336,8 +341,10 @@ public class ScenarioValidator {
      */
     private static void checkMessageIsCatalogued(String text, String asserted, long line,
                                                  CatalogModel catalog, List<String> known,
-                                                 String said, List<ValidationError> errors) {
-        if (known.stream().anyMatch(message -> fold(message).equals(fold(asserted)))) {
+                                                 List<String> printed, String said,
+                                                 List<ValidationError> errors) {
+        if (known.stream().anyMatch(message -> fold(message).equals(fold(asserted)))
+                || printed.stream().anyMatch(shown -> fold(shown).equals(fold(asserted)))) {
             return;
         }
 
@@ -372,6 +379,30 @@ public class ScenarioValidator {
      * first because a scenario that paraphrases anything usually paraphrased
      * that one.
      */
+    /**
+     * What the CATALOG says the screen prints: every field's label and every
+     * option it offers. Accepted as a displayed text, never offered as the
+     * "nearest" message — that suggestion has to stay a real sentence.
+     *
+     * The product's own `degerler` were admitted for exactly this reason — a
+     * dropdown's options are something the screen prints — and the same option
+     * was still refused when it was written down in the catalog instead. A
+     * search scenario ("type 'san', see Sanko DBS Ödemeleri in the list")
+     * asserts precisely that.
+     */
+    private static List<String> printedByCatalog(CatalogModel catalog) {
+        List<String> printed = new ArrayList<>();
+        if (catalog != null) {
+            for (CatalogModel.CatalogField field : catalog.fields()) {
+                if (field.label() != null && !field.label().isBlank()) {
+                    printed.add(field.label());
+                }
+                field.options().stream().filter(option -> !option.isBlank()).forEach(printed::add);
+            }
+        }
+        return printed;
+    }
+
     private static List<String> knownMessages(CatalogModel catalog, ProductModel product) {
         List<String> known = new ArrayList<>();
         if (catalog != null && catalog.successMessage() != null && !catalog.successMessage().isBlank()) {
@@ -456,8 +487,28 @@ public class ScenarioValidator {
         return null;
     }
 
+    /**
+     * The label of the dropdown this step opens, or null.
+     *
+     * `click` on a dropdown's own label opens its list (the executor does that
+     * when no button or link carries the name), and only then can an `enter`
+     * type into the list's search box.
+     */
+    private static String openedDropdown(Step step, Vocabulary vocabulary, CatalogModel catalog) {
+        Vocabulary.Match match = vocabulary.matchWithArguments(step.getText().trim()).orElse(null);
+        if (match == null || !match.step().pattern().equals("click {string}")
+                || match.arguments().size() != 1) {
+            return null;
+        }
+        String label = match.arguments().get(0);
+        return catalog.field(label)
+                .filter(field -> "dropdown".equals(field.type()) || "account_picker".equals(field.type()))
+                .map(field -> label)
+                .orElse(null);
+    }
+
     private void checkAgainstCatalog(Step step, Vocabulary vocabulary, CatalogModel catalog,
-                                     List<ValidationError> errors) {
+                                     List<ValidationError> errors, String opened) {
         String text = step.getText().trim();
         Vocabulary.Match match = vocabulary.matchWithArguments(text).orElse(null);
         if (match == null) {
@@ -465,6 +516,19 @@ public class ScenarioValidator {
         }
         String pattern = match.step().pattern();
         long line = step.getLocation().getLine();
+
+        // `click "Firma Seçimi"` then `enter "Firma Seçimi" "san"`: the click
+        // opened the list, and this types into its SEARCH box. That is not the
+        // wrong verb for a dropdown, and the text is a search, not an option,
+        // so neither the verb check nor the option check applies. A lone
+        // `enter` on a dropdown is still refused below — the executor fails it
+        // too, because a search that chooses nothing must not pass for a
+        // selection.
+        if (pattern.equals("enter {string} {string}") && opened != null
+                && match.arguments().size() == 2
+                && fold(opened).equals(fold(match.arguments().get(0)))) {
+            return;
+        }
 
         // A `click` of the entry ROW. Both steps are valid patterns and the
         // value is a real catalogued one, so neither the grammar check nor the

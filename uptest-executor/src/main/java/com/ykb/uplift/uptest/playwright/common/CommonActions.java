@@ -184,6 +184,17 @@ public class CommonActions {
                     + String.join(" | ", target.allInnerTexts()));
         }
 
+        // A dropdown is not a button or a link, so `click "Firma Seçimi"` found
+        // nothing to press and spent 30 s proving it — while a person simply
+        // clicks the box and the list opens. Only reached when NO button or
+        // link carries the name right now AND the name labels a Select2 field,
+        // so every click that worked before still takes the path below.
+        if (target.count() == 0 && isSelect2Field(label)) {
+            openSelect2(label);
+            System.out.println("[uptest] click: '" + label + "' bir acilir liste; liste acildi");
+            return this;
+        }
+
         List<String> before = formRefusals();
         try {
             target.first().click();
@@ -278,6 +289,23 @@ public class CommonActions {
 
     public CommonActions enter(String label, String value) {
         failFastOnErrorDialog("enter");
+
+        // Typing into a dropdown's SEARCH box, once a click has opened it —
+        // `click "Firma Seçimi"` then `enter "Firma Seçimi" "san"`. Only while
+        // the list is open: a lone `enter` on a dropdown still fails as before,
+        // because writing a search without choosing anything would otherwise
+        // let a scenario that meant to SELECT go green with nothing selected.
+        Locator search = openSelect2Search(label);
+        if (search != null) {
+            search.fill("");
+            search.pressSequentially(value, new Locator.PressSequentiallyOptions().setDelay(TYPE_DELAY_MS));
+            assertThat(search).hasValue(value,
+                    new LocatorAssertions.HasValueOptions().setTimeout(SELECT_CONFIRM_MS));
+            System.out.println("[uptest] enter: '" + label + "' arama kutusuna '" + value + "' yazildi");
+            failFastOnErrorDialog("enter (sonrasi)");
+            return this;
+        }
+
         Locator field = page.getByLabel(label);
 
         // A jQuery UI datepicker field is driven through its calendar, not by
@@ -617,6 +645,31 @@ public class CommonActions {
         container.locator(".select2-selection").click();
         page.waitForSelector("li.select2-results__option");
     }
+
+    /** Whether this label belongs to a Select2 v4 dropdown. Does not wait. */
+    private boolean isSelect2Field(String label) {
+        try {
+            return findValueElement(label).locator(".select2-selection").count() > 0;
+        } catch (RuntimeException notAField) {
+            return false;
+        }
+    }
+
+    /**
+     * The search box of this label's dropdown when its list is OPEN, else
+     * null. Select2 v4 renders the open list at body level and marks its
+     * container "--open"; one list is open at a time.
+     */
+    private Locator openSelect2Search(String label) {
+        if (!isSelect2Field(label)) {
+            return null;
+        }
+        Locator search = page.locator(".select2-container--open .select2-search__field");
+        return (search.count() > 0 && search.first().isVisible()) ? search.first() : null;
+    }
+
+    /** Slow enough for the widget's keyup filter to keep up; same as masked typing. */
+    private static final double TYPE_DELAY_MS = 60;
 
 
     // ============ STEPS WHOSE WORK LIVES IN THE CLASSES ABOVE ============

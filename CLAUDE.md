@@ -314,9 +314,15 @@ Shared (CommonSteps, work on both apps):
 
 - `go to {string}` (absolute URL; prefer `navigate to`)
 - `navigate to {string} {string}` (main menu, then sub-menu)
-- `click {string}` (matches button OR link)
+- `click {string}` (matches button OR link. When neither carries the name but
+  a Select2 dropdown's LABEL does, it opens that dropdown's list instead — only
+  on that path, so every click that worked before is unchanged)
 - `enter {string} {string}` (text/date input, by label — a literal date still
-  works here, and that is the only way to write one specific day)
+  works here, and that is the only way to write one specific day. Right after
+  a `click` that opened a dropdown it types into that list's SEARCH box, and
+  `ScenarioValidator` accepts it there and only there: a lone `enter` on a
+  dropdown stays WRONG_VERB in the validator and fails in the executor, so a
+  scenario meant to select cannot pass by typing a search that chooses nothing)
 - `enter date {string} {string}` (a date written as what it MEANS, resolved by
   `RelativeDate` AT RUN TIME: `"bugün"`, `"yarın"`, `"dün"`, `"+3 gün"`,
   `"-1 hafta"`, `"2 ay"`, `"1 yıl"`, or an absolute `gg/aa/yyyy` passed through

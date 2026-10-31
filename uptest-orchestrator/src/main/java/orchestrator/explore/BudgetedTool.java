@@ -300,6 +300,38 @@ final class BudgetedTool implements ToolCallback {
      * kept navigating at a browser the operator had already closed, opening a
      * fresh window each time. Both shapes are inspected now.
      */
+    /**
+     * What to do instead, when the agent typed into a Select2's DISPLAY.
+     *
+     * Measured on Firma Fatura İşlemleri: asked to search "san" in Firma
+     * Seçimi, the agent typed into {@code span#select2-firmIdx-container} —
+     * role textbox, aria-readonly, the box that shows "Seçiniz" — three times,
+     * and got "element is not editable" each time. The real search box is
+     * rendered at the END of the page once the list opens, and the agent only
+     * ever snapshotted the dropdown itself, so it never saw it. It finally got
+     * through by pressing keys one by one, which worked only because the open
+     * list had already put the focus in that box.
+     *
+     * The prompt already says how dropdowns work, and a prompt is read once at
+     * the start of a long walk; this answer arrives at the moment of the
+     * mistake, on the screen where it can be fixed.
+     *
+     * @return the hint, or null when the failure is anything else
+     */
+    static String select2DisplayHint(String failure) {
+        if (failure == null || !failure.contains("select2-selection__rendered")
+                || !failure.contains("not editable")) {
+            return null;
+        }
+        return "\n\nTHIS IS THE DROPDOWN'S DISPLAY, NOT A TEXT BOX. It only shows the chosen"
+                + " value and can never be typed into. To SEARCH in this dropdown: click it once"
+                + " to open the list. Its search box then opens at the END of the page, OUTSIDE"
+                + " the dropdown, and already has the keyboard focus. A snapshot of the dropdown"
+                + " alone does not contain it: take a snapshot WITHOUT a target, or find the"
+                + " element with role searchbox, and type into THAT. Do not type into this"
+                + " display again.";
+    }
+
     private String guarded(String input, Supplier<String> invoke) {
         trace(input);
         String refusal = refuse(input);
@@ -324,6 +356,12 @@ final class BudgetedTool implements ToolCallback {
                 // retries, and retrying is exactly how it kept reopening the
                 // browser after it had been shut.
                 return closed();
+            }
+            String hint = select2DisplayHint(failed.getMessage());
+            if (hint != null) {
+                // Answered, not rethrown: the model reads the error either
+                // way, and this way it reads WHAT TO DO beside it.
+                return String.valueOf(failed.getMessage()) + hint;
             }
             throw failed;
         }
