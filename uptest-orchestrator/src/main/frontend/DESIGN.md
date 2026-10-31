@@ -1,6 +1,6 @@
 # Tasarım sistemi — Açık mavi tema
 
-Test Senaryo Stüdyosu'nun (`/ui`) görsel dili. Frontend'de renk, yazı, köşe,
+Senaryum'un (`/ui`) görsel dili. Frontend'de renk, yazı, köşe,
 gölge ya da bileşen görünümüne dokunan her değişiklik bu dosyaya uyar.
 
 Kaynak: Claude Design'da üretilen "Açık mavi tema — renk jetonları" kartı.
@@ -33,15 +33,16 @@ değer burada **uydurulmadı**; eksik olanlar en alttaki *Açık sorular* bölü
 
 | Değişken | Hex | Nerede |
 |---|---|---|
-| `--primary` | `#1570EF` | ana buton, aktif öğe şeridi, logo |
+| `--primary` | `#1570EF` | ana buton, aktif öğe şeridi |
 | `--primary-ink` | `#0B3F8F` | aktif metin (seçili menü/ağaç öğesinin yazısı) |
 | `--primary-tint` | `#E7F0FD` | aktif zemin, üst bar |
 | `--primary-line` | `#CDE0F8` | mavi kenarlık |
 | `--link` | `#1057C4` | bağlantı, rozet metni |
 | `--primary-soft` | `#2E90FA` | alternatif aksan (metin için DEĞİL, bkz. §2) |
 
-**Doygun maviyi (`--primary`) yalnızca üç yerde kullan:** birincil buton, logo,
-aktif öğenin soldaki ince şeridi. Geri kalan her "mavi" ya `--primary-tint`
+**Doygun maviyi (`--primary`) yalnızca iki yerde kullan:** birincil buton ve
+aktif öğenin soldaki ince şeridi. (Kartta logo da vardı; uygulama işaretsiz,
+yalnızca "Senaryum" yazısıyla çıkıyor.) Geri kalan her "mavi" ya `--primary-tint`
 zemin ya `--primary-ink` / `--link` metindir.
 
 ### Metin
@@ -236,7 +237,7 @@ paletin kendi değerlerine bağlanır; yeni koyu renk uydurulmadı.
 ve yeni temada aktif menüyle aynı maviye düşerdi.
 
 Bileşen tarafında yapılanlar (aynı bölümde): üst bar dolu mavi bant yerine
-`--primary-tint`; marka işareti mavi kare + beyaz tik; sekmeler, sunucu
+`--primary-tint`; marka yalnızca "Senaryum" yazısı (`--ink-title`, 700), işaret yok; sekmeler, sunucu
 hapı ve tema düğmesi beyaz zeminli; durum noktaları (`.dot-*`) beyaz üstünde
 görünür renklere; aktif ray/ağaç öğesi `--primary-ink` yazı + 3px şerit;
 ağaç sayacı `--chip-bg` rozet; tablo başlığı `--surface-head`/`--soft`,

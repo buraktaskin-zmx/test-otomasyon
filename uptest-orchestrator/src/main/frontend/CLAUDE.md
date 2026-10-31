@@ -17,7 +17,7 @@ değişiklikten önce okunur. Kısaca:
   (`--primary-ink`, `--link`, `--soft`, `--chip-bg`…) de kullanılabilir.
   Eşleme: `DESIGN.md` §7. Renk değişikliği o bölümde yapılır, `app.css`'te
   değil (o dosya eski sayfayla paylaşılıyor).
-- Doygun mavi yalnızca birincil buton, logo ve aktif öğe şeridinde. Aktif
+- Doygun mavi yalnızca birincil buton ve aktif öğe şeridinde. Aktif
   öğe = tonlu zemin + solda ince şerit, dolu blok değil.
 - Durum renkleri (engelli / eksik / seed / başarılı) temadan bağımsızdır,
   maviye çekilmez; yanlarında her zaman sözcük vardır.

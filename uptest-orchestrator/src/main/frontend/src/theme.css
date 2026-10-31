@@ -1904,8 +1904,6 @@ body {
     color: var(--text);
     border-bottom: 1px solid var(--primary-line);
 }
-.brand-mark { width: 24px; height: 24px; border-radius: var(--radius-badge); background: var(--primary); }
-.brand-mark::after { background: var(--on-brand); }
 .brand-name { color: var(--ink-title); font-weight: 700; }
 
 .tab { color: var(--text-muted); }

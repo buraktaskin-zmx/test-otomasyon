@@ -17,9 +17,7 @@ export function TopBar({
   return (
     <header className="topbar">
       <div className="brand">
-        {/* The mark is drawn in CSS (clip-path) -- no image file, no font. */}
-        <span className="brand-mark" aria-hidden="true" />
-        <span className="brand-name">Test Senaryo Stüdyosu</span>
+        <span className="brand-name">Senaryum</span>
       </div>
       <ViewTabs view={view} onChange={onChangeView} />
       <div className="topbar-right">
