@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import type { ReactNode } from "react";
+import type { ReactNode, RefCallback } from "react";
 import { tokenizeGherkinLine } from "../lib/gherkin";
+import { IconButton, useAutoGrow } from "../ui/InlineEdit";
 import type { ScenarioDoc } from "../lib/scenarioProse";
 import type { ScenarioDetail as Detail, ScenarioEdit, SourceChange } from "../api/types";
 
@@ -14,10 +15,15 @@ import type { ScenarioDetail as Detail, ScenarioEdit, SourceChange } from "../ap
   dille yazılır ve ajan onu tarayıcıyı sürerek uygular; Gherkin aynı senaryonun
   DETERMINISTIK TEKRARI olarak sonradan yazılır.
 
-  İkisi veritabanında ayrı alanlarda durur ve her yarının Kaydet'i yalnızca
-  kendi alanlarını gönderir: Gherkin kutusuna yapıştırılan tam bir dosya
-  doğal dil tarafına dokunamaz. `version` da gider; o arada başkası
-  kaydettiyse sunucu 409 ile reddeder.
+  İkisi veritabanında ayrı alanlarda durur. Adın yanındaki kalem HEPSİNİ
+  birden düzenlemeye açar ve tek Kaydet hepsini bir istekte gönderir;
+  `version` da gider, o arada başkası kaydettiyse sunucu 409 ile reddeder.
+
+  Gherkin kutusuna yapıştırılan tam bir dosyanın doğal dil tarafını
+  bozmaması sunucuda duruyor, burada değil: ProductService.merged gelen
+  Gherkin'i ayrıştırıp yalnızca Gherkin yarısını alır, etiketleri ve
+  açıklamayı atar. Koruma orada olduğu için iki yarı aynı anda
+  gönderilebilir.
 */
 export function ScenarioDetail({
   detail,
@@ -61,21 +67,27 @@ export function ScenarioDetail({
   /** Saves the fields sent; resolves to true when it was saved. */
   onSave: (edit: ScenarioEdit) => Promise<boolean>;
 }) {
-  const [editing, setEditing] = useState<"gherkin" | "prose" | "summary" | null>(null);
-  const [draft, setDraft] = useState("");
+  /** One switch for the whole record: the pencil opens every field at once. */
+  const [editing, setEditing] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const [gherkinDraft, setGherkinDraft] = useState("");
   const [summaryDraft, setSummaryDraft] = useState("");
+  const [docDraft, setDocDraft] = useState<ScenarioDoc | null>(null);
+  /** The name was cleared; said beside the field, cleared on the next keystroke. */
+  const [nameMissing, setNameMissing] = useState(false);
   /** The Açıklama card shows its first lines until asked for all of them. */
   const [summaryOpen, setSummaryOpen] = useState(false);
-  const [docDraft, setDocDraft] = useState<ScenarioDoc | null>(null);
   const [saving, setSaving] = useState(false);
+  const { attach, fit } = useAutoGrow();
   /** The proposal has been taken; leaving it on screen would read as pending. */
   const [applied, setApplied] = useState(false);
 
   // Another scenario opened: any half-finished edit belongs to the old one.
   useEffect(() => {
-    setEditing(null);
+    setEditing(false);
     setApplied(false);
     setSummaryOpen(false);
+    setNameMissing(false);
   }, [detail?.path]);
 
   // A new walk's proposal is a new proposal, even after the last one was saved.
@@ -90,28 +102,38 @@ export function ScenarioDetail({
   const doc: ScenarioDoc = { ...detail.doc, summary: detail.doc.summary ?? [] };
   const shown = detail.gherkin;
 
-  const editGherkin = () => {
-    setDraft(shown);
-    setEditing("gherkin");
-  };
-
-  const editProse = () => {
-    setDocDraft({ ...doc });
-    setEditing("prose");
-  };
-
-  const editSummary = () => {
+  const startEdit = () => {
+    setNameDraft(doc.title || detail.title);
+    setGherkinDraft(shown);
     setSummaryDraft(doc.summary.join("\n"));
+    setDocDraft({ ...doc });
+    setNameMissing(false);
+    // A collapsed Açıklama would hide half of what is being edited.
     setSummaryOpen(true);
-    setEditing("summary");
+    setEditing(true);
+  };
+
+  const cancelEdit = () => {
+    setEditing(false);
+    setDocDraft(null);
+    setNameMissing(false);
   };
 
   const save = async () => {
-    const edit: ScenarioEdit = editing === "summary"
-      ? { summary: summaryDraft.split("\n"), version: detail.version }
-      : editing === "prose" && docDraft
-        ? { ...docDraft, version: detail.version }
-        : { gherkin: draft, version: detail.version };
+    const name = nameDraft.trim();
+    if (!name) {
+      // A scenario with no name cannot be found again in the list, and the
+      // Scenario: line would be rewritten empty.
+      setNameMissing(true);
+      return;
+    }
+    const edit: ScenarioEdit = {
+      ...(docDraft ?? doc),
+      title: name,
+      summary: summaryDraft.split("\n"),
+      gherkin: gherkinDraft,
+      version: detail.version,
+    };
     // Saving with the "kural değişti" banner on screen IS reviewing it: the
     // analyst read what moved and then wrote. Without the banner the stamp is
     // left alone, so an unrelated fix cannot clear a badge nobody looked at.
@@ -119,7 +141,10 @@ export function ScenarioDetail({
     setSaving(true);
     const ok = await onSave(edit);
     setSaving(false);
-    if (ok) setEditing(null);
+    if (ok) {
+      setEditing(false);
+      setDocDraft(null);
+    }
   };
 
   /* The proposal, under this scenario's own header. The steps replace what was
@@ -136,25 +161,6 @@ export function ScenarioDetail({
     if (ok) setApplied(true);
   };
 
-  const editButton = (pane: "gherkin" | "prose" | "summary", start: () => void) =>
-    editing === pane ? (
-      <>
-        <button type="button" className="btn btn-ghost" disabled={saving}
-                onClick={() => setEditing(null)}>
-          Vazgeç
-        </button>
-        <button type="button" className="btn btn-primary" disabled={saving}
-                onClick={() => void save()}>
-          {saving ? "Kaydediliyor…" : "Kaydet"}
-        </button>
-      </>
-    ) : (
-      <button type="button" className="btn btn-ghost" disabled={editing !== null}
-              onClick={start}>
-        Düzenle
-      </button>
-    );
-
 
   return (
     <div className="sd">
@@ -162,7 +168,37 @@ export function ScenarioDetail({
         <button type="button" className="btn btn-ghost" onClick={onBack}>
           ← Senaryo listesi
         </button>
-        <h3 className="sd-title">{detail.title}</h3>
+      </div>
+
+      {/* The name, and the one control that opens every field below it. */}
+      <div className="sd-name-row">
+        {editing ? (
+          <>
+            <input
+              className="sd-name-input"
+              aria-label="Senaryo adı"
+              aria-invalid={nameMissing}
+              autoFocus
+              value={nameDraft}
+              onChange={(event) => {
+                setNameDraft(event.target.value);
+                if (nameMissing) setNameMissing(false);
+              }}
+            />
+            {nameMissing ? <span className="sd-name-error">Boş bırakılamaz</span> : null}
+            <IconButton glyph="check" tone="ok" label="Kaydet"
+                        title={saving ? "Kaydediliyor…" : "Değişiklikleri kaydet"}
+                        disabled={saving} onClick={() => void save()} />
+            <IconButton glyph="close" tone="mute" label="Vazgeç"
+                        title="Değişiklikleri at" disabled={saving} onClick={cancelEdit} />
+          </>
+        ) : (
+          <>
+            <h3 className="sd-title">{detail.title}</h3>
+            <IconButton glyph="pencil" label="Düzenle" title="Tüm alanları düzenle"
+                        onClick={startEdit} />
+          </>
+        )}
       </div>
 
       {detail.changes.length > 0 ? (
@@ -181,17 +217,18 @@ export function ScenarioDetail({
       <section className="sd-pane sd-summary">
         <header className="sd-pane-head">
           <span className="sd-pane-title">AÇIKLAMA</span>
-          <span className="sd-pane-gap" />
-          {editButton("summary", editSummary)}
         </header>
-        {editing === "summary" ? (
+        {editing ? (
           <textarea
-            className="search sd-edit sd-edit-medium"
+            ref={attach}
+            className="sd-box"
             aria-label="Açıklama"
-            autoFocus
             value={summaryDraft}
             placeholder="Bu senaryo neyi doğrular?"
-            onChange={(event) => setSummaryDraft(event.target.value)}
+            onChange={(event) => {
+              setSummaryDraft(event.target.value);
+              fit(event.currentTarget);
+            }}
           />
         ) : (
           <SummaryText doc={doc} open={summaryOpen} onToggle={() => setSummaryOpen(!summaryOpen)} />
@@ -204,25 +241,28 @@ export function ScenarioDetail({
           <header className="sd-pane-head">
             <span className="sd-pane-title">GHERKİN</span>
             <code className="sd-path">{detail.path}</code>
-            {editButton("gherkin", editGherkin)}
-            {editing === "gherkin" ? null : (
-              <button
-                type="button"
-                className="btn btn-primary"
-                title="Çalıştır ekranında aç: orada düzenlenir, doğrulanır ve çalıştırılır"
-                onClick={() => onOpen(detail.feature)}
-              >
-                Git
-              </button>
-            )}
+            <button
+              type="button"
+              className="btn btn-primary sd-go"
+              disabled={editing}
+              title="Çalıştır ekranında aç: orada düzenlenir, doğrulanır ve çalıştırılır"
+              onClick={() => onOpen(detail.feature)}
+            >
+              Git
+            </button>
           </header>
 
-          {editing === "gherkin" ? (
+          {editing ? (
             <textarea
-              className="search sd-edit"
+              ref={attach}
+              className="sd-box sd-box-code"
+              aria-label="Gherkin"
               spellCheck={false}
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
+              value={gherkinDraft}
+              onChange={(event) => {
+                setGherkinDraft(event.target.value);
+                fit(event.currentTarget);
+              }}
             />
           ) : (
             <Gherkin text={shown} />
@@ -234,22 +274,19 @@ export function ScenarioDetail({
           <header className="sd-pane-head">
             <span className="sd-pane-title">DOĞAL DİL</span>
             <span className="sd-pane-gap" />
-            {editButton("prose", editProse)}
-            {editing === "prose" ? null : (
-              <button
-                type="button"
-                className="btn btn-ghost"
-                disabled={aiBusy}
-                title="Ajan tarayıcıyı sürerek bu senaryoyu uygular ve ne gördüğünü anlatır"
-                onClick={onAiRun}
-              >
-                {aiBusy ? "Ajan çalışıyor…" : "AI ile çalıştır"}
-              </button>
-            )}
+            <button
+              type="button"
+              className="btn btn-ghost"
+              disabled={aiBusy || editing}
+              title="Ajan tarayıcıyı sürerek bu senaryoyu uygular ve ne gördüğünü anlatır"
+              onClick={onAiRun}
+            >
+              {aiBusy ? "Ajan çalışıyor…" : "AI ile çalıştır"}
+            </button>
           </header>
 
-          {editing === "prose" && docDraft ? (
-            <DocEditor doc={docDraft} onChange={setDocDraft} />
+          {editing && docDraft ? (
+            <DocEditor doc={docDraft} onChange={setDocDraft} inPlace grow={attach} onGrow={fit} />
           ) : (
             <div className="sd-doc">
               <h4 className="sd-plain-title">{doc.title}</h4>
@@ -281,7 +318,7 @@ export function ScenarioDetail({
               <button
                 type="button"
                 className="btn btn-primary"
-                disabled={editing !== null}
+                disabled={editing}
                 title="Ajanın bu koşusunu Gherkin senaryosuna çevirir (bir AI çağrısı)"
                 onClick={onGenerateGherkin}
               >
@@ -310,7 +347,7 @@ export function ScenarioDetail({
                 <button
                   type="button"
                   className="btn btn-primary"
-                  disabled={saving || editing !== null}
+                  disabled={saving || editing}
                   title="Ajanın yaptığı adımları bu senaryonun Gherkin'i olarak kaydeder"
                   onClick={() => void applyProposal()}
                 >
@@ -526,36 +563,49 @@ export function DocEditor({
   doc,
   onChange,
   afterTitle,
+  inPlace,
+  grow,
+  onGrow,
 }: {
   doc: ScenarioDoc;
   onChange: (doc: ScenarioDoc) => void;
   /** Shown right under the name -- the new-scenario form's "Başlık". */
   afterTitle?: ReactNode;
+  /** Inside the detail view, where the name and the Açıklama have their own
+   *  places above: this editor then shows only the fields they do not. */
+  inPlace?: boolean;
+  /** Makes each textarea grow to its text; see ui/InlineEdit useAutoGrow. */
+  grow?: RefCallback<HTMLTextAreaElement>;
+  onGrow?: (box: HTMLTextAreaElement) => void;
 }) {
   const set = <K extends keyof ScenarioDoc>(key: K, value: ScenarioDoc[K]) =>
     onChange({ ...doc, [key]: value });
   return (
     <div className="sd-doc">
-      <label className="sd-doc-label" htmlFor="sdTitle">İsim</label>
-      <input
-        id="sdTitle"
-        className="search"
-        value={doc.title}
-        placeholder="Yeni liste bilgileri onay özetinde görünür"
-        onChange={(event) => set("title", event.target.value)}
-      />
-      {afterTitle}
-      <TextEditor label="Açıklama" items={doc.summary} placeholder="Bu senaryo neyi doğrular?"
-                  onChange={(items) => set("summary", items)} />
+      {inPlace ? null : (
+        <>
+          <label className="sd-doc-label" htmlFor="sdTitle">İsim</label>
+          <input
+            id="sdTitle"
+            className="search"
+            value={doc.title}
+            placeholder="Yeni liste bilgileri onay özetinde görünür"
+            onChange={(event) => set("title", event.target.value)}
+          />
+          {afterTitle}
+          <TextEditor label="Açıklama" items={doc.summary} placeholder="Bu senaryo neyi doğrular?"
+                      onChange={(items) => set("summary", items)} />
+        </>
+      )}
       <ListEditor label="Kural" items={doc.rules} placeholder="R-YL-006"
                   onChange={(items) => set("rules", items)} />
       <ListEditor label="Ön koşul" items={doc.preconditions}
                   placeholder="İlgili firma verisi bulunabilmeli"
                   onChange={(items) => set("preconditions", items)} />
-      <TextEditor label="Adımlar" items={doc.steps}
+      <TextEditor label="Adımlar" items={doc.steps} grow={grow} onGrow={onGrow}
                   placeholder={"Alıcı Listesi İşlemleri ekranını aç\nİşlemler panelinden Yeni Liste Oluştur'a tıkla"}
                   onChange={(items) => set("steps", items)} />
-      <TextEditor label="Beklenen" items={doc.expected}
+      <TextEditor label="Beklenen" items={doc.expected} grow={grow} onGrow={onGrow}
                   placeholder={"İşlem Bilgileri ekranı görünür\nDöviz Cinsi: TL"}
                   onChange={(items) => set("expected", items)} />
     </div>
@@ -568,20 +618,30 @@ function TextEditor({
   items,
   placeholder,
   onChange,
+  grow,
+  onGrow,
 }: {
   label: string;
   items: string[];
   placeholder: string;
   onChange: (items: string[]) => void;
+  /** Given inside the detail view: the box is then sized to its own text
+   *  rather than given a fixed height to scroll inside. */
+  grow?: RefCallback<HTMLTextAreaElement>;
+  onGrow?: (box: HTMLTextAreaElement) => void;
 }) {
   return (
     <div className="sd-doc-block">
       <span className="sd-doc-label">{label}</span>
       <textarea
-        className="search sd-edit sd-edit-medium"
+        ref={grow}
+        className={grow ? "sd-box" : "search sd-edit sd-edit-medium"}
         value={items.join("\n")}
         placeholder={placeholder}
-        onChange={(event) => onChange(event.target.value.split("\n"))}
+        onChange={(event) => {
+          onChange(event.target.value.split("\n"));
+          onGrow?.(event.currentTarget);
+        }}
       />
     </div>
   );

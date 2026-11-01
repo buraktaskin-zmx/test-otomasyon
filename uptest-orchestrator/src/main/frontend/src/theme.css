@@ -1982,3 +1982,112 @@ body {
 /* seed is GREY in this palette. It used --run (blue), which would now be
    the same blue as the active menu -- the confusion DESIGN.md forbids. */
 .sc-ready.is-seed { color: var(--skip); }
+
+/* ===================== YERİNDE DÜZENLEME (senaryo detayı) =====================
+
+   One pencil beside the name opens every field at once; a tick and a cross
+   replace it while that lasts. The point is that the page does not move:
+   each value is edited where it was being read, so nothing has to be found
+   again afterwards.
+
+   Colours are the theme's tokens, not the literal hexes the design named:
+   each one is within a few units of a token we already have (#9ca3af ->
+   --empty, #0f3a6e -> --ink-title, #e0e6ef -> --border, #fafbfd ->
+   --surface-alt, #1fa463 -> --ok-mark, #dc2626 -> --fail). Keeping them as
+   tokens is what makes the dark theme keep working and what DESIGN.md
+   requires of every new rule. */
+
+/* The back button sits alone now; the name is its own line under it. */
+.sd-head { margin-bottom: var(--space-2); }
+
+.sd-name-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+    margin-bottom: var(--space-3);
+}
+
+.sd-name-row .sd-title {
+    font-size: var(--text-lg);
+    font-weight: 700;
+    color: var(--ink-title);
+}
+
+/* The name keeps its place, size and weight while being edited -- only an
+   underline says it is a field now. A boxed input here moved the heading
+   and changed its type size, which read as a different screen. */
+.sd-name-input {
+    flex: 1 1 320px;
+    min-width: 0;
+    appearance: none;
+    margin: 0;
+    padding: 2px 0;
+    border: 0;
+    border-bottom: 1px solid var(--primary-line);
+    border-radius: 0;
+    background: transparent;
+    font: inherit;
+    font-size: var(--text-lg);
+    font-weight: 700;
+    color: var(--ink-title);
+}
+
+.sd-name-input:focus { outline: none; border-bottom-color: var(--primary); }
+.sd-name-input[aria-invalid="true"] { border-bottom-color: var(--fail); }
+
+.sd-name-error { font-size: var(--text-xs); color: var(--fail); }
+
+/* 14px glyph in a 28px round hit area, no frame. 28px clears WCAG 2.2's
+   24px target minimum, and --empty on white is 3.14:1 -- under the 4.5:1
+   a sentence would need, over the 3:1 a non-text symbol does. */
+.sd-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    appearance: none;
+    border: 0;
+    border-radius: 50%;
+    background: none;
+    color: var(--empty);
+    cursor: pointer;
+    transition: background .12s, color .12s;
+}
+
+.sd-icon-btn:hover:not(:disabled) { background: var(--primary-tint); color: var(--link); }
+.sd-icon-btn:disabled { opacity: .5; cursor: not-allowed; }
+.sd-icon-btn:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+
+.sd-icon-btn.is-ok { color: var(--ok-mark); }
+.sd-icon-btn.is-ok:hover:not(:disabled) { background: var(--ok-bg); color: var(--ok); }
+.sd-icon-btn.is-mute:hover:not(:disabled) { background: var(--skip-bg); color: var(--text); }
+
+/* An editable box, in place: a quiet frame where the text already was.
+   No resize grip and no inner scrollbar, because the height is set from
+   scrollHeight -- see ui/InlineEdit useAutoGrow. */
+.sd-box {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    margin-top: var(--space-2);
+    padding: var(--space-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface-alt);
+    color: var(--text);
+    font: inherit;
+    font-size: var(--text-sm);
+    line-height: 1.6;
+    resize: none;
+    overflow: hidden;
+}
+
+.sd-box:focus { outline: none; border-color: var(--primary-soft); }
+.sd-box-code { font: 13px/1.62 var(--mono); }
+
+/* Git stays where it is while editing, visibly out of reach. */
+.sd-go:disabled { background: var(--empty); }
