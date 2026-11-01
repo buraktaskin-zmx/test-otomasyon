@@ -476,13 +476,13 @@ public class ScenarioStore {
     private static ScenarioFields fieldsOf(ScenarioEntity entity) {
         return new ScenarioFields(entity.getTitle(), lines(entity.getRules()), lines(entity.getNeeds()),
                 lines(entity.getOtherTags()), lines(entity.getPreconditions()), lines(entity.getSteps()),
-                lines(entity.getExpected()), entity.getGherkin());
+                lines(entity.getExpected()), entity.getGherkin(), lines(entity.getSummary()));
     }
 
     private static void write(ScenarioEntity entity, ScenarioFields fields) {
         entity.setContent(fields.title(), joined(fields.rules()), joined(fields.needs()),
                 joined(fields.otherTags()), joined(fields.preconditions()), joined(fields.steps()),
-                joined(fields.expected()), fields.gherkin());
+                joined(fields.expected()), fields.gherkin(), joined(fields.summary()));
     }
 
     /** One item per line; an item never holds a line break of its own. */

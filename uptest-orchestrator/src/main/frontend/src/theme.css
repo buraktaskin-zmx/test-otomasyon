@@ -183,6 +183,7 @@ body {
 .sd-doc-chips { display: flex; flex-wrap: wrap; gap: var(--space-1); }
 
 .sd-doc .sd-plain { margin: 0; }
+.sd-prose { margin: 0 0 var(--space-1); line-height: 1.5; }
 
 .sd-doc-item { display: flex; gap: var(--space-1); }
 
@@ -1493,6 +1494,25 @@ body {
     flex-wrap: wrap;
     margin-bottom: var(--space-3);
 }
+
+/* The Açıklama card above the two panes, full width. A real card per
+   DESIGN.md: 16px corners, the one-layer shadow, white surface. */
+.sd-summary {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    box-shadow: var(--shadow);
+    margin-bottom: var(--space-4);
+}
+.sd-summary-note { margin-top: 0; }
+.sd-summary-text { max-width: 80ch; }
+.sd-more {
+    margin-top: var(--space-2);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--link);
+}
+.sd-more:hover { text-decoration: underline; }
 
 .sd-split {
     display: flex;

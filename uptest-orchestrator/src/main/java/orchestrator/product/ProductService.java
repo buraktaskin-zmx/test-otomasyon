@@ -199,7 +199,8 @@ public class ProductService {
      */
     public record ScenarioEdit(String feature, String gherkin, String title, List<String> rules,
                                List<String> preconditions, List<String> steps,
-                               List<String> expected, Long version, Boolean reviewed) {
+                               List<String> expected, Long version, Boolean reviewed,
+                               List<String> summary) {
     }
 
     /** Exactly one of {@code saved} and {@code refused} is non-null. */
@@ -261,7 +262,8 @@ public class ProductService {
                 edit.preconditions() != null ? edit.preconditions() : current.preconditions(),
                 edit.steps() != null ? edit.steps() : current.steps(),
                 edit.expected() != null ? edit.expected() : current.expected(),
-                gherkin);
+                gherkin,
+                edit.summary() != null ? edit.summary() : current.summary());
     }
 
     /** The created thing's key, or why it was refused. Exactly one is non-null. */

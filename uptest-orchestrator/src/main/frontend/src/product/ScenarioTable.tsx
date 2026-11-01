@@ -352,7 +352,12 @@ function ScenarioRow({
 
       <td><Precondition scenario={scenario} /></td>
 
-      <td className="sc-desc">{scenario.description}</td>
+      {/* The analyst's own Açıklama when written; the steps and expectation otherwise. */}
+      <td className="sc-desc">
+        {scenario.summary && scenario.summary.length > 0
+          ? scenario.summary.join(" ")
+          : scenario.description}
+      </td>
 
       {/* Clicks here must not open the row underneath. */}
       <td className="sc-move" onClick={(event) => event.stopPropagation()}>

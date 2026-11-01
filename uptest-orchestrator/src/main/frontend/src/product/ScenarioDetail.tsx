@@ -61,8 +61,11 @@ export function ScenarioDetail({
   /** Saves the fields sent; resolves to true when it was saved. */
   onSave: (edit: ScenarioEdit) => Promise<boolean>;
 }) {
-  const [editing, setEditing] = useState<"gherkin" | "prose" | null>(null);
+  const [editing, setEditing] = useState<"gherkin" | "prose" | "summary" | null>(null);
   const [draft, setDraft] = useState("");
+  const [summaryDraft, setSummaryDraft] = useState("");
+  /** The Açıklama card shows its first lines until asked for all of them. */
+  const [summaryOpen, setSummaryOpen] = useState(false);
   const [docDraft, setDocDraft] = useState<ScenarioDoc | null>(null);
   const [saving, setSaving] = useState(false);
   /** The proposal has been taken; leaving it on screen would read as pending. */
@@ -72,6 +75,7 @@ export function ScenarioDetail({
   useEffect(() => {
     setEditing(null);
     setApplied(false);
+    setSummaryOpen(false);
   }, [detail?.path]);
 
   // A new walk's proposal is a new proposal, even after the last one was saved.
@@ -83,7 +87,7 @@ export function ScenarioDetail({
     return <p className="registry-empty">{busy ? "Okunuyor…" : "Senaryo okunamadı."}</p>;
   }
 
-  const doc: ScenarioDoc = detail.doc;
+  const doc: ScenarioDoc = { ...detail.doc, summary: detail.doc.summary ?? [] };
   const shown = detail.gherkin;
 
   const editGherkin = () => {
@@ -96,10 +100,18 @@ export function ScenarioDetail({
     setEditing("prose");
   };
 
+  const editSummary = () => {
+    setSummaryDraft(doc.summary.join("\n"));
+    setSummaryOpen(true);
+    setEditing("summary");
+  };
+
   const save = async () => {
-    const edit: ScenarioEdit = editing === "prose" && docDraft
-      ? { ...docDraft, version: detail.version }
-      : { gherkin: draft, version: detail.version };
+    const edit: ScenarioEdit = editing === "summary"
+      ? { summary: summaryDraft.split("\n"), version: detail.version }
+      : editing === "prose" && docDraft
+        ? { ...docDraft, version: detail.version }
+        : { gherkin: draft, version: detail.version };
     // Saving with the "kural değişti" banner on screen IS reviewing it: the
     // analyst read what moved and then wrote. Without the banner the stamp is
     // left alone, so an unrelated fix cannot clear a badge nobody looked at.
@@ -124,7 +136,7 @@ export function ScenarioDetail({
     if (ok) setApplied(true);
   };
 
-  const editButton = (pane: "gherkin" | "prose", start: () => void) =>
+  const editButton = (pane: "gherkin" | "prose" | "summary", start: () => void) =>
     editing === pane ? (
       <>
         <button type="button" className="btn btn-ghost" disabled={saving}
@@ -164,6 +176,27 @@ export function ScenarioDetail({
           }}
         />
       ) : null}
+
+      {/* --------------------------- Açıklama ---------------------------- */}
+      <section className="sd-pane sd-summary">
+        <header className="sd-pane-head">
+          <span className="sd-pane-title">AÇIKLAMA</span>
+          <span className="sd-pane-gap" />
+          {editButton("summary", editSummary)}
+        </header>
+        {editing === "summary" ? (
+          <textarea
+            className="search sd-edit sd-edit-medium"
+            aria-label="Açıklama"
+            autoFocus
+            value={summaryDraft}
+            placeholder="Bu senaryo neyi doğrular?"
+            onChange={(event) => setSummaryDraft(event.target.value)}
+          />
+        ) : (
+          <SummaryText doc={doc} open={summaryOpen} onToggle={() => setSummaryOpen(!summaryOpen)} />
+        )}
+      </section>
 
       <div className="sd-split">
         {/* ---------------------------- Gherkin ---------------------------- */}
@@ -405,16 +438,68 @@ function Changed({
   );
 }
 
+/** How many lines the Açıklama card shows before "Tümünü göster". */
+const SUMMARY_LINES = 8;
+
+/**
+ * The Açıklama card's text: the analyst's own Açıklama when one was written,
+ * otherwise the steps and the expectation in the layout the table's
+ * Açıklama column always used -- said so, so nobody mistakes the fallback
+ * for a written description.
+ */
+function SummaryText({
+  doc,
+  open,
+  onToggle,
+}: {
+  doc: ScenarioDoc;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const written = doc.summary.length > 0;
+  const lines = written
+    ? doc.summary
+    : [
+        ...(doc.steps.length ? ["Adımlar:", ...doc.steps.map((step) => "- " + step)] : []),
+        ...(doc.expected.length ? ["Beklenen:", ...doc.expected.map((item) => "- " + item)] : []),
+      ];
+  if (lines.length === 0) {
+    return <span className="sd-doc-empty">yok</span>;
+  }
+  const shown = open ? lines : lines.slice(0, SUMMARY_LINES);
+  return (
+    <>
+      {written ? null : (
+        <p className="sd-note sd-summary-note">
+          Açıklama yazılmamış; adımlar ve beklenen gösteriliyor.
+        </p>
+      )}
+      <div className="sd-summary-text">
+        {shown.map((line, index) => <p key={index} className="sd-prose">{line}</p>)}
+      </div>
+      {lines.length > SUMMARY_LINES ? (
+        <button type="button" className="unstyled-button sd-more" aria-expanded={open}
+                onClick={onToggle}>
+          {open ? "Daha az göster" : "Tümünü göster (" + lines.length + " satır)"}
+        </button>
+      ) : null}
+    </>
+  );
+}
+
 function DocList({
   label,
   items,
   numbered,
   chips,
+  prose,
 }: {
   label: string;
   items: string[];
   numbered?: boolean;
   chips?: boolean;
+  /** Plain lines of text, not a list. */
+  prose?: boolean;
 }) {
   return (
     <div className="sd-doc-block">
@@ -425,6 +510,8 @@ function DocList({
         <div className="sd-doc-chips">
           {items.map((item) => <span key={item} className="rule-id">{item}</span>)}
         </div>
+      ) : prose ? (
+        <div className="sd-plain">{items.map((item, i) => <p key={i} className="sd-prose">{item}</p>)}</div>
       ) : numbered ? (
         <ol className="sd-plain">{items.map((item, i) => <li key={i}>{item}</li>)}</ol>
       ) : (
@@ -434,7 +521,7 @@ function DocList({
   );
 }
 
-/** The five natural-language fields, editable. Shared by Düzenle and "+ yeni senaryo". */
+/** The natural-language fields, editable. Shared by Düzenle and "+ yeni senaryo". */
 export function DocEditor({
   doc,
   onChange,
@@ -458,6 +545,8 @@ export function DocEditor({
         onChange={(event) => set("title", event.target.value)}
       />
       {afterTitle}
+      <TextEditor label="Açıklama" items={doc.summary} placeholder="Bu senaryo neyi doğrular?"
+                  onChange={(items) => set("summary", items)} />
       <ListEditor label="Kural" items={doc.rules} placeholder="R-YL-006"
                   onChange={(items) => set("rules", items)} />
       <ListEditor label="Ön koşul" items={doc.preconditions}

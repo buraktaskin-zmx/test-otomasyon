@@ -224,6 +224,10 @@ public class ProductController {
             // so the Açıklama column leaves them out.
             row.put("preconditions", entry.fields().preconditions());
             row.put("description", description(entry.fields()));
+            // The Açıklama column shows this when it was written; the
+            // description above stays what it was, since a run's intent is
+            // built from it.
+            row.put("summary", entry.fields().summary());
             return row;
         }).toList());
         return ResponseEntity.ok(body);
@@ -265,6 +269,7 @@ public class ProductController {
 
         Map<String, Object> doc = new LinkedHashMap<>();
         doc.put("title", fields.title());
+        doc.put("summary", fields.summary());
         doc.put("rules", fields.rules());
         doc.put("preconditions", fields.preconditions());
         doc.put("steps", fields.steps());

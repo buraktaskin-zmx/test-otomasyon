@@ -24,10 +24,20 @@ import java.util.regex.Pattern;
  * @param otherTags     every other tag ({@code mutating}), without the '@'
  * @param gherkin       {@code Feature:} + {@code Scenario:} + steps; no tag line
  *                      above Feature and no description under Scenario
+ * @param summary       "Açıklama": what the scenario is about, one item per
+ *                      line. Context for a reader, not a step to perform
  */
 public record ScenarioFields(String title, List<String> rules, List<String> needs,
                              List<String> otherTags, List<String> preconditions,
-                             List<String> steps, List<String> expected, String gherkin) {
+                             List<String> steps, List<String> expected, String gherkin,
+                             List<String> summary) {
+
+    /** Without an "Açıklama" -- for callers that never had one to give. */
+    public ScenarioFields(String title, List<String> rules, List<String> needs,
+                          List<String> otherTags, List<String> preconditions,
+                          List<String> steps, List<String> expected, String gherkin) {
+        this(title, rules, needs, otherTags, preconditions, steps, expected, gherkin, List.of());
+    }
 
     public ScenarioFields {
         title = title == null ? "" : title.trim();
@@ -37,6 +47,7 @@ public record ScenarioFields(String title, List<String> rules, List<String> need
         preconditions = clean(preconditions);
         steps = clean(steps);
         expected = clean(expected);
+        summary = clean(summary);
         // No comment lines in any Gherkin, by the analysts' rule.
         gherkin = gherkin == null ? "" : COMMENT_LINE.matcher(gherkin).replaceAll("");
     }

@@ -1,10 +1,11 @@
 /*
   The natural-language scenario, as five fields:
 
-    başlık     the `Scenario:` title
+    isim       the `Scenario:` title
     kural      the @R-... tags above `Feature:`
-    ön koşul   ┐
-    adımlar    ├ lists in the scenario's description, one "- " line per item
+    açıklama   ┐
+    ön koşul   │ lists in the scenario's description, one "- " line per item
+    adımlar    │
     beklenen   ┘
 
   Kept INSIDE the .feature file, not in a second file: the Gherkin replay,
@@ -22,21 +23,25 @@ const SCENARIO = /^(\s*)Scenario( Outline)?:\s*(.*)$/;
 const STRUCTURE = /^\s*(Given|When|Then|And|But|\*|Examples:|Scenario|Background:|@)/;
 
 const HEADERS: Array<[Section, RegExp]> = [
+  ["summary", /^a[çc][ıi]klama\s*:\s*(.*)$/i],
   ["preconditions", /^(ön|on)\s*ko[sş]ul(lar)?\s*:\s*(.*)$/i],
   ["steps", /^ad[ıi]mlar\s*:\s*(.*)$/i],
   ["expected", /^beklenen(ler)?\s*:\s*(.*)$/i],
 ];
 
 const LABEL: Record<Section, string> = {
+  summary: "Açıklama:",
   preconditions: "Ön koşul:",
   steps: "Adımlar:",
   expected: "Beklenen:",
 };
 
-type Section = "preconditions" | "steps" | "expected";
+type Section = "summary" | "preconditions" | "steps" | "expected";
 
 export interface ScenarioDoc {
   title: string;
+  /** "Açıklama": what the scenario is about. Context, not a step. */
+  summary: string[];
   rules: string[];
   preconditions: string[];
   steps: string[];
@@ -95,6 +100,7 @@ export function readDoc(feature: string): ScenarioDoc | null {
     rules: splitTags(feature).tags.split(/\s+/)
       .filter((tag) => /^@R-/i.test(tag))
       .map((tag) => tag.slice(1)),
+    summary: [],
     preconditions: [],
     steps: [],
     expected: [],
@@ -159,7 +165,7 @@ export function writeDoc(feature: string, doc: ScenarioDoc): string {
   const head = at.indent + "Scenario" + at.outline + ": " + doc.title.trim();
   const pad = at.indent + "  ";
   const body: string[] = [];
-  for (const section of ["preconditions", "steps", "expected"] as Section[]) {
+  for (const section of ["summary", "preconditions", "steps", "expected"] as Section[]) {
     // A line typed as "- foo" in a free-text box is still one item, "foo".
     const items = doc[section].map((item) => item.trim().replace(/^[-•*]\s+/, "")).filter(Boolean);
     if (items.length === 0) continue;
@@ -191,8 +197,13 @@ export function writeDoc(feature: string, doc: ScenarioDoc): string {
  * senaryoyu uygula:" and a title like "fatura oluştur" reads as a command:
  * the agent pressed "Fatura Oluştur" before step 1 had chosen a Kurum, got
  * the bank's refusal dialog, closed it, and only then started the steps.
+ *
+ * The Açıklama is left out on purpose: it is context for a person, and the
+ * agent acts on every sentence it is given.
  */
-export function docAsText(doc: ScenarioDoc): string {
+export function docAsText(
+  doc: Pick<ScenarioDoc, "title" | "preconditions" | "steps" | "expected">,
+): string {
   const out: string[] = [`Senaryo adı (yalnızca bir isim, yapılacak bir adım DEĞİL): ${doc.title}`];
   if (doc.preconditions.length) out.push("", "Ön koşul:", ...doc.preconditions.map((p) => "- " + p));
   if (doc.steps.length) {

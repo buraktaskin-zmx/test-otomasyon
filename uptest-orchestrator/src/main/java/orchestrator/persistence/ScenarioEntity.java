@@ -77,6 +77,10 @@ public class ScenarioEntity {
     @Column(name = "expected", length = Length.LONG32)
     private String expected;
 
+    /** "Açıklama": what the scenario is about, in the analyst's words. */
+    @Column(name = "summary", length = Length.LONG32)
+    private String summary;
+
     @Column(name = "gherkin", nullable = false, length = Length.LONG32)
     private String gherkin;
 
@@ -175,6 +179,10 @@ public class ScenarioEntity {
         return expected;
     }
 
+    public String getSummary() {
+        return summary;
+    }
+
     public String getGherkin() {
         return gherkin;
     }
@@ -203,7 +211,8 @@ public class ScenarioEntity {
 
     /** Every field at once -- the store always writes the whole scenario. */
     public void setContent(String title, String rules, String needs, String otherTags,
-                           String preconditions, String steps, String expected, String gherkin) {
+                           String preconditions, String steps, String expected, String gherkin,
+                           String summary) {
         this.title = title;
         this.rules = rules;
         this.needs = needs;
@@ -212,6 +221,7 @@ public class ScenarioEntity {
         this.steps = steps;
         this.expected = expected;
         this.gherkin = gherkin;
+        this.summary = summary;
         this.updatedAt = Instant.now();
     }
 

@@ -366,6 +366,9 @@ export interface RegisteredScenario {
   readiness: Readiness;
   /** The scenario's own "Ön koşul" items, as written in it. */
   preconditions: string[];
+  /** Its "Açıklama", as written; the table shows it in place of the
+   *  steps/expected text when present. Absent from an older server. */
+  summary?: string[];
   /** Any rule or alias this scenario names has moved since it was reviewed. */
   stale: boolean;
   /** The id of the screen's "Başlık" it is grouped under; null = başlıksız. */
@@ -382,6 +385,8 @@ export interface ScenarioHeading {
 /** The natural-language half of a scenario, as the database keeps it. */
 export interface ScenarioDocFields {
   title: string;
+  /** "Açıklama". Absent from an older server. */
+  summary?: string[];
   rules: string[];
   preconditions: string[];
   steps: string[];
@@ -441,6 +446,7 @@ export interface ScenarioDetail extends RegisteredScenario {
 export interface ScenarioEdit {
   gherkin?: string;
   title?: string;
+  summary?: string[];
   rules?: string[];
   preconditions?: string[];
   steps?: string[];

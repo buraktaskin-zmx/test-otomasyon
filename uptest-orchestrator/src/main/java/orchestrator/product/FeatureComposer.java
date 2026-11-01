@@ -10,7 +10,7 @@ import java.util.regex.Matcher;
  *
  * The layout is the one the analysts' files already have (and the UI's
  * {@code writeDoc} wrote): the tag line, then Feature, then the Scenario line
- * followed by its "Ön koşul: / Adımlar: / Beklenen:" sections, then the
+ * followed by its "Açıklama: / Ön koşul: / Adımlar: / Beklenen:" sections, then the
  * steps. No comment lines, ever -- the analysts' rule for every Gherkin file.
  */
 public final class FeatureComposer {
@@ -40,6 +40,7 @@ public final class FeatureComposer {
             String pad = match.group(1) + "  ";
 
             List<String> description = new ArrayList<>();
+            section(description, pad, "Açıklama:", fields.summary());
             section(description, pad, "Ön koşul:", fields.preconditions());
             section(description, pad, "Adımlar:", fields.steps());
             section(description, pad, "Beklenen:", fields.expected());

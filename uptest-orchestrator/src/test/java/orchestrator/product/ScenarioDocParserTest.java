@@ -87,7 +87,7 @@ class ScenarioDocParserTest {
     void pastedFileKeepsOnlyItsGherkin() {
         ScenarioFields current = ScenarioDocParser.parse(STRUCTURED);
         ProductService.ScenarioEdit paste = new ProductService.ScenarioEdit(
-                null, STRUCTURED, null, null, null, null, null, null, null);
+                null, STRUCTURED, null, null, null, null, null, null, null, null);
 
         ScenarioFields next = ProductService.merged(current, paste);
         String composed = FeatureComposer.compose(next);
@@ -103,7 +103,7 @@ class ScenarioDocParserTest {
     void titleFollowsIntoGherkin() {
         ScenarioFields current = ScenarioDocParser.parse(STRUCTURED);
         ProductService.ScenarioEdit rename = new ProductService.ScenarioEdit(
-                null, null, "Onay özeti doğru", null, null, List.of("Aç"), null, null, null);
+                null, null, "Onay özeti doğru", null, null, List.of("Aç"), null, null, null, null);
 
         ScenarioFields next = ProductService.merged(current, rename);
 
@@ -126,5 +126,49 @@ class ScenarioDocParserTest {
         assertThat(fields.steps()).isEmpty();
         assertThat(fields.gherkin()).doesNotContain("#");
         assertThat(FeatureComposer.compose(fields)).doesNotContain("#");
+    }
+
+    private static final String WITH_SUMMARY = """
+            @R-YL-006
+            Feature: Alıcı Listesi İşlemleri
+
+              Scenario: Boş formla Devam uyarı verir
+
+                Açıklama:
+                - Zorunlu alanlar boşken form gönderilmez
+
+                Adımlar:
+                - Devam'a bas
+
+                Given click "Devam"
+            """;
+
+    @Test
+    @DisplayName("an Açıklama section is its own field and survives the round trip")
+    void summaryRoundTrip() {
+        ScenarioFields fields = ScenarioDocParser.parse(WITH_SUMMARY);
+
+        assertThat(fields.summary()).containsExactly("Zorunlu alanlar boşken form gönderilmez");
+        assertThat(fields.steps()).containsExactly("Devam'a bas");
+        assertThat(fields.gherkin()).doesNotContain("Açıklama");
+        assertThat(FeatureComposer.compose(fields)).isEqualTo(WITH_SUMMARY);
+    }
+
+    @Test
+    @DisplayName("an edit that does not send an Açıklama keeps the one stored")
+    void summaryKeptWhenNotSent() {
+        ScenarioFields current = ScenarioDocParser.parse(WITH_SUMMARY);
+        ProductService.ScenarioEdit gherkinOnly = new ProductService.ScenarioEdit(
+                null, """
+                        Feature: X
+
+                          Scenario: Y
+
+                            Given click "Devam"
+                        """,
+                null, null, null, null, null, null, null, null);
+
+        assertThat(ProductService.merged(current, gherkinOnly).summary())
+                .containsExactly("Zorunlu alanlar boşken form gönderilmez");
     }
 }

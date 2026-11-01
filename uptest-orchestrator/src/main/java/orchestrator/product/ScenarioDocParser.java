@@ -18,7 +18,8 @@ import java.util.regex.Pattern;
  *   @R-AL-014 @needs:none          tags above Feature  -> rules / needs / otherTags
  *   Feature: ...                   ┐
  *     Scenario: title              ├ gherkin, minus the description below
- *       Ön koşul: / Adımlar: /     ┘ the description  -> three lists
+ *       Açıklama: / Ön koşul: /    ┘ the description  -> four lists
+ *       Adımlar:
  *       Beklenen:  with "- " items
  *       Given ...                    gherkin
  * </pre>
@@ -35,6 +36,8 @@ public final class ScenarioDocParser {
     private static final Pattern STRUCTURE =
             Pattern.compile("^\\s*(Given|When|Then|And|But|\\*|Examples:|Scenario|Background:|@)");
 
+    private static final Pattern SUMMARY =
+            Pattern.compile("^a[çc][ıi]klama\\s*:\\s*(.*)$", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
     private static final Pattern PRECONDITIONS =
             Pattern.compile("^(ön|on)\\s*ko[sş]ul(lar)?\\s*:\\s*(.*)$", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
     private static final Pattern STEPS =
@@ -109,10 +112,11 @@ public final class ScenarioDocParser {
         String text = String.join("\n", gherkin).strip() + "\n";
 
         return new ScenarioFields(title, rules, needs, other,
-                sections.preconditions, sections.steps, sections.expected, text);
+                sections.preconditions, sections.steps, sections.expected, text, sections.summary);
     }
 
-    private record Sections(List<String> preconditions, List<String> steps, List<String> expected) {
+    private record Sections(List<String> preconditions, List<String> steps, List<String> expected,
+                            List<String> summary) {
     }
 
     /** readDoc's loop, line for line. */
@@ -120,6 +124,7 @@ public final class ScenarioDocParser {
         List<String> preconditions = new ArrayList<>();
         List<String> steps = new ArrayList<>();
         List<String> expected = new ArrayList<>();
+        List<String> summary = new ArrayList<>();
         List<String> section = null;
         List<String> loose = new ArrayList<>();
         // Whether the current section's last item may still grow by a wrapped line.
@@ -138,7 +143,10 @@ public final class ScenarioDocParser {
             Matcher header;
             List<String> target = null;
             String rest = null;
-            if ((header = PRECONDITIONS.matcher(line)).matches()) {
+            if ((header = SUMMARY.matcher(line)).matches()) {
+                target = summary;
+                rest = header.group(1);
+            } else if ((header = PRECONDITIONS.matcher(line)).matches()) {
                 target = preconditions;
                 rest = header.group(3);
             } else if ((header = STEPS.matcher(line)).matches()) {
@@ -191,7 +199,7 @@ public final class ScenarioDocParser {
             all.addAll(steps);
             steps = all;
         }
-        return new Sections(preconditions, steps, expected);
+        return new Sections(preconditions, steps, expected, summary);
     }
 
     private static List<String> sentences(String text) {

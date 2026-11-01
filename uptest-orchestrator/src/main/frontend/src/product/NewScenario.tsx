@@ -14,7 +14,9 @@ import type { ScenarioHeading } from "../api/types";
   later, and the other way round.
 */
 
-const EMPTY: ScenarioDoc = { title: "", rules: [], preconditions: [], steps: [], expected: [] };
+const EMPTY: ScenarioDoc = {
+  title: "", summary: [], rules: [], preconditions: [], steps: [], expected: [],
+};
 
 /** `Feature:` named after the screen, one `Scenario:` -- what both modes start from. */
 function skeleton(screen: string, title: string): string {
@@ -41,6 +43,7 @@ export function NewScenario({
   const [name, setName] = useState("");
   const [steps, setSteps] = useState("");
   const [heading, setHeading] = useState("");
+  const [summary, setSummary] = useState("");
   const [saving, setSaving] = useState(false);
 
   const title = mode === "prose" ? doc.title : name;
@@ -52,7 +55,12 @@ export function NewScenario({
       .map((line) => (line.trim() ? "    " + line.trim() : ""))
       .join("\n")
       .trim();
-    return skeleton(screen, name) + (body ? "\n    " + body + "\n" : "");
+    const feature = skeleton(screen, name) + (body ? "\n    " + body + "\n" : "");
+    // The Açıklama goes in as the prose form writes it, so both modes store it alike.
+    const lines = summary.split("\n");
+    return lines.some((line) => line.trim())
+      ? writeDoc(feature, { ...EMPTY, title: name, summary: lines })
+      : feature;
   };
 
   const save = async () => {
@@ -94,6 +102,16 @@ export function NewScenario({
             onChange={(event) => setName(event.target.value)}
           />
           <HeadingCombobox value={heading} headings={headings} onChange={setHeading} />
+          <div className="sd-doc-block">
+            <label className="sd-doc-label" htmlFor="newScenarioSummary">Açıklama</label>
+            <textarea
+              id="newScenarioSummary"
+              className="search sd-edit sd-edit-medium"
+              value={summary}
+              placeholder="Bu senaryo neyi doğrular?"
+              onChange={(event) => setSummary(event.target.value)}
+            />
+          </div>
           <textarea
             className="search sd-edit"
             spellCheck={false}
