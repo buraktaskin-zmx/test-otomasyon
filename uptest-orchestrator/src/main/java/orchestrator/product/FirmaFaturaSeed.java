@@ -426,7 +426,13 @@ public class FirmaFaturaSeed {
                 continue;
             }
             String title = entry.fields().title();
-            String heading = headingFor(fold(title));
+            // Önce listedeki aynı başlıklı senaryonun başlığı: ekranda listeyle
+            // aynı adı taşıyan eski bir senaryo "zaten var" diye atlanmıştı.
+            String heading = SCENARIOS.stream()
+                    .filter(s -> key(s.title()).equals(key(title)))
+                    .map(S::heading)
+                    .findFirst()
+                    .orElseGet(() -> headingFor(fold(title)));
             if (heading == null) {
                 System.err.println("[seed] BAŞLIKSIZ KALDI: " + title);
                 continue;
