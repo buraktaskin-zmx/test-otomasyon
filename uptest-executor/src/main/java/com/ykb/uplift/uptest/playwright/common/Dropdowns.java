@@ -92,7 +92,7 @@ final class Dropdowns {
     /** Waits until a button/link with this name OR this label's text is on the page. */
     void awaitButtonOrLabel(String label, Locator target) {
         try {
-            target.or(page.getByText(label, new Page.GetByTextOptions().setExact(true))).first()
+            target.or(fields.anyLabelText(label)).first()
                     .waitFor(new Locator.WaitForOptions()
                             .setState(WaitForSelectorState.ATTACHED).setTimeout(CLICK_DECIDE_MS));
         } catch (RuntimeException neitherArrived) {

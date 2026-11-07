@@ -202,11 +202,25 @@ public class CommonActions {
         // turns up ends the wait at once and is clicked as it always was.
         if (target.count() == 0) {
             awaitButtonOrLabel(label, target);
-            boolean labelOnPage = page.getByText(label, new Page.GetByTextOptions().setExact(true)).count() > 0;
+            boolean labelOnPage = fields.labelText(label).count() > 0;
             if (target.count() == 0 && labelOnPage && awaitSelect2Field(label)) {
                 openSelect2(label);
                 System.out.println("[uptest] click: '" + label + "' bir acilir liste; liste acildi");
                 return this;
+            }
+            // Which half of the decision failed, so the next failure here is
+            // told apart in one run: no label at all, or a label whose field
+            // is not a Select2 v4 this step knows how to open.
+            if (target.count() == 0 && labelOnPage) {
+                Locator field = fields.findValueElement(label);
+                System.out.println("[uptest] click: '" + label + "' etiketi ekranda ama acilir liste"
+                        + " olarak acilamadi -> select2 v4=" + field.locator(".select2-selection").count()
+                        + ", select2 v3=" + field.locator(".select2-choice, .select2-container").count()
+                        + ", <select>=" + field.locator("select").count());
+            } else if (target.count() == 0) {
+                System.out.println("[uptest] click: '" + label + "' ne buton/link ne de alan etiketi olarak"
+                        + " ekranda bulundu (birebir=" + page.getByText(label,
+                                new Page.GetByTextOptions().setExact(true)).count() + ")");
             }
         }
 

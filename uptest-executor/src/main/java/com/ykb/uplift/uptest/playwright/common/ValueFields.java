@@ -80,7 +80,64 @@ final class ValueFields {
     // Returns the input (if entry field) or the value span (if read-only display)
     // that belongs EXACTLY to this label. Auto-waits handled by the callers.
     Locator findValueElement(String label) {
-        return resolveFrom(page.getByText(label, new Page.GetByTextOptions().setExact(true)).first());
+        return resolveFrom(labelText(label).first());
+    }
+
+    /**
+     * The label as the page prints it: the exact text first, and only when
+     * that matches nothing, the same words with any whitespace — or none —
+     * between them.
+     *
+     * Firma Fatura İşlemleri wraps "Fatura Sorgulama<br>Tarih Kriteri" over
+     * two lines with a {@code <br>}, which contributes no space to the text
+     * Playwright matches, so the label reads "Fatura SorgulamaTarih Kriteri".
+     * The analyst writes what they SEE, with a space, and the exact match
+     * found nothing: `click` reported "no such button or link" while the
+     * dropdown was on screen, opening on a person's click. The agent's
+     * recorded spelling ran the words together, which is how this was told
+     * apart from a wrong widget.
+     *
+     * Still anchored at both ends, so "Ad Soyad / Unvan" does not match
+     * "Alıcı Ad Soyad / Unvan" — the reason the match is exact at all. And
+     * tried SECOND, so every label that matched before matches the same
+     * element now. The loose form matches everything the exact one does,
+     * which keeps it right for a caller that asks before the page has
+     * arrived and then waits.
+     */
+    Locator labelText(String label) {
+        Locator exact = page.getByText(label, new Page.GetByTextOptions().setExact(true));
+        Pattern loose = looseLabel(label);
+        if (loose == null || exact.count() > 0) {
+            return exact;
+        }
+        return page.getByText(loose);
+    }
+
+    /** Either spelling, for a wait: whichever the page has, once it has it. */
+    Locator anyLabelText(String label) {
+        Locator exact = page.getByText(label, new Page.GetByTextOptions().setExact(true));
+        Pattern loose = looseLabel(label);
+        return loose == null ? exact : exact.or(page.getByText(loose));
+    }
+
+    /**
+     * ^word\s*word\s*word$, or null for a one-word label (nothing to loosen).
+     * Escaped by hand, not with Pattern.quote: Playwright hands the pattern to
+     * the browser as a JavaScript RegExp, which has no \Q…\E.
+     */
+    static Pattern looseLabel(String label) {
+        String[] words = label == null ? new String[0] : label.trim().split("\\s+");
+        if (words.length < 2) {
+            return null;
+        }
+        StringBuilder regex = new StringBuilder("^\\s*");
+        for (int i = 0; i < words.length; i++) {
+            if (i > 0) {
+                regex.append("\\s*");
+            }
+            regex.append(words[i].replaceAll("[\\\\^$.|?*+()\\[\\]{}/]", "\\\\$0"));
+        }
+        return Pattern.compile(regex.append("\\s*$").toString());
     }
 
     /**
@@ -137,7 +194,7 @@ final class ValueFields {
                 return inDialog.first();
             }
         }
-        return page.getByText(label, new Page.GetByTextOptions().setExact(true)).first();
+        return labelText(label).first();
     }
 
     /** The three container shapes this application renders, in order. */
