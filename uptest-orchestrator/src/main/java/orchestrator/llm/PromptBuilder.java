@@ -494,6 +494,12 @@ public class PromptBuilder {
                  it — never the analyst's sentence, never words like "alanı",
                  "bağlantısı", "butonu", "görünür durumdadır". When the screen's
                  spelling and the analyst's differ, use the screen's.
+               - a dropdown's OPTIONS are listed ("A ve B seçenekleri listelenir",
+                 "seçenekler: A, B"), when that step is in the list above:
+                   verify the "<dropdown's label>" dropdown has options "<A>, <B>"
+                 ONE step for the whole list, the names comma separated, spelled
+                 as the screen prints them. It opens the list itself, so no
+                 `click` on the dropdown is needed before it.
                - a POSITION ("sağ tarafta", "üstte", "yanında") cannot be checked
                  by any step: write the visibility check, leave the position out.
                A BEKLENEN line that names nothing checkable (for example a bare

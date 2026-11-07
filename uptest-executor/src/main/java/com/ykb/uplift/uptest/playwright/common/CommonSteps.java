@@ -132,6 +132,21 @@ public class CommonSteps {
     @Then("verify the {string} has amount {string}")
     public void verifyFieldHasAmount(String label, String expectedAmount) { actions().verifyFieldHasAmount(label, expectedAmount); }
 
+    /**
+     * A dropdown offers exactly these choices: "Son Ödeme Tarihi, Yükleme
+     * Tarihi". Comma separated, order free, every name exact.
+     *
+     * `verify "…" text is displayed` could not say this. It searches the whole
+     * page, and on Firma Fatura İşlemleri "Son Ödeme Tarihi" is also the box's
+     * own selected value and a grid column header, so it passed with the list
+     * closed; and nothing could say "and no other option".
+     */
+    @Then("verify the {string} dropdown has options {string}")
+    public void verifyDropdownOptions(String label, String options) {
+        actions().verifyDropdownOptions(label, java.util.Arrays.stream(options.split(","))
+                .map(String::trim).filter(option -> !option.isEmpty()).toList());
+    }
+
     @Then("verify {string} text is displayed")
     public void verifyTextIsDisplayed(String expectedText) { actions().verifyTextIsDisplayed(expectedText); }
 

@@ -679,6 +679,12 @@ public class CommonActions {
     }
 
     /** @see Verifications */
+    /** The dropdown lists exactly these options, in any order. */
+    public CommonActions verifyDropdownOptions(String label, List<String> expected) {
+        dropdowns.verifyOptions(label, expected);
+        return this;
+    }
+
     public CommonActions verifyFieldIsMasked(String label) {
         verifications.verifyFieldIsMasked(label);
         return this;

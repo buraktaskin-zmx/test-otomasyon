@@ -245,6 +245,9 @@ public class ScenarioValidator {
      * routed to {@link #checkMessageIsCatalogued} and never has to be earned
      * by a fill.
      */
+    /** A dropdown's whole option list: "A, B", order free. */
+    private static final String OPTIONS_STEP = "verify the {string} dropdown has options {string}";
+
     private static final List<String> EARNABLE_WITHOUT_FILLING = List.of(
             "verify the {string} field is masked",
             "verify {string} text is displayed");
@@ -285,6 +288,26 @@ public class ScenarioValidator {
                     && !match.arguments().isEmpty()) {
                 checkMessageIsCatalogued(text, match.arguments().get(0),
                         step.getLocation().getLine(), catalog, known, printed, said, errors);
+                continue;
+            }
+
+            // An option list is what the screen prints, like a message: earned
+            // when every option is in the analyst's text or the catalog's own
+            // option list, never by a fill. Its value is "A, B", which as a
+            // whole appears nowhere, so the generic check below would refuse
+            // every correct one.
+            if (pattern.equals(OPTIONS_STEP) && match.arguments().size() == 2) {
+                String label = match.arguments().get(0);
+                List<String> catalogued = catalog.field(label)
+                        .map(CatalogModel.CatalogField::options).orElse(List.of());
+                boolean earned = java.util.Arrays.stream(match.arguments().get(1).split(","))
+                        .map(String::trim).filter(option -> !option.isEmpty())
+                        .allMatch(option -> said.contains(fold(option))
+                                || catalogued.stream().anyMatch(listed -> fold(listed).equals(fold(option))));
+                if (!earned && catalog.field(label).isPresent()) {
+                    errors.add(ValidationError.unearnedAssertion(step.getLocation().getLine(), text,
+                            label, match.arguments().get(1), waysToAssert(vocabulary)));
+                }
                 continue;
             }
 

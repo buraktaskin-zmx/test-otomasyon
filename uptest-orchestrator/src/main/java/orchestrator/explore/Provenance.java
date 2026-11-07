@@ -125,6 +125,17 @@ public final class Provenance {
         if (folded.isBlank() || known.contains(folded)) {
             return true;
         }
+        // An option list is written "A, B" and never appears joined that way
+        // anywhere — the screen lists them one per line, the analyst writes
+        // "A ve B". Each option must have come from somewhere; the comma did not.
+        if (step.contains("\" dropdown has options \"") && value.contains(",")) {
+            for (String part : value.split(",")) {
+                if (!part.isBlank() && !known.contains(TapeRenderer.fold(part.trim()))) {
+                    return false;
+                }
+            }
+            return true;
+        }
         // An amount is typed as two boxes, lira and kuruş, and written as one
         // "1000,50": each half was typed, the joined form never was.
         if (step.startsWith("enter amount") && value.contains(",")) {

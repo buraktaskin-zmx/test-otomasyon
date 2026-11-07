@@ -83,6 +83,75 @@ final class Dropdowns {
         page.waitForSelector("li.select2-results__option");
     }
 
+    /** How long the option list gets to show the options a scenario expects. */
+    private static final double OPTIONS_MS = 10000;
+
+    /** An open Select2 v4 list's options — not its "Searching…" / "No results" lines. */
+    private static final String OPEN_OPTIONS = ".select2-container--open li.select2-results__option"
+            + ":not(.select2-results__message):not(.loading-results)";
+
+    /**
+     * The dropdown's options are exactly these: the same names, no more, no
+     * fewer. Order does not count — the claim is "these choices exist", and a
+     * list the application re-sorts is not a different list.
+     *
+     * Read from the list a person sees, opened the way a person opens it, for
+     * the reason every Select2 step here gives: the hidden native select
+     * answers confidently and can be wrong. A list that was already open (a
+     * `click` on the label just before) is read where it is and left open; a
+     * list this step opened is closed again, so the next step finds the page
+     * as it was.
+     *
+     * Names are compared as printed. Only whitespace is collapsed — what the
+     * list renders around an option is not part of its name — and nothing
+     * else is normalised: "Yükleme Tarihi" and "Yukleme Tarihi" are two names.
+     * Retried until they match or the time is up, because a list can still be
+     * filling when it opens.
+     */
+    void verifyOptions(String label, List<String> expected) {
+        List<String> want = expected.stream().map(Dropdowns::name).sorted().toList();
+        boolean select2 = awaitIsSelect2(label);
+        Locator field = findValueElement(label);
+        Locator options = select2 ? page.locator(OPEN_OPTIONS) : field.locator("select option");
+        boolean opened = false;
+        if (select2 && page.locator(OPEN_OPTIONS).count() == 0) {
+            field.locator(".select2-selection").first().click();
+            opened = true;
+        }
+        try {
+            List<String> got = List.of();
+            long until = System.currentTimeMillis() + (long) OPTIONS_MS;
+            while (true) {
+                got = options.allInnerTexts().stream().map(Dropdowns::name)
+                        .filter(text -> !text.isEmpty()).sorted().toList();
+                if (got.equals(want) || System.currentTimeMillis() > until) {
+                    break;
+                }
+                page.waitForTimeout(250);
+            }
+            if (!got.equals(want)) {
+                List<String> listed = got;
+                List<String> missing = want.stream().filter(name -> !listed.contains(name)).toList();
+                List<String> extra = listed.stream().filter(name -> !want.contains(name)).toList();
+                throw new AssertionError("'" + label + "' listesinin secenekleri beklenenden farkli."
+                        + " Beklenen: " + want + " | Listede: " + got
+                        + (missing.isEmpty() ? "" : " | Eksik: " + missing)
+                        + (extra.isEmpty() ? "" : " | Fazla: " + extra)
+                        + (select2 ? "" : " | (Select2 degil, duz <select> okundu)"));
+            }
+            System.out.println("[uptest] verify: '" + label + "' listesinde beklenen "
+                    + got.size() + " secenek var: " + got);
+        } finally {
+            if (opened) {
+                page.keyboard().press("Escape");
+            }
+        }
+    }
+
+    private static String name(String text) {
+        return text == null ? "" : text.replaceAll("\\s+", " ").trim();
+    }
+
     /** How long a click waits for its button, or its dropdown's label, to arrive. */
     private static final double CLICK_DECIDE_MS = 15000;
 

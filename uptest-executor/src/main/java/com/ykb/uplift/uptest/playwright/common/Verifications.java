@@ -77,10 +77,25 @@ final class Verifications {
         }
     }
 
-    /** Visible copies of the text in one frame; 0 while a frame is still loading. */
+    /**
+     * Visible copies of the text in one frame; 0 while a frame is still loading.
+     *
+     * When the text as written is nowhere, the same words with any whitespace
+     * between them: a label the screen wraps with a {@code <br>} ("Fatura
+     * Sorgulama<br>Tarih Kriteri") reads to Playwright with the words run
+     * together, so the line an analyst copies from the screen matched nothing.
+     * Tried second, so a text that was found before is found the same way.
+     */
     private static int visibleCopies(Frame frame, String text) {
         try {
-            return frame.getByText(text, new Frame.GetByTextOptions().setExact(false))
+            int copies = frame.getByText(text, new Frame.GetByTextOptions().setExact(false))
+                    .filter(new Locator.FilterOptions().setVisible(true))
+                    .count();
+            Pattern loose = ValueFields.looseText(text);
+            if (copies > 0 || loose == null) {
+                return copies;
+            }
+            return frame.getByText(loose)
                     .filter(new Locator.FilterOptions().setVisible(true))
                     .count();
         } catch (RuntimeException detachedOrLoading) {

@@ -126,18 +126,34 @@ final class ValueFields {
      * the browser as a JavaScript RegExp, which has no \Q…\E.
      */
     static Pattern looseLabel(String label) {
-        String[] words = label == null ? new String[0] : label.trim().split("\\s+");
+        String words = looseWords(label);
+        return words == null ? null : Pattern.compile("^\\s*" + words + "\\s*$");
+    }
+
+    /**
+     * The same loosening for `verify "…" text is displayed`, which matches a
+     * PART of an element's text, ignoring case — so unanchored, and with the
+     * case flag (Playwright passes it on to the browser's RegExp as "i").
+     */
+    static Pattern looseText(String text) {
+        String words = looseWords(text);
+        return words == null ? null : Pattern.compile(words, Pattern.CASE_INSENSITIVE);
+    }
+
+    /** word\s*word\s*word, escaped for a JavaScript RegExp; null for one word. */
+    private static String looseWords(String text) {
+        String[] words = text == null ? new String[0] : text.trim().split("\\s+");
         if (words.length < 2) {
             return null;
         }
-        StringBuilder regex = new StringBuilder("^\\s*");
+        StringBuilder regex = new StringBuilder();
         for (int i = 0; i < words.length; i++) {
             if (i > 0) {
                 regex.append("\\s*");
             }
             regex.append(words[i].replaceAll("[\\\\^$.|?*+()\\[\\]{}/]", "\\\\$0"));
         }
-        return Pattern.compile(regex.append("\\s*$").toString());
+        return regex.toString();
     }
 
     /**
