@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { MouseEvent } from "react";
+import type { DragEvent, MouseEvent, ReactNode } from "react";
 import { readinessLabel } from "./readiness";
 import { MOVE_MENU_MAX_PX, ScenarioMoveMenu } from "./ScenarioMoveMenu";
 import { openHeadings, rememberOpenHeadings } from "../lib/headings";
@@ -28,7 +28,25 @@ export interface MoveTarget {
   rows; then each heading, in the order it was made, as one full-width row
   that opens and closes what is under it. A heading starts closed, and which
   ones are open is remembered for the session.
+
+  Rows can be dragged (one screen selected): into another heading, to
+  "Başlıksız", or to another place in their own group. While dragging, the
+  row leaves its place and an empty slot opens where it would land, so the
+  rows around it move aside. A dropped row is shown in its new place at once
+  and the server is told the whole new order of that group; the reload that
+  follows either confirms it or puts it back. The ⇄ menu stays as the
+  keyboard way to change a heading.
 */
+
+/** A group of rows: a heading's id, or "" for başlıksız. */
+type GroupKey = string;
+const UNGROUPED: GroupKey = "";
+
+interface Drop {
+  group: GroupKey;
+  /** Position among the group's rows with the dragged row left out. */
+  index: number;
+}
 export function ScenarioTable({
   scenarios,
   headings,
@@ -39,6 +57,8 @@ export function ScenarioTable({
   onMove,
   onAddHeading,
   onSetHeading,
+  canArrange,
+  onArrange,
 }: {
   scenarios: RegisteredScenario[];
   /** The headings of the screens the rows come from. */
@@ -53,10 +73,22 @@ export function ScenarioTable({
   /** Resolves to true once the heading exists (new, or one of that name already there). */
   onAddHeading: (name: string) => Promise<boolean>;
   onSetHeading: (scenario: RegisteredScenario, heading: string | null) => void;
+  /** One screen is selected: an order belongs to one screen's groups. */
+  canArrange: boolean;
+  /** The dropped-into group's rows, in order, all under `heading` (null = başlıksız). */
+  onArrange: (heading: string | null, paths: string[]) => void;
 }) {
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [menuUp, setMenuUp] = useState(false);
   const [open, setOpen] = useState<ReadonlySet<string>>(openHeadings);
+  const [dragging, setDragging] = useState<{ path: string; height: number } | null>(null);
+  const [drop, setDrop] = useState<Drop | null>(null);
+  /* The drop as the table shows it until the reload arrives -- otherwise the
+     row would jump back to its old place for the length of a round trip. */
+  const [pending, setPending] = useState<{ path: string; group: GroupKey; paths: string[] } | null>(null);
+
+  // Fresh rows from the server replace the optimistic order, right or wrong.
+  useEffect(() => setPending(null), [scenarios]);
 
   // A click anywhere else, or Esc, closes the open menu.
   useEffect(() => {
@@ -98,14 +130,99 @@ export function ScenarioTable({
     setMenuFor(scenario.path);
   };
 
+  const openHeading = (id: string) =>
+    setOpen((was) => {
+      if (was.has(id)) return was;
+      const next = new Set(was);
+      next.add(id);
+      rememberOpenHeadings(next);
+      return next;
+    });
+
   const known = new Set(headings.map((heading) => heading.id));
   const headingOf = (scenario: RegisteredScenario) =>
     scenario.heading && known.has(scenario.heading) ? scenario.heading : null;
-  const ungrouped = scenarios.filter((scenario) => headingOf(scenario) === null);
-  const groups = headings.map((heading) => ({
-    heading,
-    rows: scenarios.filter((scenario) => headingOf(scenario) === heading.id),
-  }));
+  const rowsOf = (group: GroupKey) => {
+    if (pending) {
+      if (group === pending.group) {
+        const byPath = new Map(scenarios.map((scenario) => [scenario.path, scenario]));
+        return pending.paths.flatMap((path) => byPath.get(path) ?? []);
+      }
+      return scenarios.filter((scenario) =>
+        scenario.path !== pending.path && (headingOf(scenario) ?? UNGROUPED) === group);
+    }
+    return scenarios.filter((scenario) => (headingOf(scenario) ?? UNGROUPED) === group);
+  };
+  const ungrouped = rowsOf(UNGROUPED);
+  const groups = headings.map((heading) => ({ heading, rows: rowsOf(heading.id) }));
+
+  /* ------------------------------ dragging ------------------------------ */
+
+  const visibleOf = (group: GroupKey) =>
+    rowsOf(group).filter((scenario) => scenario.path !== dragging?.path);
+
+  const aim = (group: GroupKey, index: number) =>
+    setDrop((was) => (was && was.group === group && was.index === index ? was : { group, index }));
+
+  const startDrag = (scenario: RegisteredScenario, event: DragEvent<HTMLTableRowElement>) => {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", scenario.path);
+    const height = event.currentTarget.getBoundingClientRect().height;
+    // After the browser has taken its picture of the row: hiding it in the
+    // same tick would leave the drag image blank.
+    window.setTimeout(() => setDragging({ path: scenario.path, height }), 0);
+  };
+
+  const endDrag = () => {
+    setDragging(null);
+    setDrop(null);
+  };
+
+  /** Over a row: before it in its upper half, after it in its lower half. */
+  const overRow = (group: GroupKey, index: number, event: DragEvent<HTMLTableRowElement>) => {
+    if (!dragging) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    const box = event.currentTarget.getBoundingClientRect();
+    aim(group, event.clientY < box.top + box.height / 2 ? index : index + 1);
+  };
+
+  /** Over a heading row: open it, and land at the end of it. */
+  const overHeading = (group: GroupKey, event: DragEvent<HTMLTableRowElement>) => {
+    if (!dragging) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    if (group !== UNGROUPED) openHeading(group);
+    aim(group, group === UNGROUPED ? 0 : visibleOf(group).length);
+  };
+
+  const keepAim = (event: DragEvent<HTMLElement>) => {
+    if (!dragging) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+  };
+
+  const commitDrop = (event: DragEvent<HTMLElement>) => {
+    event.preventDefault();
+    const moved = dragging;
+    const at = drop;
+    endDrag();
+    if (!moved || !at) return;
+    const paths = visibleOf(at.group).map((scenario) => scenario.path);
+    paths.splice(Math.min(at.index, paths.length), 0, moved.path);
+    const before = rowsOf(at.group).map((scenario) => scenario.path);
+    if (before.length === paths.length && before.every((path, i) => path === paths[i])) return;
+    setPending({ path: moved.path, group: at.group, paths });
+    onArrange(at.group === UNGROUPED ? null : at.group, paths);
+  };
+
+  const slot = (key: string) => (
+    <tr key={key} className="sc-drop-slot" onDragOver={keepAim} onDrop={commitDrop}>
+      <td colSpan={5}>
+        <div className="sc-drop-slot-box" style={{ height: dragging?.height ?? 48 }} />
+      </td>
+    </tr>
+  );
 
   const toolbar = (
     <HeadingToolbar
@@ -130,11 +247,39 @@ export function ScenarioTable({
     );
   }
 
-  const row = (scenario: RegisteredScenario, grouped: boolean) => (
+  /* One group's rows, with the dragged row hidden in place (removing it from
+     the page would cancel the drag) and the slot where it would land. */
+  const groupRows = (group: GroupKey, rows: RegisteredScenario[], grouped: boolean) => {
+    const out: ReactNode[] = [];
+    const aimed = dragging && drop && drop.group === group ? drop.index : -1;
+    let visible = 0;
+    for (const scenario of rows) {
+      if (dragging && scenario.path === dragging.path) {
+        out.push(row(scenario, grouped, { hidden: true }));
+        continue;
+      }
+      if (aimed === visible) out.push(slot("slot:" + group + ":" + visible));
+      const index = visible;
+      out.push(row(scenario, grouped, {
+        onDragOver: (event) => overRow(group, index, event),
+      }));
+      visible++;
+    }
+    if (aimed >= visible) out.push(slot("slot:" + group + ":" + visible));
+    return out;
+  };
+
+  const row = (scenario: RegisteredScenario, grouped: boolean, drag: RowDrag) => (
     <ScenarioRow
       key={scenario.path}
       scenario={scenario}
       grouped={grouped}
+      draggable={canArrange}
+      hidden={drag.hidden ?? false}
+      onDragStart={startDrag}
+      onDragEnd={endDrag}
+      onDragOver={drag.onDragOver}
+      onDrop={commitDrop}
       menuOpen={menuFor === scenario.path}
       menuUp={menuUp}
       headings={headings.filter((heading) => heading.flow === scenario.flow)}
@@ -163,11 +308,33 @@ export function ScenarioTable({
             </tr>
           </thead>
           <tbody>
-            {ungrouped.map((scenario) => row(scenario, false))}
+            {/* Only while dragging: a place to drop a row out of every heading,
+                there even when no row is başlıksız yet. */}
+            {dragging ? (
+              <tr
+                className={"sc-group sc-ungrouped-drop"
+                  + (drop?.group === UNGROUPED ? " is-drop-target" : "")}
+                onDragOver={(event) => overHeading(UNGROUPED, event)}
+                onDrop={commitDrop}
+              >
+                <td colSpan={5}>
+                  <div className="sc-group-toggle">
+                    <span className="sc-group-name" lang="tr">Başlıksız</span>
+                  </div>
+                </td>
+              </tr>
+            ) : null}
+            {groupRows(UNGROUPED, ungrouped, false)}
             {groups.map(({ heading, rows }) => {
               const isOpen = open.has(heading.id);
               return [
-                <tr key={"h:" + heading.id} className="sc-group">
+                <tr
+                  key={"h:" + heading.id}
+                  className={"sc-group"
+                    + (dragging && drop?.group === heading.id ? " is-drop-target" : "")}
+                  onDragOver={(event) => overHeading(heading.id, event)}
+                  onDrop={commitDrop}
+                >
                   <td colSpan={5}>
                     <button
                       type="button"
@@ -184,7 +351,7 @@ export function ScenarioTable({
                     </button>
                   </td>
                 </tr>,
-                ...(isOpen ? rows.map((scenario) => row(scenario, true)) : []),
+                ...(isOpen ? groupRows(heading.id, rows, true) : []),
               ];
             })}
           </tbody>
@@ -264,9 +431,22 @@ function HeadingToolbar({
   );
 }
 
+/** How one row takes part in a drag. */
+interface RowDrag {
+  /** The row being dragged: kept on the page, out of sight. */
+  hidden?: boolean;
+  onDragOver?: (event: DragEvent<HTMLTableRowElement>) => void;
+}
+
 function ScenarioRow({
   scenario,
   grouped,
+  draggable,
+  hidden,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDrop,
   menuOpen,
   menuUp,
   headings,
@@ -281,6 +461,12 @@ function ScenarioRow({
   scenario: RegisteredScenario;
   /** Under a heading: the first cell is indented. */
   grouped: boolean;
+  draggable: boolean;
+  hidden: boolean;
+  onDragStart: (scenario: RegisteredScenario, event: DragEvent<HTMLTableRowElement>) => void;
+  onDragEnd: () => void;
+  onDragOver?: (event: DragEvent<HTMLTableRowElement>) => void;
+  onDrop: (event: DragEvent<HTMLTableRowElement>) => void;
   menuOpen: boolean;
   menuUp: boolean;
   /** This row's own screen's headings. */
@@ -296,8 +482,14 @@ function ScenarioRow({
   return (
     <tr
       className={"is-clickable" + (scenario.problem ? " is-broken" : "")
-        + (grouped ? " is-grouped" : "")}
+        + (grouped ? " is-grouped" : "") + (hidden ? " sc-drag-source" : "")}
       onClick={() => onOpen(scenario)}
+      draggable={draggable}
+      title={draggable ? "Taşımak için basılı tutup sürükleyin" : undefined}
+      onDragStart={draggable ? (event) => onDragStart(scenario, event) : undefined}
+      onDragEnd={draggable ? onDragEnd : undefined}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
     >
       <td>
         <button type="button" className="sc-open unstyled-button">

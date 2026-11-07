@@ -56,6 +56,17 @@ public class ScenarioEntity {
     @Column(name = "heading_id")
     private UUID headingId;
 
+    /**
+     * Where the scenario stands among the rows of its heading (or of the
+     * başlıksız rows), as the analyst dragged it there. Null until someone
+     * does -- those rows follow the positioned ones, in file-name order, so
+     * a scenario added later lands at the end of its group. Nullable on
+     * purpose: ddl-auto=update adds the column to a table that already has
+     * rows, and a NOT NULL column with no default could not be added there.
+     */
+    @Column(name = "sort_order")
+    private Integer sortOrder;
+
     @Column(name = "title", nullable = false, length = Length.LONG32)
     private String title;
 
@@ -149,6 +160,14 @@ public class ScenarioEntity {
 
     public void setHeadingId(UUID headingId) {
         this.headingId = headingId;
+    }
+
+    public Integer getSortOrder() {
+        return sortOrder;
+    }
+
+    public void setSortOrder(Integer sortOrder) {
+        this.sortOrder = sortOrder;
     }
 
     public String getTitle() {

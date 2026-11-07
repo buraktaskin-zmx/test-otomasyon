@@ -535,6 +535,21 @@ body {
 .sc-group-count { font-size: var(--text-xs); }
 .registry tr.is-grouped > td:first-child { padding-left: calc(var(--space-3) + 18px); }
 
+/* Drag-and-drop between and inside headings */
+.registry tr.sc-drag-source { display: none; }
+.registry tr.sc-group.is-drop-target td,
+.registry tr.sc-group.is-drop-target .sc-group-toggle { background: var(--brand-tint); }
+.registry tr.sc-drop-slot td { padding: 0; }
+.sc-drop-slot-box {
+    margin: 2px var(--space-2);
+    border: 2px dashed var(--border);
+    border-radius: 6px;
+    background: var(--brand-tint);
+    animation: sc-slot-open 140ms ease-out;
+}
+@keyframes sc-slot-open { from { height: 0; opacity: .4; } }
+@media (prefers-reduced-motion: reduce) { .sc-drop-slot-box { animation: none; } }
+
 /* The new-scenario form's "Başlık" combobox */
 .sc-combo { position: relative; }
 .sc-combo-list {

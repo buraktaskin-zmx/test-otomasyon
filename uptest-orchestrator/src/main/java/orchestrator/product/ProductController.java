@@ -153,6 +153,23 @@ public class ProductController {
         return ResponseEntity.ok(Map.of("path", assigned.key()));
     }
 
+    /** {@code heading}: a heading id, or null for "Başlıksız"; {@code paths}: the group, in order. */
+    public record Arrangement(String flow, String heading, List<String> paths) {
+    }
+
+    /** Drag-and-drop: one group's rows in their new order, under one heading. */
+    @PostMapping("/{app}/{product}/scenarios/arrange")
+    public ResponseEntity<?> arrange(@PathVariable String app, @PathVariable String product,
+                                     @RequestBody Arrangement body) {
+        ProductService.Created arranged = body == null
+                ? new ProductService.Created(null, "Sıralama gerekli")
+                : products.arrange(app, product, body.flow(), body.heading(), body.paths());
+        if (arranged.refused() != null) {
+            return ResponseEntity.badRequest().body(Map.of("error", arranged.refused()));
+        }
+        return ResponseEntity.ok(Map.of("flow", arranged.key()));
+    }
+
     private static Map<String, Object> heading(ScenarioStore.Heading heading) {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("id", heading.id().toString());

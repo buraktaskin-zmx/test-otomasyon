@@ -8,7 +8,7 @@ import type { useProducts } from "../../hooks/useProducts";
 import type { useTestUsers } from "../../hooks/useTestUsers";
 import {
   BROWSER_CLOSED, addScreen, createHeading, createMenu, createScenarioFile, explore, exportScenarios,
-  moveScenario, setScenarioHeading, tapeGherkin,
+  arrangeScenarios, moveScenario, setScenarioHeading, tapeGherkin,
 } from "../../api/endpoints";
 import type { MoveTarget } from "../../product/ScenarioTable";
 import { NewScenario } from "../../product/NewScenario";
@@ -194,6 +194,15 @@ export function ProductPanel({
       toast("Başlık değiştirilemedi: " + result.error, true);
       return;
     }
+    await products.openRegistry(selection.app, selection.product);
+  };
+
+  /** Drag-and-drop: the dropped-into group's rows, in order, under one heading. */
+  const arrange = async (heading: string | null, paths: string[]) => {
+    if (!selection?.flow) return;
+    const result = await arrangeScenarios(selection.app, selection.product, selection.flow,
+      heading, paths);
+    if (!result.ok) toast("Taşınamadı: " + result.error, true);
     await products.openRegistry(selection.app, selection.product);
   };
 
@@ -569,6 +578,8 @@ export function ProductPanel({
                   canAddHeading={Boolean(selection.flow)}
                   onAddHeading={addHeading}
                   onSetHeading={(scenario, heading) => void assignHeading(scenario, heading)}
+                  canArrange={Boolean(selection.flow)}
+                  onArrange={(heading, paths) => void arrange(heading, paths)}
                   onOpen={(scenario) =>
                     setSelection({ ...selection, flow: scenario.flow, path: scenario.path })}
                   targetsFor={targetsFor}

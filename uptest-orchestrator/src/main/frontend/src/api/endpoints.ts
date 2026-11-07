@@ -229,6 +229,19 @@ export const setScenarioHeading = (app: string, product: string, path: string,
     { heading },
   );
 
+/**
+ * Drag-and-drop: every row of the group a scenario was dropped into, in the
+ * new order, all under `heading` (null = "Başlıksız").
+ */
+export const arrangeScenarios = (app: string, product: string, flow: string,
+                                 heading: string | null, paths: string[]) =>
+  api<{ flow: string }>(
+    "POST",
+    "/api/v1/products/" + encodeURIComponent(app) + "/" + encodeURIComponent(product)
+      + "/scenarios/arrange",
+    { flow, heading, paths },
+  );
+
 /** "Taşı": moves a scenario to another declared screen of the same app. */
 export const moveScenario = (app: string, product: string, path: string,
                              toProduct: string, toFlow: string) =>

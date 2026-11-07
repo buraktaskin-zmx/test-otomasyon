@@ -15,6 +15,7 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -123,10 +124,18 @@ public class ScenarioStore {
         Map<UUID, UUID> headingScreens = headings.findByScreenIdInOrderByCreatedAtAscIdAsc(flows.keySet())
                 .stream().collect(Collectors.toMap(ScenarioHeadingEntity::getId,
                         ScenarioHeadingEntity::getScreenId));
+        // Screen, then the dragged position (unpositioned rows after the
+        // positioned ones), then the file name. The table groups the rows by
+        // heading and keeps this relative order inside each group.
+        Comparator<ScenarioEntity> order = Comparator
+                .comparing((ScenarioEntity entity) -> flows.get(entity.getScreenId()))
+                .thenComparing(ScenarioEntity::getSortOrder,
+                        Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparing(ScenarioEntity::getFileName);
         return scenarios.findByScreenIdInOrderByFileNameAsc(flows.keySet()).stream()
+                .sorted(order)
                 .map(entity -> stored(entity, flows.get(entity.getScreenId()),
                         ownHeading(entity, headingScreens)))
-                .sorted((a, b) -> a.path().compareTo(b.path()))
                 .toList();
     }
 
@@ -207,6 +216,48 @@ public class ScenarioStore {
         entity.setHeadingId(headingId);
         entity.touch();
         return new ProductService.Created(path, null);
+    }
+
+    /**
+     * One drag-and-drop: every row of the group the scenario was dropped
+     * into, in their new order, all put under {@code headingId}. The group
+     * it LEFT needs no write -- its remaining rows keep their relative order.
+     *
+     * Checked whole before anything is written, so a stale page that names a
+     * scenario moved or deleted elsewhere changes nothing.
+     *
+     * @param headingId null for "Başlıksız"
+     */
+    @Transactional
+    public ProductService.Created arrange(String app, String key, String flow, UUID headingId,
+                                          List<String> paths) {
+        Optional<ScreenEntity> screen = screen(app, key, flow);
+        if (screen.isEmpty()) {
+            return new ProductService.Created(null, "Ekran tanımlı değil: " + flow);
+        }
+        UUID screenId = screen.get().getId();
+        if (headingId != null) {
+            Optional<ScenarioHeadingEntity> heading = headings.findById(headingId);
+            if (heading.isEmpty() || !heading.get().getScreenId().equals(screenId)) {
+                return new ProductService.Created(null, "Bu ekranda böyle bir başlık yok");
+            }
+        }
+        List<ScenarioEntity> rows = new ArrayList<>();
+        for (String path : paths) {
+            Optional<Located> found = locate(app, key, path);
+            if (found.isEmpty() || !found.get().entity.getScreenId().equals(screenId)) {
+                return new ProductService.Created(null,
+                        "Senaryo bu ekranda bulunamadı: " + path + " -- sayfayı yenileyin");
+            }
+            rows.add(found.get().entity);
+        }
+        for (int i = 0; i < rows.size(); i++) {
+            ScenarioEntity entity = rows.get(i);
+            entity.setHeadingId(headingId);
+            entity.setSortOrder(i);
+            entity.touch();
+        }
+        return new ProductService.Created(flow, null);
     }
 
     /**
@@ -391,6 +442,8 @@ public class ScenarioStore {
         entity.setScreenId(target.get().getId());
         // Headings belong to a screen: the old one's means nothing here.
         entity.setHeadingId(null);
+        // So is its place among the old screen's rows: it goes to the end.
+        entity.setSortOrder(null);
         entity.touch();
         return new ProductService.Created(toFlow + "/" + entity.getFileName(), null);
     }

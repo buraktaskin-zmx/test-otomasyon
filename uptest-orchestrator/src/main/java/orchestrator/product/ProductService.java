@@ -377,6 +377,32 @@ public class ProductService {
     }
 
     /**
+     * Drag-and-drop in the table: the rows of one group in their new order,
+     * all under one heading (null or blank for "Başlıksız").
+     */
+    public Created arrange(String app, String product, String flow, String headingId,
+                           List<String> paths) {
+        if (flow == null || !SAFE_NAME.matcher(flow).matches()) {
+            return new Created(null, "Geçersiz ekran: " + flow);
+        }
+        if (paths == null || paths.isEmpty()) {
+            return new Created(null, "Sıralanacak senaryo yok");
+        }
+        if (new HashSet<>(paths).size() != paths.size()) {
+            return new Created(null, "Aynı senaryo listede iki kez geçiyor");
+        }
+        UUID id = null;
+        if (headingId != null && !headingId.isBlank()) {
+            try {
+                id = UUID.fromString(headingId.trim());
+            } catch (IllegalArgumentException notAnId) {
+                return new Created(null, "Geçersiz başlık: " + headingId);
+            }
+        }
+        return store.arrange(safe(app), product, flow, id, paths);
+    }
+
+    /**
      * A NEW scenario on a screen, named the way the files were: the next
      * two-digit number on that screen plus the title's slug
      * ("10-yeni-liste-iptal.feature"). Refuses text that does not parse.
