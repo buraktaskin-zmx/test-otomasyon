@@ -14,9 +14,9 @@ scenarios MUST treat this as a closed grammar.
 > annotations at build time and serves it at `GET /cucumber/vocabulary`; the
 > orchestrator's validator and the LLM prompt both read that. If the two ever
 > disagree, the generated JSON is right and this file is stale — check with
-> `GET /api/v1/vocabulary` (currently 22 steps).
+> `GET /api/v1/vocabulary` (currently 23 steps).
 >
-> Counting the annotations in the source gives **24**, and that is not a
+> Counting the annotations in the source gives **25**, and that is not a
 > discrepancy: `discover screen catalog` and `fill discovered fields:` belong to
 > screen discovery, which reads a screen instead of describing a test.
 > `VocabularyExtractor` excludes that package on purpose, so those two steps are
@@ -253,6 +253,7 @@ Then verify the {string} field equals {string}
 Then verify the {string} has date {string}
 Then verify the {string} has amount {string}
 Then verify the {string} field is masked
+Then verify the {string} dropdown has options {string}
 Then verify {string} text is displayed
 ```
 
@@ -278,9 +279,26 @@ Then verify {string} text is displayed
   know — or legally assert — any derived value. Also the right choice when the
   value differs per record: pinning `"20****694"` would tie the test to one row.
   Example: `Then verify the "Alıcı Hesabı" field is masked`
+- `verify the {string} dropdown has options {string}` — assert a dropdown
+  offers **exactly** these options: the names comma separated, order free,
+  every name exact, no more and no fewer. It opens the list itself (no `click`
+  needed before it) and reads only the open list, so the box's own selected
+  value or a grid column header with the same words cannot make it pass. A
+  list it opened is closed again; a list already open is left open. Example:
+  `Then verify the "Fatura Sorgulama Tarih Kriteri" dropdown has options "Son Ödeme Tarihi, Yükleme Tarihi"`
+  Use it when BEKLENEN says "A ve B seçenekleri listelenir". Write a
+  placeholder such as "Seçiniz" only if the list shows it as an option.
 - `verify {string} text is displayed` — assert a **free-text message** (e.g. a
   success banner) is present on the page. Example:
   `Then verify "Ödeme talebiniz karşı tarafa iletilmiştir." text is displayed`
+  It searches the WHOLE page, so it cannot prove a dropdown's options — the
+  same words are often the box's selected value or a column header too.
+
+> A label the screen wraps over two lines with a `<br>` ("Fatura Sorgulama /
+> Tarih Kriteri") is still written the way a person reads it, with the space:
+> `"Fatura Sorgulama Tarih Kriteri"`. Every label- and text-matching step tries
+> the exact text first and then the same words with or without whitespace
+> between them.
 
 > Three verbs, three kinds of value, and they are NOT interchangeable.
 > `field equals` does an exact string compare: it fails on a formatted amount,

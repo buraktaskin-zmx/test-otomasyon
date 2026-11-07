@@ -164,8 +164,13 @@ A second and third flow (DBS Firm Invoice Inquiry, Online DBS Fatura Oluştur)
 were written to test whether the vocabulary was genuinely generic or
 Banko-specific. They surfaced the grid row selection, account picker and masked
 date interactions, each of which became a generic step rather than a
-flow-specific one. The vocabulary now stands at **20 patterns**, proven across
-two applications and several flows.
+flow-specific one. The vocabulary stood at 20 patterns at the end of this
+phase and now stands at **23**, proven across two applications and several
+flows. The latest addition, `verify the {string} dropdown has options
+{string}`, asserts a dropdown's whole option list — exactly these names, no
+more, no fewer — which `verify … text is displayed` could not, because it
+searches the whole page and the same words are often a selected value or a
+column header too.
 
 ### Phase 2 — AI generation and the analyst platform (largely built)
 
@@ -212,6 +217,12 @@ two applications and several flows.
   could silently damage the other. The `.feature` files are the one-time import
   seed and the export target — "Dosyaya aktar" writes the library back out so
   it can be committed, and never deletes anything.
+  Scenarios are grouped under "Başlık" headings on each screen; a row is
+  dragged to another heading, to "Başlıksız" or to a new place in its group,
+  and that order is stored (`SCENARIO.sort_order`). A row is deleted from the
+  table after a confirmation dialog — for good, since the database is the only
+  copy. Neither the headings nor the order survive "Dosyaya aktar": a
+  `.feature` file has no place for them.
 - **Scenarios know which version of a rule they were written against.** A
   scenario is bound to a rule by id, so a rename or a deletion was always
   caught and a reworded rule was silent — five scenarios went on testing the
@@ -222,6 +233,12 @@ two applications and several flows.
   the same difference means either "the application changed and the rule caught
   up" or "the rule was wrong and has been corrected" — and auto-updating hides
   the second behind a green test over a live defect.
+- **A second product: Nakit Yönetimi.** Firma Fatura İşlemleri carries 66
+  scenarios and `products/ngc/nakit-yonetimi/rules.yaml` its 48 rules
+  (`R-FF-001` … `R-FF-080`) — 20 confirmed on the live screen or in a catalog,
+  28 still assumptions taken from the analysts' scenario list. Each scenario's
+  precondition, and the rule it exercises, is in
+  `products/ngc/nakit-yonetimi/on-kosullar.md`.
 - **The platform.** One orchestrator (`:8035`) and three executors (`:9035`,
   internal only) under Docker Compose, built and verified. Live step timeline,
   run history, HTML report and trace download.
@@ -289,11 +306,16 @@ See Roadmap.
   summary). Needs label-exclusion logic to stay generic. (The neighbouring
   Select2 case IS fixed: it used to read the widget's always-empty search box,
   so a dropdown plainly showing "Seçiniz" failed against "Seçiniz".)
-- **No step verifies a dropdown's option LIST.** A rule can now write its
-  options down (`degerler:` in `rules.yaml`) and the validator accepts a
-  scenario asserting one, but asserting the whole list takes one
-  `verify … text is displayed` per option. Until that step exists, `degerler`
-  keeps the documentation honest rather than the test.
+- **Firma Fatura test data is tied to the calendar.** Picking a firm runs the
+  query with the default "Bu Hafta" range, so a scenario that selects one
+  invoice by number fails in any week its due date does not fall in; an
+  option such as "Bu Ay (Ekim)" changes name every month; and a creation
+  scenario with a fixed Başlangıç Vadesi fails once that date has passed.
+  `on-kosullar.md` lists which scenarios this hits.
+- **No test user can update or cancel an invoice.** QZ06395288 gets "Bu işlemi
+  yapmaya yetkiniz yoktur." on Fatura Güncelle, so the update scenarios (and
+  probably the cancel ones) cannot run until a user with that permission
+  exists.
 - **Verifying text inside an invoice table** is not solved.
 - **`mvn test` and the IDE run gutter find no features**, because the feature
   directory is literally named with dots while the runner selects a slashed
@@ -304,7 +326,7 @@ See Roadmap.
 
 | | |
 |---|---|
-| step vocabulary | 20 patterns, generated from the code |
+| step vocabulary | 23 patterns, generated from the code |
 | applications supported | 2 (NGC, NGI) |
 | executor image | 4.97 GB (Playwright + browsers) |
 | orchestrator image | 444 MB |

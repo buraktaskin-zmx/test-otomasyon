@@ -1,0 +1,592 @@
+# products/ngc/nakit-yonetimi/rules.yaml
+#
+# ORACLE — beklentilerin tek kaynağı.
+# Bu dosya "olması gereken"i tutar. Ekranın şu anki davranışı değil.
+#
+# status:
+#   DOĞRULANDI — canlı ekranda (ekran görüntüsü, ajan yürüyüşü) ya da repodaki
+#                bir katalogda teyit edilmiş
+#   VARSAYIM    — analistin senaryo listesinden; hiçbir koşuda görülmedi
+#
+# Senaryolar bu ID'lere @R-FF-NNN etiketiyle bağlanır.
+#
+# messages: ve degerler: DENETLENİR. ScenarioValidator bu metinleri harfi
+# harfine karşılaştırır, o yüzden ekranda yazdığı gibi kopyalanır; yeniden
+# yazılmaz. VARSAYIM bir kuralın mesajı ilk koşuda ekranla karşılaştırılmalı.
+
+rules:
+
+  # ─────────────────────────────────────────────────────────────
+  # A — Firma Fatura İşlemleri: ekran açılışı ve filtre alanları
+  # ─────────────────────────────────────────────────────────────
+
+  - id: R-FF-001
+    title: "Hızlı filtre alanları"
+    status: DOĞRULANDI
+    description: >
+      Ekran açıldığında Firma Seçimi ve Hızlı Tarih Seçimi alanları ile sağ
+      üstte Detaylı Arama bağlantısı görünür.
+    fields: ["Firma Seçimi", "Hızlı Tarih Seçimi", "Detaylı Arama"]
+    messages: []
+    source: "Ekran görüntüsü, 07.11.2026"
+
+  - id: R-FF-002
+    title: "Firma Seçimi varsayılanı"
+    status: DOĞRULANDI
+    description: >
+      Firma Seçimi alanı ekran açıldığında Seçiniz değerindedir; hiçbir firma
+      önceden seçili gelmez.
+    fields: ["Firma Seçimi"]
+    messages: []
+    degerler:
+      varsayilan: "Seçiniz"
+    source: "Ekran görüntüsü, 07.11.2026"
+
+  - id: R-FF-003
+    title: "Firma seçilmeden tablo boştur"
+    status: DOĞRULANDI
+    description: >
+      Firma seçilmeden tablo gövdesinde bilgi mesajı görüntülenir, hiçbir fatura
+      listelenmez. Özet bandının bu durumda gizli olduğu henüz teyit edilmedi.
+    fields: ["Firma Seçimi"]
+    messages:
+      - "Kayıt bulunamadı."
+    source: "Ekran görüntüsü, 07.11.2026"
+
+  - id: R-FF-004
+    title: "Detaylı Arama alanları açar ve kapatır"
+    status: DOĞRULANDI
+    description: >
+      Detaylı Arama bağlantısına tıklandığında Fatura Sorgulama Tarih Kriteri,
+      Başlangıç Tarihi, Bitiş Tarihi, Fatura Sorgulama Bayi Kriteri, Bayi Kodu,
+      Statü, Minimum Tutar, Maksimum Tutar, Para Birimi, Fatura Numarası alanları
+      ve Listele butonu görünür. Açıkken bağlantının adı Hızlı Arama olur; ona
+      tıklanınca alanlar gizlenir.
+    fields: ["Detaylı Arama", "Hızlı Arama", "Fatura Sorgulama Tarih Kriteri",
+             "Başlangıç Tarihi", "Bitiş Tarihi", "Fatura Sorgulama Bayi Kriteri",
+             "Bayi Kodu", "Statü", "Minimum Tutar", "Maksimum Tutar",
+             "Para Birimi", "Fatura Numarası", "Listele"]
+    messages: []
+    source: "Ekran görüntüsü, 07.11.2026"
+    note: "Fatura Sorgulama Tarih Kriteri ve Fatura Sorgulama Bayi Kriteri etiketleri ekranda iki satıra bölünür."
+
+  - id: R-FF-005
+    title: "Filtrelerin varsayılan değerleri"
+    status: DOĞRULANDI
+    description: >
+      Detaylı arama açıldığında Hızlı Tarih Seçimi Bu Hafta, Fatura Sorgulama
+      Tarih Kriteri Son Ödeme Tarihi, Fatura Sorgulama Bayi Kriteri Bayi Kodu,
+      Bayi Kodu Hepsi, Statü Hepsi, Para Birimi Seçiniz değerindedir.
+    fields: ["Hızlı Tarih Seçimi", "Fatura Sorgulama Tarih Kriteri",
+             "Fatura Sorgulama Bayi Kriteri", "Bayi Kodu", "Statü", "Para Birimi"]
+    messages: []
+    degerler:
+      hizli_tarih_secimi: "Bu Hafta"
+      tarih_kriteri: "Son Ödeme Tarihi"
+      bayi_kriteri: "Bayi Kodu"
+      bayi_kodu: "Hepsi"
+      statu: "Hepsi"
+      para_birimi: "Seçiniz"
+    source: "Ekran görüntüsü, 07.11.2026"
+
+  - id: R-FF-006
+    title: "Firma Seçimi aranabilir liste"
+    status: VARSAYIM
+    description: >
+      Firma Seçimi aranabilir bir listedir; arama kutusuna yazılan metni
+      içermeyen firmalar listeden düşer.
+    fields: ["Firma Seçimi"]
+    messages: []
+    source: "Analist senaryo listesi, 07.11.2026"
+
+  - id: R-FF-007
+    title: "Hızlı tarih seçimi tarih alanlarını doldurur"
+    status: DOĞRULANDI
+    description: >
+      Hızlı Tarih Seçimi'nden bir aralık seçildiğinde Başlangıç Tarihi ve Bitiş
+      Tarihi o aralığa göre dolar. Bu Hafta seçiliyken 07.11.2026'da alanlar
+      02/11/2026 ve 09/11/2026 gösterdi. Her iki alan da takvim bileşenidir.
+    fields: ["Hızlı Tarih Seçimi", "Başlangıç Tarihi", "Bitiş Tarihi"]
+    messages: []
+    source: "Ekran görüntüsü, 07.11.2026"
+    note: "Ay seçeneğinin adı aya göre değişir (Bu Ay (Ekim)); senaryoya sabit yazılırsa bir sonraki ay çalışmaz."
+
+  - id: R-FF-008
+    title: "Tarih kriteri seçenekleri"
+    status: DOĞRULANDI
+    description: >
+      Fatura Sorgulama Tarih Kriteri listesinde yalnızca Son Ödeme Tarihi ve
+      Yükleme Tarihi bulunur. Varsayılan Son Ödeme Tarihi'dir. Liste aranabilir.
+    fields: ["Fatura Sorgulama Tarih Kriteri"]
+    messages: []
+    degerler:
+      secenekler: ["Son Ödeme Tarihi", "Yükleme Tarihi"]
+      varsayilan: "Son Ödeme Tarihi"
+    source: "Ekran görüntüsü, 07.11.2026"
+
+  # ─────────────────────────────────────────────────────────────
+  # B — Sorgulama ve doğrulama
+  # ─────────────────────────────────────────────────────────────
+
+  - id: R-FF-010
+    title: "Tutar aralığı"
+    status: VARSAYIM
+    description: >
+      Minimum Tutar, Maksimum Tutar'dan büyük olamaz; Listele'ye basıldığında
+      uyarı gösterilir ve sorgu çalışmaz. Geçerli bir aralıkta yalnızca o
+      aralıktaki faturalar listelenir.
+    fields: ["Minimum Tutar", "Maksimum Tutar", "Listele"]
+    messages:
+      - "Minimum tutar, maksimum tutardan büyük olamaz."
+    source: "Analist senaryosu (03 ve 18); metin ekrandan yazılmış görünüyor, koşuyla teyit edilmedi"
+
+  - id: R-FF-011
+    title: "Tarih aralığı"
+    status: VARSAYIM
+    description: >
+      Başlangıç Tarihi, Bitiş Tarihi'nden büyük olamaz; Listele'ye basıldığında
+      iki alanın altında ayrı uyarı gösterilir ve sorgu çalışmaz.
+    fields: ["Başlangıç Tarihi", "Bitiş Tarihi", "Listele"]
+    messages:
+      - "Bitiş tarihinden küçük bir tarih olmalıdır."
+      - "Başlangıç tarihinden büyük bir tarih olmalıdır."
+    source: "Analist senaryosu (04 ve 19); koşuyla teyit edilmedi"
+
+  - id: R-FF-012
+    title: "Firma seçimi sorguyu çalıştırır"
+    status: DOĞRULANDI
+    description: >
+      Firma seçildiğinde sorgu Listele'ye basmadan çalışır ve tablo o firmanın
+      faturalarıyla dolar. Firma değiştiğinde tablo yeni firmaya göre yenilenir,
+      önceki firmanın kayıtları kalmaz.
+    fields: ["Firma Seçimi"]
+    messages: []
+    source: "Ajan yürüyüşü, 07.11.2026 (APPLE A.Ş. iki fatura, ardından Sanko DBS Ödemeleri Kayıt bulunamadı.)"
+
+  - id: R-FF-013
+    title: "Fatura numarası filtresi"
+    status: VARSAYIM
+    description: >
+      Fatura Numarası girilip Listele'ye basıldığında yalnızca o numaralı fatura
+      listelenir.
+    fields: ["Fatura Numarası", "Listele"]
+    messages: []
+    source: "Analist senaryo listesi, 07.11.2026"
+
+  - id: R-FF-014
+    title: "Para birimi filtresi"
+    status: VARSAYIM
+    description: >
+      Para Birimi seçilip Listele'ye basıldığında yalnızca o para birimindeki
+      faturalar listelenir.
+    fields: ["Para Birimi", "Listele"]
+    messages: []
+    source: "Analist senaryo listesi, 07.11.2026"
+
+  - id: R-FF-015
+    title: "Statü filtresi"
+    status: VARSAYIM
+    description: >
+      Statü seçilip Listele'ye basıldığında yalnızca Ödeme Durumu o statüde olan
+      faturalar listelenir.
+    fields: ["Statü", "Ödeme Durumu", "Listele"]
+    messages: []
+    source: "Analist senaryo listesi, 07.11.2026"
+
+  - id: R-FF-016
+    title: "Bayi kodu filtresi"
+    status: VARSAYIM
+    description: >
+      Bayi Kodu seçilip Listele'ye basıldığında yalnızca o bayi koduna ait
+      faturalar listelenir.
+    fields: ["Bayi Kodu", "Listele"]
+    messages: []
+    source: "Analist senaryo listesi, 07.11.2026"
+
+  - id: R-FF-017
+    title: "Sonuçsuz sorgu"
+    status: DOĞRULANDI
+    description: >
+      Kritere uyan fatura bulunmadığında tablo gövdesinde bilgi mesajı
+      görüntülenir.
+    fields: []
+    messages:
+      - "Kayıt bulunamadı."
+    source: "Ajan yürüyüşü, 07.11.2026 (Sanko DBS Ödemeleri)"
+
+  # ─────────────────────────────────────────────────────────────
+  # C — Özet bandı ve tablo
+  # ─────────────────────────────────────────────────────────────
+
+  - id: R-FF-020
+    title: "Özet bandı alanları"
+    status: VARSAYIM
+    description: >
+      Firma seçilip fatura listelendiğinde özet bandında Firma Kodu, Toplam
+      Fatura Tutarı, Onaylı Tutar (TL) ve Toplam Kalan Bakiye görünür. APPLE A.Ş.
+      için Firma Kodu APPYAKOPS'tur.
+    fields: ["Firma Kodu", "Toplam Fatura Tutarı", "Onaylı Tutar (TL)", "Toplam Kalan Bakiye"]
+    messages: []
+    source: "Analist senaryo listesi; Firma Kodu ve Toplam Fatura Tutarı catalogs/ngc/dbs-firm-invoice.yaml'da da var"
+
+  - id: R-FF-021
+    title: "Çok para birimli özet"
+    status: VARSAYIM
+    description: >
+      Firmanın birden fazla para biriminde faturası varsa özet bandındaki
+      tutarlar her para birimi için ayrı satırda gösterilir.
+    fields: ["Toplam Fatura Tutarı", "Onaylı Tutar (TL)", "Toplam Kalan Bakiye"]
+    messages: []
+    source: "Analist senaryo listesi, 07.11.2026"
+
+  - id: R-FF-022
+    title: "Tablo kolonları"
+    status: DOĞRULANDI
+    description: >
+      Fatura tablosunda Bayi Kodu, Fatura No, Son Ödeme Tarihi, Fatura Tutarı,
+      Kalan Tutar ve Ödeme Durumu kolonları bulunur; her başlıkta sıralama
+      simgesi vardır.
+    fields: ["Bayi Kodu", "Fatura No", "Son Ödeme Tarihi", "Fatura Tutarı", "Kalan Tutar", "Ödeme Durumu"]
+    messages: []
+    source: "Ekran görüntüsü, 07.11.2026"
+
+  - id: R-FF-023
+    title: "Kolon sıralama"
+    status: VARSAYIM
+    description: >
+      Kolon başlığına tıklanınca kayıtlar o kolona göre artan, ikinci tıklamada
+      azalan sıralanır. Tutar kolonları sayısal, tarih kolonları kronolojik
+      sıralanır.
+    fields: []
+    messages: []
+    source: "Analist senaryo listesi, 07.11.2026"
+
+  - id: R-FF-024
+    title: "Tablo içinde bul"
+    status: VARSAYIM
+    description: >
+      Tablo içinde bul alanına yazılan değer, listelenen kayıtları o değeri
+      içerenlerle sınırlar. Hangi kolonlarda aradığı teyit edilmedi.
+    fields: ["Tablo içinde bul"]
+    messages: []
+    source: "Alan ekranda var (ekran görüntüsü, 07.11.2026); süzme davranışı analist senaryosundan"
+
+  - id: R-FF-025
+    title: "Negatif tutar gösterimi"
+    status: VARSAYIM
+    description: >
+      Negatif tutarlı faturaların Fatura Tutarı ve Kalan Tutar değerleri eksi
+      işaretiyle gösterilir.
+    fields: ["Fatura Tutarı", "Kalan Tutar"]
+    messages: []
+    source: "Analist senaryo listesi, 07.11.2026"
+
+  - id: R-FF-026
+    title: "Dışa aktarma"
+    status: VARSAYIM
+    description: >
+      Tablonun altında Pdf, Excel ve Yazdır bağlantıları bulunur.
+    fields: ["Pdf", "Excel", "Yazdır"]
+    messages: []
+    source: "Analist senaryo listesi, 07.11.2026"
+
+  # ─────────────────────────────────────────────────────────────
+  # D — İşlemler paneli ve Detay
+  # ─────────────────────────────────────────────────────────────
+
+  - id: R-FF-030
+    title: "İşlemler paneli — satır seçilmeden"
+    status: DOĞRULANDI
+    description: >
+      Satır seçili değilken İşlemler panelinde Fatura Oluştur, Limit Risk
+      Sorgulama ve Dosya İzleme bulunur. Detay, Fatura Güncelle ve Fatura İptal
+      Et'in bu durumda gizli olduğu henüz teyit edilmedi.
+    fields: ["Fatura Oluştur", "Limit Risk Sorgulama", "Dosya İzleme"]
+    messages: []
+    source: "Ekran görüntüsü, 07.11.2026"
+
+  - id: R-FF-031
+    title: "İşlemler paneli — satır seçilince"
+    status: VARSAYIM
+    description: >
+      Bir satır seçildiğinde İşlemler panelinde Detay, Fatura Güncelle ve Fatura
+      İptal Et de görünür. Aynı anda yalnızca bir satır seçilebilir; yeni satır
+      seçilince önceki seçim kalkar.
+    fields: ["Detay", "Fatura Güncelle", "Fatura İptal Et"]
+    messages: []
+    source: "Ajan satır seçip Fatura Güncelle'ye tıklayabildi (07.11.2026); geri kalanı analist senaryosundan"
+
+  - id: R-FF-032
+    title: "Fatura detayı"
+    status: VARSAYIM
+    description: >
+      Seçili satırda Detay'a tıklanınca Fatura Bilgileri penceresi açılır; Ana
+      Firma Adı, Bayi Kodu, Fatura No, Fatura Tipi, Fatura Tutarı, Durum, Vade
+      Tarihi, Fatura Tarihi, Oluşturulma Tarihi ve Ek Bilgi gösterilir. Değerler
+      tablodaki satırla aynıdır. Kapat ile pencere kapanır, seçim korunur.
+    fields: ["Detay", "Fatura Bilgileri", "Kapat"]
+    messages: []
+    source: "Fatura Bilgileri penceresi bir ajan yürüyüşünde görüldü; alan listesi analist senaryosundan"
+
+  - id: R-FF-033
+    title: "E-Fatura hash kodu (detay)"
+    status: VARSAYIM
+    description: >
+      Fatura Tipi E-Fatura olan bir faturanın detayında E-Fatura Hash Kodu alanı
+      dolu gösterilir.
+    fields: ["E-Fatura Hash Kodu"]
+    messages: []
+    source: "Analist senaryo listesi, 07.11.2026"
+
+  # ─────────────────────────────────────────────────────────────
+  # E — Fatura Oluştur
+  # ─────────────────────────────────────────────────────────────
+
+  - id: R-FF-040
+    title: "Fatura oluşturma yetkisi"
+    status: VARSAYIM
+    description: >
+      Fatura oluşturma yetkisi olmayan firmada Fatura Oluştur ekranı açılmaz,
+      yetki uyarısı gösterilir. Uyarının metni R-FF-080'dekiyle aynı mı, teyit
+      edilmedi.
+    fields: ["Fatura Oluştur"]
+    messages: []
+    source: "Analist senaryo listesi, 07.11.2026"
+
+  - id: R-FF-041
+    title: "Oluşturma tipi yol ayrımı"
+    status: DOĞRULANDI
+    description: >
+      Fatura Oluştur ekranı Fatura Bilgi Giriş ve Onay adımlarından oluşur ve önce
+      Oluşturma Tipi sorulur: Bilgi Girişi ya da Dosya Yükleme. Tip seçilmeden
+      form açılmaz; Geri ile Firma Fatura İşlemleri listesine dönülür.
+    fields: ["Oluşturma Tipi", "Bilgi Girişi", "Dosya Yükleme", "Geri"]
+    messages: []
+    degerler:
+      olusturma_tipi: ["Bilgi Girişi", "Dosya Yükleme"]
+    source: "catalogs/ngc/dbs-fatura-olustur.yaml (entry_choice); ajan yürüyüşleri"
+
+  - id: R-FF-042
+    title: "Bilgi Girişi formu alanları"
+    status: DOĞRULANDI
+    description: >
+      Bilgi Girişi formunda Kurum (salt okunur, seçilen firma), Bayi Kodu, Bayi
+      Ünvanı, Başlangıç Vadesi, Fatura No, Orijinal Fatura Numarası, Döviz Cinsi,
+      Taksit Adedi, Toplam Tutar, Orijinal Fatura Tutarı, Taksit Periyot Birimi,
+      Taksit Periyodu, Fatura Dönemi, Fatura Tarihi, Fatura Tipi, Ek Bilgi Girişi
+      bölümü ve Geri / Devam butonları bulunur.
+    fields: ["Bayi Kodu", "Bayi Ünvanı", "Başlangıç Vadesi", "Fatura No",
+             "Orijinal Fatura Numarası", "Döviz Cinsi", "Taksit Adedi", "Toplam Tutar",
+             "Orijinal Fatura Tutarı", "Taksit Periyot Birimi", "Taksit Periyodu",
+             "Fatura Dönemi", "Fatura Tarihi", "Fatura Tipi", "Devam", "Geri"]
+    messages: []
+    source: "catalogs/ngc/dbs-fatura-olustur.yaml; ajan yürüyüşleri"
+
+  - id: R-FF-043
+    title: "Döviz cinsi yalnızca TL"
+    status: VARSAYIM
+    description: >
+      Bayi seçildikten sonra Döviz Cinsi listesinde Seçiniz dışında yalnızca TL
+      bulunur.
+    fields: ["Döviz Cinsi"]
+    messages: []
+    degerler:
+      secenekler: ["Seçiniz", "TL"]
+    source: "Analist senaryo listesi; yürüyüşlerde hep TL seçildi, başka seçenek görülmedi"
+
+  - id: R-FF-044
+    title: "Bayi kodu listesi"
+    status: VARSAYIM
+    description: >
+      Bayi Kodu listesi seçilen firmaya tanımlı bayileri gösterir ve aranabilirdir.
+      Sanko DBS Ödemeleri için yürüyüşte bayisanko1 seçildi.
+    fields: ["Bayi Kodu"]
+    messages: []
+    source: "Analist senaryo listesi; ajan yürüyüşü"
+
+  - id: R-FF-045
+    title: "Taksit periyot birimi seçenekleri"
+    status: VARSAYIM
+    description: >
+      Taksit Periyot Birimi listesinde Seçiniz, Ay, Hafta ve Gün bulunur.
+    fields: ["Taksit Periyot Birimi"]
+    messages: []
+    degerler:
+      secenekler: ["Seçiniz", "Ay", "Hafta", "Gün"]
+    source: "Analist senaryo listesi; bir ajan yürüyüşü Ay, Hafta, Gün bildirdi"
+
+  - id: R-FF-046
+    title: "Fatura tipi seçenekleri"
+    status: VARSAYIM
+    description: >
+      Fatura Tipi listesinde Seçiniz, Normal, E-Fatura ve E-Arşiv Fatura bulunur.
+    fields: ["Fatura Tipi"]
+    messages: []
+    degerler:
+      secenekler: ["Seçiniz", "Normal", "E-Fatura", "E-Arşiv Fatura"]
+    source: "Analist senaryo listesi, 07.11.2026"
+
+  - id: R-FF-047
+    title: "Tutar lira ve kuruş ayrıdır"
+    status: DOĞRULANDI
+    description: >
+      Toplam Tutar ve Orijinal Fatura Tutarı lira ve kuruş olarak iki ayrı
+      kutudur. Formun okuduğu tutar bu iki kutudan hesaplanır; tek kutuya biçimli
+      yazılan bir tutar (1.250,50) tutar olarak alınmaz. Varsayılan değerlerin 0
+      ve 00 olduğu teyit edilmedi.
+    fields: ["Toplam Tutar", "Orijinal Fatura Tutarı"]
+    messages: []
+    source: "Ajan yürüyüşü (lira ve kuruş kutuları ayrı dolduruldu); CLAUDE.md tutar dersi"
+
+  - id: R-FF-048
+    title: "Zorunlu alan uyarıları"
+    status: DOĞRULANDI
+    description: >
+      Bilgi Girişi formunda zorunlu alanlar boşken Devam'a basıldığında her boş
+      alanın altında uyarı gösterilir ve ekran Onay adımına geçmez.
+    fields: ["Bayi Kodu", "Başlangıç Vadesi", "Fatura No", "Taksit Adedi",
+             "Toplam Tutar", "Taksit Periyot Birimi", "Taksit Periyodu", "Devam"]
+    messages:
+      - "Bayi kodu seçiniz."
+      - "Başlangıç vadesi seçiniz."
+      - "Fatura numarası giriniz."
+      - "Taksit adedi giriniz."
+      - "Toplam tutar giriniz."
+      - "Taksit periyot birimi seçiniz."
+      - "Taksit periyodu giriniz."
+    source: "Ajan yürüyüşü; senaryo 08'in Gherkin'i yürüyüşten üretildi"
+
+  - id: R-FF-049
+    title: "Ek bilgi satırları"
+    status: VARSAYIM
+    description: >
+      Ek Bilgi Girişi bölümünde Yeni Satır ile satır eklenir; her satırın sağında
+      silme simgesi vardır ve satır silinebilir.
+    fields: ["Ek Bilgi Girişi", "Yeni Satır"]
+    messages: []
+    source: "Analist senaryo listesi, 07.11.2026"
+
+  - id: R-FF-050
+    title: "Bilgi Girişi ile fatura oluşturma"
+    status: VARSAYIM
+    description: >
+      Bilgi Girişi formu geçerli değerlerle doldurulup Devam'a basıldığında Onay
+      adımı açılır ve girilen değerler gösterilir. Onay sonrasındaki başarı
+      mesajı henüz gözlenmedi.
+    fields: ["Devam", "Onay"]
+    messages: []
+    source: "Ajan yürüyüşü Devam'a kadar gitti; Onay ekranının içeriği teyit edilmedi"
+
+  - id: R-FF-051
+    title: "Bayi ünvanı kendiliğinden dolar"
+    status: DOĞRULANDI
+    description: >
+      Bayi Kodu seçildiğinde Bayi Ünvanı uygulama tarafından doldurulur ve salt
+      okunurdur.
+    fields: ["Bayi Kodu", "Bayi Ünvanı"]
+    messages: []
+    source: "catalogs/ngc/dbs-fatura-olustur.yaml (Bayi Ünvanı readonly)"
+
+  - id: R-FF-052
+    title: "Döviz cinsi bayiye bağlıdır"
+    status: DOĞRULANDI
+    description: >
+      Döviz Cinsi'nin seçenekleri Bayi Kodu seçildikten sonra yüklenir; bayi
+      seçilmeden seçilebilir bir para birimi yoktur.
+    fields: ["Bayi Kodu", "Döviz Cinsi"]
+    messages: []
+    source: "CLAUDE.md, DBS Fatura Oluştur gözlemi"
+
+  - id: R-FF-053
+    title: "Başlangıç vadesi ileri tarih olmalıdır"
+    status: DOĞRULANDI
+    description: >
+      Başlangıç Vadesi bugün ya da geçmiş bir tarih olamaz; takvim bugünü ve
+      öncesini seçtirmez.
+    fields: ["Başlangıç Vadesi"]
+    messages: []
+    source: "CLAUDE.md, takvim dersi (DBS Fatura Oluştur)"
+
+  - id: R-FF-054
+    title: "E-Fatura hash kodu (form)"
+    status: VARSAYIM
+    description: >
+      Fatura Tipi E-Fatura seçildiğinde formda E-Fatura Hash Kodu alanı açılır;
+      Normal seçiliyken bu alan yoktur.
+    fields: ["Fatura Tipi", "E-Fatura Hash Kodu"]
+    messages: []
+    source: "CLAUDE.md açık konu notu; koşuyla teyit edilmedi"
+
+  - id: R-FF-055
+    title: "Dosya Yükleme ayrı ekrandır"
+    status: DOĞRULANDI
+    description: >
+      Oluşturma Tipi Dosya Yükleme seçildiğinde Bilgi Girişi formunun alanları
+      görünmez; dosya Gözat butonuyla seçilir.
+    fields: ["Dosya Yükleme", "Gözat"]
+    messages: []
+    source: "catalogs/ngc/dbs-fatura-olustur.yaml notu; CLAUDE.md upload adımı"
+
+  - id: R-FF-056
+    title: "Onaydan geri dönüş"
+    status: VARSAYIM
+    description: >
+      Onay adımında Geri'ye basıldığında Bilgi Girişi formuna dönülür ve girilen
+      değerler korunur.
+    fields: ["Geri", "Onay"]
+    messages: []
+    source: "Standart sihirbaz davranışından türetilmiş"
+
+  # ─────────────────────────────────────────────────────────────
+  # F — Fatura Güncelle ve İptal
+  # ─────────────────────────────────────────────────────────────
+
+  - id: R-FF-060
+    title: "Güncelleme ekranı"
+    status: VARSAYIM
+    description: >
+      Ödenecek durumundaki bir fatura seçilip Fatura Güncelle'ye basıldığında
+      Bilgi Girişi ve Onay adımlı ekran açılır. Kurum Adı, Bayi Kodu, Bayi Ünvanı,
+      Fatura No, Para Birimi, Fatura Tutarı, Son Ödeme Tarihi ve Fatura Dönemi
+      salt okunur gösterilir. Geri ile listeye dönülür, fatura değişmez.
+    fields: ["Fatura Güncelle", "Geri"]
+    messages: []
+    source: "Analist senaryo listesi; ekran yetki nedeniyle hiç açılamadı (R-FF-080)"
+
+  - id: R-FF-061
+    title: "Güncellemede yeni değer alanları"
+    status: VARSAYIM
+    description: >
+      Güncelleme formunda Yeni Fatura No, Yeni Orijinal Fatura No, Yeni Para
+      Birimi, Yeni Fatura Tutarı, Yeni Orijinal Fatura Tutarı, Yeni Son Ödeme
+      Tarihi, Yeni Fatura Dönemi, Yeni Fatura Tarihi ve Yeni Fatura Tipi bulunur;
+      Yeni Fatura No ve Yeni Fatura Tutarı mevcut değerlerle dolu gelir.
+    fields: ["Yeni Fatura No", "Yeni Fatura Tutarı"]
+    messages: []
+    source: "Analist senaryo listesi, 07.11.2026"
+
+  - id: R-FF-070
+    title: "Fatura iptali"
+    status: VARSAYIM
+    description: >
+      Ödenecek durumundaki bir fatura seçilip Fatura İptal Et'e basıldığında
+      seçilen faturanın bilgilerini gösteren bir onay ekranı açılır. Geri ile
+      listeye dönülür; faturanın Ödeme Durumu Ödenecek olarak kalır.
+    fields: ["Fatura İptal Et", "Geri"]
+    messages: []
+    source: "Analist senaryo listesi, 07.11.2026"
+
+  # ─────────────────────────────────────────────────────────────
+  # Yetki
+  # ─────────────────────────────────────────────────────────────
+
+  - id: R-FF-080
+    title: "Yetkisiz işlem uyarısı"
+    status: DOĞRULANDI
+    description: >
+      Kullanıcının yetkisi olmayan bir işlem seçildiğinde ekran açılmaz, uyarı
+      gösterilir. QZ06395288 kullanıcısıyla Fatura Güncelle'de görüldü.
+    fields: ["Fatura Güncelle"]
+    messages:
+      - "Bu işlemi yapmaya yetkiniz yoktur."
+    source: "Ajan yürüyüşü, 07.11.2026 (ASAŞ ALÜMİNYUM SAN., HLLSRC02)"
