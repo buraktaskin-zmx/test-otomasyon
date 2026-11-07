@@ -319,6 +319,7 @@ public class FirmaFaturaSeed {
     @EventListener(ApplicationReadyEvent.class)
     public void seed() {
         try {
+            renameOld();
             Set<String> existing = new HashSet<>();
             for (ProductService.Registered entry : products.registered(APP, PRODUCT)) {
                 if (FLOW.equals(entry.stored().flow())) {
@@ -346,10 +347,123 @@ public class FirmaFaturaSeed {
             }
             System.err.println("[seed] Firma Fatura İşlemleri: " + added + " eklendi, "
                     + skipped + " zaten vardı, " + failed + " hata");
+            placeLoose();
         } catch (RuntimeException e) {
             // Geçici bir sınıf uygulamanın açılmasını engellememeli.
             System.err.println("[seed] çalışmadı: " + e);
         }
+    }
+
+    /**
+     * Elle yazılmış dört eski senaryoya listedeki düzgün adını verir. Ekleme
+     * adımından ÖNCE çalışır: yeniden adlanan senaryo listede "zaten var"
+     * sayılır ve aynı senaryonun ikinci bir kopyası oluşmaz. Adımları ve
+     * dosya adı olduğu gibi kalır, yalnızca başlık (ve Gherkin'deki Scenario
+     * satırı) değişir.
+     */
+    private void renameOld() {
+        Set<String> seedTitles = new HashSet<>();
+        SCENARIOS.forEach(s -> seedTitles.add(key(s.title())));
+        Set<String> onScreen = new HashSet<>();
+        List<ScenarioStore.Stored> candidates = new ArrayList<>();
+        for (ProductService.Registered entry : products.registered(APP, PRODUCT)) {
+            if (!FLOW.equals(entry.stored().flow())) {
+                continue;
+            }
+            String title = key(entry.fields().title());
+            onScreen.add(title);
+            if (!seedTitles.contains(title)) {
+                candidates.add(entry.stored());
+            }
+        }
+        for (ScenarioStore.Stored stored : candidates) {
+            String old = stored.fields().title();
+            String target = newTitleFor(fold(old));
+            if (target == null) {
+                continue;
+            }
+            if (onScreen.contains(key(target))) {
+                System.err.println("[seed] YENİDEN ADLANDIRILMADI: " + old + " -- ekranda zaten \""
+                        + target + "\" var; eskisini UI'dan silebilirsin");
+                continue;
+            }
+            ProductService.SaveResult saved = products.saveScenario(APP, PRODUCT, stored.path(),
+                    new ProductService.ScenarioEdit(null, null, target, null, null, null, null,
+                            stored.version(), null, null));
+            if (saved.refused() != null) {
+                System.err.println("[seed] HATA: " + old + " -- " + saved.refused());
+            } else {
+                onScreen.add(key(target));
+                System.err.println("[seed] YENİDEN ADLANDIRILDI: " + old + " -> " + target);
+            }
+        }
+    }
+
+    private static String newTitleFor(String t) {
+        if (t.contains("bayi kodu")) {
+            return "Fatura detayında bayi kodu doğrulanır";
+        }
+        if (t.contains("fatura olus")) {
+            return "Bilgi girişi ile fatura oluşturulur";
+        }
+        if (t.contains("min") || t.contains("maks")) {
+            return "Minimum tutar maksimumdan büyük olamaz";
+        }
+        if (t.contains("tarih")) {
+            return "Başlangıç tarihi bitiş tarihinden büyük olamaz";
+        }
+        return null;
+    }
+
+    /**
+     * Ekranda başlığı olmayan (elle yazılmış, eski) senaryoları başlığına
+     * göre bir başlık altına koyar. Zaten bir başlıkta olana dokunmaz;
+     * eşleşmeyeni başlıksız bırakıp loga yazar.
+     */
+    private void placeLoose() {
+        for (ProductService.Registered entry : products.registered(APP, PRODUCT)) {
+            if (!FLOW.equals(entry.stored().flow()) || entry.stored().headingId() != null) {
+                continue;
+            }
+            String title = entry.fields().title();
+            String heading = headingFor(fold(title));
+            if (heading == null) {
+                System.err.println("[seed] BAŞLIKSIZ KALDI: " + title);
+                continue;
+            }
+            ProductService.HeadingResult made = products.addHeading(APP, PRODUCT, FLOW, heading);
+            if (made.refused() != null) {
+                System.err.println("[seed] HATA: " + title + " -- " + made.refused());
+                continue;
+            }
+            ProductService.Created moved = products.assignHeading(APP, PRODUCT, entry.stored().path(),
+                    made.added().heading().id().toString());
+            System.err.println(moved.refused() != null
+                    ? "[seed] HATA: " + title + " -- " + moved.refused()
+                    : "[seed] BAŞLIĞA KONDU: " + title + " -> " + heading);
+        }
+    }
+
+    /** Eski senaryo adları: bayi kodu doğrulama, fatura oluştur, min maks tutar, tarih. */
+    private static String headingFor(String t) {
+        if (t.contains("bayi kodu")) {
+            return D;
+        }
+        if (t.contains("fatura olus")) {
+            return E;
+        }
+        if (t.contains("guncelle") || t.contains("iptal")) {
+            return F;
+        }
+        if (t.contains("min") || t.contains("maks") || t.contains("tutar") || t.contains("tarih")) {
+            return B;
+        }
+        return null;
+    }
+
+    private static String fold(String text) {
+        return key(text).replace('ı', 'i').replace('ş', 's').replace('ğ', 'g')
+                .replace('ü', 'u').replace('ö', 'o').replace('ç', 'c');
     }
 
     private static String feature(S s) {
