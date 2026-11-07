@@ -2,6 +2,7 @@ package orchestrator.product;
 
 import orchestrator.catalog.CatalogService;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -151,6 +152,17 @@ public class ProductController {
             return ResponseEntity.badRequest().body(Map.of("error", assigned.refused()));
         }
         return ResponseEntity.ok(Map.of("path", assigned.key()));
+    }
+
+    /** The row's delete button; the UI asks "emin misiniz?" before calling it. */
+    @DeleteMapping("/{app}/{product}/scenario")
+    public ResponseEntity<?> deleteScenario(@PathVariable String app, @PathVariable String product,
+                                            @RequestParam String path) {
+        ProductService.Created deleted = products.deleteScenario(app, product, path);
+        if (deleted.refused() != null) {
+            return ResponseEntity.status(404).body(Map.of("error", deleted.refused()));
+        }
+        return ResponseEntity.ok(Map.of("path", deleted.key()));
     }
 
     /** {@code heading}: a heading id, or null for "Başlıksız"; {@code paths}: the group, in order. */

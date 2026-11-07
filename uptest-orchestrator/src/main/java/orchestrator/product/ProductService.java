@@ -376,6 +376,14 @@ public class ProductService {
         return store.assignHeading(safe(app), product, path, id);
     }
 
+    /** The row's delete button, after the analyst confirmed it. */
+    public Created deleteScenario(String app, String product, String path) {
+        if (path == null || path.isBlank()) {
+            return new Created(null, "Senaryo gerekli");
+        }
+        return store.delete(safe(app), product, path);
+    }
+
     /**
      * Drag-and-drop in the table: the rows of one group in their new order,
      * all under one heading (null or blank for "Başlıksız").

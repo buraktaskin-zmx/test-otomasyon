@@ -3,6 +3,7 @@ import type { DragEvent, MouseEvent, ReactNode } from "react";
 import { readinessLabel } from "./readiness";
 import { MOVE_MENU_MAX_PX, ScenarioMoveMenu } from "./ScenarioMoveMenu";
 import { openHeadings, rememberOpenHeadings } from "../lib/headings";
+import { ConfirmDialog } from "../ui/ConfirmDialog";
 import type { RegisteredScenario, ScenarioHeading, ScenarioNeed } from "../api/types";
 
 /** A screen a scenario can be moved to. */
@@ -59,6 +60,7 @@ export function ScenarioTable({
   onSetHeading,
   canArrange,
   onArrange,
+  onDelete,
 }: {
   scenarios: RegisteredScenario[];
   /** The headings of the screens the rows come from. */
@@ -77,7 +79,11 @@ export function ScenarioTable({
   canArrange: boolean;
   /** The dropped-into group's rows, in order, all under `heading` (null = başlıksız). */
   onArrange: (heading: string | null, paths: string[]) => void;
+  /** Deletes for good; resolves once the server has answered, true when it was deleted. */
+  onDelete: (scenario: RegisteredScenario) => Promise<boolean>;
 }) {
+  const [deleting, setDeleting] = useState<RegisteredScenario | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [menuUp, setMenuUp] = useState(false);
   const [open, setOpen] = useState<ReadonlySet<string>>(openHeadings);
@@ -280,6 +286,7 @@ export function ScenarioTable({
       onDragEnd={endDrag}
       onDragOver={drag.onDragOver}
       onDrop={commitDrop}
+      onAskDelete={setDeleting}
       menuOpen={menuFor === scenario.path}
       menuUp={menuUp}
       headings={headings.filter((heading) => heading.flow === scenario.flow)}
@@ -357,6 +364,21 @@ export function ScenarioTable({
           </tbody>
         </table>
       </div>
+      {deleting ? (
+        <ConfirmDialog
+          title="Senaryoyu silmek istediğinize emin misiniz?"
+          detail={"“" + deleting.title + "” kalıcı olarak silinecek. Bu işlem geri alınamaz."}
+          confirmLabel="Sil"
+          busy={deleteBusy}
+          onCancel={() => setDeleting(null)}
+          onConfirm={async () => {
+            setDeleteBusy(true);
+            await onDelete(deleting);
+            setDeleteBusy(false);
+            setDeleting(null);
+          }}
+        />
+      ) : null}
     </>
   );
 }
@@ -447,6 +469,7 @@ function ScenarioRow({
   onDragEnd,
   onDragOver,
   onDrop,
+  onAskDelete,
   menuOpen,
   menuUp,
   headings,
@@ -467,6 +490,7 @@ function ScenarioRow({
   onDragEnd: () => void;
   onDragOver?: (event: DragEvent<HTMLTableRowElement>) => void;
   onDrop: (event: DragEvent<HTMLTableRowElement>) => void;
+  onAskDelete: (scenario: RegisteredScenario) => void;
   menuOpen: boolean;
   menuUp: boolean;
   /** This row's own screen's headings. */
@@ -492,9 +516,29 @@ function ScenarioRow({
       onDrop={onDrop}
     >
       <td>
-        <button type="button" className="sc-open unstyled-button">
-          {scenario.title}
-        </button>
+        <div className="sc-title-line">
+          {/* Shown on hover (and keyboard focus); its click must not open the row. */}
+          <button
+            type="button"
+            className="sc-delete unstyled-button"
+            title="Senaryoyu sil"
+            aria-label={"Senaryoyu sil: " + scenario.title}
+            draggable={false}
+            onClick={(event) => {
+              event.stopPropagation();
+              onAskDelete(scenario);
+            }}
+          >
+            <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+              <circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" strokeWidth="1.5" />
+              <line x1="5" y1="8" x2="11" y2="8" stroke="currentColor" strokeWidth="1.5"
+                    strokeLinecap="round" />
+            </svg>
+          </button>
+          <button type="button" className="sc-open unstyled-button">
+            {scenario.title}
+          </button>
+        </div>
         <div className="sc-path">
           {scenario.path}
           {/* Only once there ARE Gherkin steps: "0 adım" on every

@@ -219,6 +219,22 @@ public class ScenarioStore {
     }
 
     /**
+     * Deletes one scenario row, for good: the database is the library's only
+     * copy. A file an earlier "Dosyaya aktar" wrote stays on disk — export
+     * never deletes, and import reads only products the database does not
+     * know, so the file does not bring the scenario back.
+     */
+    @Transactional
+    public ProductService.Created delete(String app, String key, String path) {
+        Optional<Located> found = locate(app, key, path);
+        if (found.isEmpty()) {
+            return new ProductService.Created(null, "Senaryo bulunamadı: " + path);
+        }
+        scenarios.delete(found.get().entity);
+        return new ProductService.Created(path, null);
+    }
+
+    /**
      * One drag-and-drop: every row of the group the scenario was dropped
      * into, in their new order, all put under {@code headingId}. The group
      * it LEFT needs no write -- its remaining rows keep their relative order.

@@ -535,6 +535,53 @@ body {
 .sc-group-count { font-size: var(--text-xs); }
 .registry tr.is-grouped > td:first-child { padding-left: calc(var(--space-3) + 18px); }
 
+/* A row's delete button: room kept for it always, so the title never moves;
+   seen on hover or keyboard focus, and always on a screen with no hover */
+.sc-title-line { display: flex; align-items: center; gap: var(--space-1); }
+.sc-delete {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 22px;
+    height: 22px;
+    border-radius: var(--radius-pill);
+    color: var(--soft);
+    opacity: 0;
+    transition: opacity 120ms ease, color 120ms ease, background 120ms ease;
+}
+.registry tr:hover .sc-delete,
+.sc-delete:focus-visible { opacity: 1; }
+.sc-delete:hover,
+.sc-delete:focus-visible { color: var(--fail); background: var(--fail-bg); }
+@media (hover: none) { .sc-delete { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .sc-delete { transition: none; } }
+
+/* "Emin misiniz?" — a card over a dimmed page */
+.confirm-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-4);
+    background: color-mix(in srgb, var(--ink-title) 28%, transparent);
+}
+.confirm-card {
+    width: min(440px, 100%);
+    padding: var(--space-5);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+}
+.confirm-title { margin: 0; font-size: var(--text-md); font-weight: 600; color: var(--ink-title); }
+.confirm-detail { margin: var(--space-2) 0 0; font-size: var(--text-base); color: var(--muted); }
+.confirm-actions { display: flex; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-4); }
+.btn-danger { background: var(--fail); color: var(--on-brand); border-color: var(--fail); }
+.btn-danger:hover:not(:disabled) { filter: brightness(.92); }
+
 /* Drag-and-drop between and inside headings */
 .registry tr.sc-drag-source { display: none; }
 .registry tr.sc-group.is-drop-target td,

@@ -115,6 +115,7 @@ metin olmayan işaretler ≥ **3:1**. Oranlar hesaplandı, tahmin değil.
 | eksik `#B54708` / `#FFFAEB` | 5.20 | ✅ |
 | seed `#667085` / `#F2F4F7` | 4.51 | ✅ sınırda — zemini koyulaştırma |
 | başarılı `#067647` / `#FFFFFF` | 5.69 | ✅ |
+| `#FFFFFF` / engelli `#D92D20` | 4.83 | ✅ silme butonu yazısı (`.btn-danger`) — yalnızca geri alınamaz işlemin onayında |
 
 Yeni bir renk çifti eklersen oranını hesapla ve bu tabloya yaz.
 

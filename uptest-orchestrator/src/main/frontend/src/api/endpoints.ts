@@ -229,6 +229,14 @@ export const setScenarioHeading = (app: string, product: string, path: string,
     { heading },
   );
 
+/** The row's delete button, after "emin misiniz?". Irreversible: the database is the only copy. */
+export const deleteScenario = (app: string, product: string, path: string) =>
+  api<{ path: string }>(
+    "DELETE",
+    "/api/v1/products/" + encodeURIComponent(app) + "/" + encodeURIComponent(product)
+      + "/scenario?path=" + encodeURIComponent(path),
+  );
+
 /**
  * Drag-and-drop: every row of the group a scenario was dropped into, in the
  * new order, all under `heading` (null = "Başlıksız").

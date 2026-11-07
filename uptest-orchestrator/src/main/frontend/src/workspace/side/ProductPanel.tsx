@@ -8,7 +8,7 @@ import type { useProducts } from "../../hooks/useProducts";
 import type { useTestUsers } from "../../hooks/useTestUsers";
 import {
   BROWSER_CLOSED, addScreen, createHeading, createMenu, createScenarioFile, explore, exportScenarios,
-  arrangeScenarios, moveScenario, setScenarioHeading, tapeGherkin,
+  arrangeScenarios, deleteScenario, moveScenario, setScenarioHeading, tapeGherkin,
 } from "../../api/endpoints";
 import type { MoveTarget } from "../../product/ScenarioTable";
 import { NewScenario } from "../../product/NewScenario";
@@ -204,6 +204,15 @@ export function ProductPanel({
       heading, paths);
     if (!result.ok) toast("Taşınamadı: " + result.error, true);
     await products.openRegistry(selection.app, selection.product);
+  };
+
+  /** The row's delete button, after the dialog's "Sil". */
+  const removeScenario = async (row: { path: string; title: string }) => {
+    if (!selection) return false;
+    const result = await deleteScenario(selection.app, selection.product, row.path);
+    toast(result.ok ? "“" + row.title + "” silindi" : "Silinemedi: " + result.error, !result.ok);
+    await products.openRegistry(selection.app, selection.product);
+    return result.ok;
   };
 
   /* Changing screen closes whatever scenario was open. Without this the
@@ -580,6 +589,7 @@ export function ProductPanel({
                   onSetHeading={(scenario, heading) => void assignHeading(scenario, heading)}
                   canArrange={Boolean(selection.flow)}
                   onArrange={(heading, paths) => void arrange(heading, paths)}
+                  onDelete={removeScenario}
                   onOpen={(scenario) =>
                     setSelection({ ...selection, flow: scenario.flow, path: scenario.path })}
                   targetsFor={targetsFor}
