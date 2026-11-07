@@ -61,6 +61,9 @@ export function ScenarioTable({
   canArrange,
   onArrange,
   onDelete,
+  selected,
+  selectLocked,
+  onToggleSelect,
 }: {
   scenarios: RegisteredScenario[];
   /** The headings of the screens the rows come from. */
@@ -81,6 +84,11 @@ export function ScenarioTable({
   onArrange: (heading: string | null, paths: string[]) => void;
   /** Deletes for good; resolves once the server has answered, true when it was deleted. */
   onDelete: (scenario: RegisteredScenario) => Promise<boolean>;
+  /** Rows ticked for a multi-run, by path. */
+  selected: ReadonlySet<string>;
+  /** A queue is running: the ticks cannot change under it. */
+  selectLocked: boolean;
+  onToggleSelect: (scenario: RegisteredScenario) => void;
 }) {
   const [deleting, setDeleting] = useState<RegisteredScenario | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
@@ -287,6 +295,9 @@ export function ScenarioTable({
       onDragOver={drag.onDragOver}
       onDrop={commitDrop}
       onAskDelete={setDeleting}
+      checked={selected.has(scenario.path)}
+      selectLocked={selectLocked}
+      onToggleSelect={onToggleSelect}
       menuOpen={menuFor === scenario.path}
       menuUp={menuUp}
       headings={headings.filter((heading) => heading.flow === scenario.flow)}
@@ -304,7 +315,7 @@ export function ScenarioTable({
     <>
       {toolbar}
       <div className="registry-scroll">
-        <table className="registry">
+        <table className={"registry" + (selected.size > 0 ? " is-selecting" : "")}>
           <thead>
             <tr>
               <th>Senaryo</th>
@@ -453,6 +464,11 @@ function HeadingToolbar({
   );
 }
 
+/** Has Gherkin steps that parse: what a deterministic run needs. */
+export function runnable(scenario: RegisteredScenario): boolean {
+  return scenario.stepCount > 0 && !scenario.problem;
+}
+
 /** How one row takes part in a drag. */
 interface RowDrag {
   /** The row being dragged: kept on the page, out of sight. */
@@ -470,6 +486,9 @@ function ScenarioRow({
   onDragOver,
   onDrop,
   onAskDelete,
+  checked,
+  selectLocked,
+  onToggleSelect,
   menuOpen,
   menuUp,
   headings,
@@ -491,6 +510,9 @@ function ScenarioRow({
   onDragOver?: (event: DragEvent<HTMLTableRowElement>) => void;
   onDrop: (event: DragEvent<HTMLTableRowElement>) => void;
   onAskDelete: (scenario: RegisteredScenario) => void;
+  checked: boolean;
+  selectLocked: boolean;
+  onToggleSelect: (scenario: RegisteredScenario) => void;
   menuOpen: boolean;
   menuUp: boolean;
   /** This row's own screen's headings. */
@@ -517,6 +539,20 @@ function ScenarioRow({
     >
       <td>
         <div className="sc-title-line">
+          {/* The multi-run tick. Only a scenario with Gherkin steps can run
+              deterministically; a natural-language-only one is shown but
+              cannot be ticked, and says why. */}
+          <input
+            type="checkbox"
+            className="sc-select"
+            checked={checked}
+            disabled={selectLocked || !runnable(scenario)}
+            title={runnable(scenario) ? "Çoklu çalıştırma için seç" : "Gherkin yok — çalıştırılamaz"}
+            aria-label={"Çalıştırmak için seç: " + scenario.title}
+            draggable={false}
+            onClick={(event) => event.stopPropagation()}
+            onChange={() => onToggleSelect(scenario)}
+          />
           {/* Shown on hover (and keyboard focus); its click must not open the row. */}
           <button
             type="button"

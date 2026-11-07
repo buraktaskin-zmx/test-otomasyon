@@ -53,6 +53,9 @@ src/
   kapanan öğe `aria-expanded` taşır; combobox `role="combobox"` +
   `aria-activedescendant`. Örnekler: `product/ScenarioMoveMenu.tsx`,
   `product/HeadingCombobox.tsx`.
+- **Geri alınamaz işlem** önce `ui/ConfirmDialog.tsx` ile sorulur: odak
+  Vazgeç'te başlar (alışkanlıkla basılan Enter iptal etsin), Esc ve dışarı
+  tıklama iptal eder, Tab iki buton arasında kalır. Onay butonu `.btn-danger`.
 - **Satır içi menü** satırın tıklamasını tetiklememeli (`stopPropagation`),
   ve listenin altında yer yoksa yukarı açılmalı (`ScenarioTable.toggleMenu`).
 - **Türkçe metin** Türkçe karakterle yazılır (ı ş ğ ü ö ç İ). Türkçe

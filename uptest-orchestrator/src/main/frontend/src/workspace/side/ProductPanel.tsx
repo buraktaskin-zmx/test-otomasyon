@@ -4,6 +4,8 @@ import { ProductTree, categoryKey } from "../../product/ProductTree";
 import type { TreeSelection } from "../../product/ProductTree";
 import { ScenarioDetail } from "../../product/ScenarioDetail";
 import { ScenarioTable } from "../../product/ScenarioTable";
+import { RunQueuePanel } from "../../product/RunQueuePanel";
+import { useRunQueue } from "../../hooks/useRunQueue";
 import type { useProducts } from "../../hooks/useProducts";
 import type { useTestUsers } from "../../hooks/useTestUsers";
 import {
@@ -215,6 +217,22 @@ export function ProductPanel({
     return result.ok;
   };
 
+  /* Çoklu çalıştırma: the ticked rows and the queue that runs them. The
+     queue lives here, not in the table, so it keeps going while a scenario
+     is opened or another tab is in front (this panel stays mounted). */
+  const queue = useRunQueue();
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const toggleSelected = (row: { path: string }) =>
+    setSelected((was) => {
+      const next = new Set(was);
+      if (!next.delete(row.path)) next.add(row.path);
+      return next;
+    });
+  // A path is unique only within one product.
+  useEffect(() => {
+    setSelected(new Set());
+  }, [selection?.app, selection?.product]);
+
   /* Changing screen closes whatever scenario was open. Without this the
      detail view would survive into a screen the file does not belong to,
      and the breadcrumb above it would be lying. */
@@ -234,6 +252,21 @@ export function ProductPanel({
   const rows = selection?.flow
     ? (registry?.scenarios ?? []).filter((row) => row.flow === selection.flow)
     : registry?.scenarios ?? [];
+
+  const selectedRows = (registry?.scenarios ?? []).filter((row) => selected.has(row.path));
+  // The same two refusals the single run makes, said before four logins go out.
+  const runBlocked = !chosenUser
+    ? "Önce yukarıdan bir test kullanıcısı (CIF) seçin."
+    : selection && selection.app.toUpperCase() !== "NGI" && !chosenUser.userid
+      ? "Seçili girişin kullanıcı kodu yok — NGC için zorunlu."
+      : null;
+  const runSelected = () => {
+    if (!selection || !chosenUser || runBlocked) return;
+    queue.run(selectedRows.map((row) => ({
+      path: row.path, title: row.title, flow: row.flow, description: row.description,
+    })), selection.app, selection.product, { cif: chosenUser.cif, userid: chosenUser.userid });
+    setSelected(new Set());
+  };
 
   /* Headings belong to a screen: the selected one's, or every screen's when
      the whole menu is listed. `?? []` for a server that predates them. */
@@ -590,6 +623,9 @@ export function ProductPanel({
                   canArrange={Boolean(selection.flow)}
                   onArrange={(heading, paths) => void arrange(heading, paths)}
                   onDelete={removeScenario}
+                  selected={selected}
+                  selectLocked={queue.busy}
+                  onToggleSelect={toggleSelected}
                   onOpen={(scenario) =>
                     setSelection({ ...selection, flow: scenario.flow, path: scenario.path })}
                   targetsFor={targetsFor}
@@ -598,6 +634,14 @@ export function ProductPanel({
               )}
             </>
           )}
+          <RunQueuePanel
+            queue={queue}
+            selectedCount={selectedRows.length}
+            loginLabel={chosenUser ? "CIF " + chosenUser.cif : "test kullanıcısı seçilmedi"}
+            blockedReason={runBlocked}
+            onRun={runSelected}
+            onClearSelection={() => setSelected(new Set())}
+          />
         </section>
       </div>
     </div>

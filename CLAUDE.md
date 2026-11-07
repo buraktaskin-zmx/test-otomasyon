@@ -113,9 +113,14 @@ uptest-orchestrator/  UI, validation, dispatch. NEVER runs a test.
 One repository and one parent pom, but **two separate running applications**:
 built together, started apart, on their own ports. The orchestrator (`:8035`)
 is the only one analysts reach; executors (`:9035`) answer it alone. Each
-executor takes exactly one run at a time, so concurrency
-comes from adding replicas — and there is no queue: when they are all busy the
-next request is refused outright.
+executor takes `simultaneouslyRun` runs at a time — 1 by long-standing rule,
+**4 since 2026-11-07 as an experiment** (see the server-side document) — and
+there is no server queue: when they are all busy the next request is refused
+outright. The only queue is in the browser: ticking rows in Kayıtlı
+Senaryolar and pressing Çalıştır runs their stored Gherkin four at a time
+(`hooks/useRunQueue.ts`, `product/RunQueuePanel.tsx`), treating the "all
+executors are busy" 503 as "wait", not as a failure. A reload loses what was
+still waiting; started runs go on and appear in Geçmiş.
 
 Ports, the dispatch chain, what happens when several scenarios are submitted at
 once, and where the run history is stored are all in the server-side document
@@ -199,6 +204,17 @@ Elsewhere:
   No `.feature` anywhere carries a `#` comment line, by the analysts' standing
   rule — enforced in `ScenarioFields`, `FeatureComposer` and
   `LlmOutputCleaner` rather than asked for in a prompt.
+  In the table a row is dragged to another "Başlık", to "Başlıksız" or to a
+  new place in its own group (`POST .../scenarios/arrange`, one screen
+  selected): the dropped-into group's whole order is written to
+  `SCENARIO.sort_order`, nullable so `ddl-auto=update` could add it to a table
+  that already had rows — unpositioned rows follow, in file-name order. A row's
+  ⊖ button deletes it after `ui/ConfirmDialog` ("emin misiniz?", focus on
+  Vazgeç) through `DELETE .../scenario?path=`. **Delete is for good**: the
+  database is the only copy, and a file an earlier export wrote does not bring
+  it back, because import reads only products the database does not know.
+  "Dosyaya aktar" carries neither the headings nor this order — a file has no
+  place for them.
 - Screen catalogs for LLM prompting: `catalogs/<app>/<flow>.yaml`; schema in
   `catalogs/SCHEMA.md`
 - Screen discovery (executor): `PW/discovery/` — `CatalogDiscovery` walks a flow
@@ -206,8 +222,8 @@ Elsewhere:
   (`discover screen catalog`, `fill discovered fields:`) that `VocabularyExtractor`
   deliberately keeps OUT of the published vocabulary: they read a screen, they do
   not describe a test, and the generator must never emit them. That exclusion is
-  why a hand count of `@Given/@When/@Then` (22) disagrees with
-  `GET /api/v1/vocabulary` (20). Split by purpose: `ControlTraits` (what a
+  why a hand count of `@Given/@When/@Then` (25) disagrees with
+  `GET /api/v1/vocabulary` (23). Split by purpose: `ControlTraits` (what a
   container is, read off its DOM), `Discovered` (the field model),
   `CatalogYaml` (the output), `ScanDiagnostics` (`UPTEST_DISCOVERY_DEBUG`).
 - Run history (orchestrator): `orchestrator/persistence/` holds the entities and
@@ -296,7 +312,7 @@ is the container deployment, which is not live — see *Docker: later* above.
   (`{runDir}/traces/<scenario>.zip`), falling back to `target/traces/` when
   Cucumber was started outside the server (`mvn test`).
 
-## Current vocabulary (22 steps)
+## Current vocabulary (23 steps)
 
 **The machine-readable source of truth is generated**, not this list:
 `VocabularyExtractor` reads the `@Given/@When/@Then` annotations at build time
@@ -369,6 +385,12 @@ Shared (CommonSteps, work on both apps):
   filled in there, so `checkAssertionsAreEarned` refuses every value-bearing
   verify, and before this step existed the model's repair turn resolved that by
   deleting the assertion and calling a scenario that checks nothing "valid")
+- `verify the {string} dropdown has options {string}` (EXACTLY these options,
+  comma separated, order free. Opens the list itself and reads only the open
+  Select2 list — `li.select2-results__option` under `.select2-container--open`
+  — or a plain `<select>`'s options; closes it again if it opened it.
+  `Provenance` and `checkAssertionsAreEarned` check each option on its own,
+  because the joined "A, B" appears nowhere)
 - `verify {string} text is displayed`
 - `wait {string} seconds` (avoid — prefer auto-wait)
 
@@ -561,6 +583,21 @@ and leave each independently runnable.
   nothing — and treat it as hiding a race, not fixing one.
 - **Label matching:** use `getByText(label, setExact(true))` so "Ad Soyad /
   Unvan" doesn't also match "Alıcı Ad Soyad / Unvan".
+  **A `<br>` adds no space.** Firma Fatura İşlemleri wraps "Fatura Sorgulama
+  Tarih Kriteri" over two lines with a `<br>`, and the text Playwright matches
+  reads "Fatura SorgulamaTarih Kriteri". The analyst writes what they SEE, with
+  the space, so the exact match found nothing: `click` reported "no such
+  button or link" with the dropdown on screen, and `verify … text is displayed`
+  reported "0 eşleşme". The agent's Gherkin had the run-together spelling —
+  copied from the snapshot, which `Provenance` would have refused had it been
+  invented — and that was the evidence that told the label apart from a wrong
+  widget. `ValueFields.labelText` / `looseText` now try exact FIRST and only
+  then the same words with `\s*` between them, still anchored for labels, so
+  every label that matched before matches the same element. Escaped by hand,
+  not `Pattern.quote`: Playwright hands the pattern to the browser as a
+  JavaScript RegExp, which has no `\Q…\E`. `click` also prints which half of
+  its dropdown fallback failed (label absent / not a Select2 v4), because the
+  two need opposite fixes and its old message named neither.
 - **findValueElement:** getByText exact → `ancestor::div[fieldcontainer]`, then
   a modularFormTable fallback (label and value in SEPARATE `<td>`
   fieldcontainers → look at the next `<td>`; Banko keeps using the single
@@ -1060,12 +1097,6 @@ and leave each independently runnable.
   direction — a missing `verifiable` weakens a test, a wrong one fails a run —
   but it is why agent `verifiable` flags are cross-checked against a scan.
 - Verifying text inside an invoice table.
-- **No step verifies a dropdown's option LIST.** A rule can write its options
-  down (`degerler:` in `rules.yaml`) and the validator accepts a scenario
-  asserting one of them, but asserting the whole list takes one
-  `verify … text is displayed` per option, with the dropdown open. Until that
-  step exists, `degerler` keeps the DOCUMENTATION honest and the staleness diff
-  precise, not the test.
 - **Nothing backs up the scenario library.** The scenarios live only in the
   VDI's `.mv.db`; "Dosyaya aktar" + commit is the only route out and nothing
   prompts for it.

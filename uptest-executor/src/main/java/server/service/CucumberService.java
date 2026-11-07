@@ -20,6 +20,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Service
 public class CucumberService {
@@ -38,6 +39,26 @@ public class CucumberService {
     private final ExecutorService executorService;
 
     private final ConcurrentHashMap<UUID, Future<CucumberRunnerResult>> pool;
+
+    /**
+     * Whether each run's THREAD is still inside it — not whether its Future
+     * says it is done.
+     *
+     * {@code cancel(true)} makes the Future done at once, but a run stuck in a
+     * native Playwright call keeps its pool thread long after. Counting the
+     * Future freed the slot anyway, so the next /start was accepted with 202
+     * and then sat in the fixed pool's queue reported as RUNNING: the "refuse,
+     * never queue" rule broken silently. A run is now active while its thread
+     * has started and not left, or while it has not started yet and has not
+     * been cancelled (a run cancelled before it began never enters, so it must
+     * not hold the slot for ever).
+     */
+    private final ConcurrentHashMap<UUID, Slot> slots = new ConcurrentHashMap<>();
+
+    private static final class Slot {
+        final AtomicBoolean started = new AtomicBoolean();
+        final AtomicBoolean exited = new AtomicBoolean();
+    }
 
     /** Insertion order, so the oldest FINISHED run is the one evicted. */
     private final Deque<UUID> submissionOrder = new ArrayDeque<>();
@@ -93,7 +114,17 @@ public class CucumberService {
         input.setFolder(featuresFolder.toString());
         input.setFeature(feature);
 
-        pool.put(id, executorService.submit(new CucumberRunner(input)));
+        CucumberRunner runner = new CucumberRunner(input);
+        Slot slot = new Slot();
+        slots.put(id, slot);
+        pool.put(id, executorService.submit(() -> {
+            slot.started.set(true);
+            try {
+                return runner.call();
+            } finally {
+                slot.exited.set(true);
+            }
+        }));
         submissionOrder.addLast(id);
         evictOldestFinished();
     }
@@ -140,12 +171,20 @@ public class CucumberService {
         return result;
     }
 
-    /**
-     * isCancelled() implies isDone(), so !isDone() alone counts everything that
-     * is still occupying a slot.
-     */
+    /** Runs still holding a pool thread, or about to — see {@link #slots}. */
     private long activeRuns() {
-        return pool.values().stream().filter(future -> !future.isDone()).count();
+        return pool.entrySet().stream().filter(entry -> occupies(entry.getKey(), entry.getValue())).count();
+    }
+
+    private boolean occupies(UUID id, Future<CucumberRunnerResult> future) {
+        Slot slot = slots.get(id);
+        if (slot == null) {
+            return !future.isDone();
+        }
+        if (slot.exited.get()) {
+            return false;
+        }
+        return slot.started.get() || !future.isDone();
     }
 
     private ResultStatus statusOf(Future<CucumberRunnerResult> future) {
@@ -170,11 +209,12 @@ public class CucumberService {
         while (pool.size() > MAX_RETAINED_RUNS && !submissionOrder.isEmpty()) {
             UUID oldest = submissionOrder.peekFirst();
             Future<CucumberRunnerResult> future = pool.get(oldest);
-            if (future != null && !future.isDone()) {
+            if (future != null && occupies(oldest, future)) {
                 return; // oldest is still running: keep it and stop evicting
             }
             submissionOrder.pollFirst();
             pool.remove(oldest);
+            slots.remove(oldest);
         }
     }
 }

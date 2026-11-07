@@ -557,6 +557,63 @@ body {
 @media (hover: none) { .sc-delete { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .sc-delete { transition: none; } }
 
+/* Multi-run tick: on hover or focus, and on every row once anything is ticked */
+.sc-select {
+    flex: none;
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    accent-color: var(--primary);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 120ms ease;
+}
+.sc-select:disabled { cursor: not-allowed; }
+.registry tr:hover .sc-select,
+.registry.is-selecting .sc-select,
+.sc-select:checked,
+.sc-select:focus-visible { opacity: 1; }
+.registry tr:hover .sc-select:disabled,
+.registry.is-selecting .sc-select:disabled { opacity: .35; }
+@media (hover: none) { .sc-select { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .sc-select { transition: none; } }
+
+/* The run queue: a bar along the bottom of the panel that folds to one line */
+.rq-panel {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    margin-top: var(--space-4);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+}
+.rq-head {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+}
+.rq-toggle { display: flex; align-items: center; gap: var(--space-2); }
+.rq-title { font-size: var(--text-md); font-weight: 600; color: var(--ink-title); }
+.rq-summary { font-family: var(--mono); font-size: var(--text-sm); color: var(--muted); }
+.rq-progress {
+    flex: 1 1 120px;
+    max-width: 240px;
+    height: 6px;
+    border-radius: var(--radius-pill);
+    background: var(--chip-bg);
+    overflow: hidden;
+}
+.rq-progress-bar { display: block; height: 100%; background: var(--primary); transition: width 200ms ease; }
+.rq-actions { display: flex; gap: var(--space-2); margin-left: auto; }
+.rq-body { max-height: 260px; overflow: auto; border-top: 1px solid var(--border-soft); }
+.rq-name { font-weight: 600; }
+.rq-note { margin: 0; padding: var(--space-2) var(--space-3); font-size: var(--text-sm); color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { .rq-progress-bar { transition: none; } }
+
 /* "Emin misiniz?" — a card over a dimmed page */
 .confirm-backdrop {
     position: fixed;

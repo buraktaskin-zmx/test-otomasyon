@@ -339,12 +339,22 @@ Verified end to end: three-step scenario polled every 2 s went
 
 ## Concurrency model
 
-**One run per executor process.** `simultaneouslyRun` is configurable, but for
-deployed executors it is 1. Scale by adding replicas, not by raising it.
+**Runs per executor process: `simultaneouslyRun`.** It was 1 by rule; since
+2026-11-07 it is **4, as an experiment** — can one executor carry four
+scenarios at once, and does the bank accept four parallel logins with one
+CIF? The Kayıtlı Senaryolar run queue (`hooks/useRunQueue.ts`) drives it,
+four at a time.
 
-Reason: Cucumber carries static state and the Playwright `Browser` instance is
-shared. Two concurrent runs in one JVM corrupt each other in ways that surface
-as flaky tests, which destroys analyst trust in the platform.
+The reason once given for 1 — "Cucumber carries static state and the
+Playwright `Browser` instance is shared" — no longer describes the code: each
+run is its own `Main.run` with its own Runtime and PicoContainer, each scenario
+launches its own Playwright and browser (`Hooks`), `RunContext` is an
+`InheritableThreadLocal`, and the step timeline is keyed by run id. What IS
+still true is the hang argument below: a stuck run cannot be killed from Java,
+and restarting the process ends every run in it. A cancelled run keeps its
+slot until its thread actually leaves (`CucumberService.slots`), so a stuck
+one is refused around rather than silently queued behind. Go back to 1 if the
+experiment says so.
 
 ### The stuck-run problem
 
@@ -427,8 +437,10 @@ for the same reason found here: a hung run must be killable without taking the
 healthy ones with it. A hung Playwright call blocks in native code, so the only
 unit of recovery is the process. With N threads in one JVM, each hang
 permanently consumes a worker and the only fix is a restart that kills every
-run in flight. There is also the Cucumber static state and the shared
-`Browser`, which corrupt concurrent runs in one JVM into flaky tests.
+run in flight. (The Cucumber static state and shared `Browser` this paragraph
+used to cite are gone from the code — see "Runs per executor process" — so the
+hang is now the whole argument, and the 2026-11-07 experiment with
+`simultaneouslyRun=4` is weighing exactly that.)
 
 **3. One INTERNAL address with N replicas — still blocked, but by a different
 thing now.** `deploy.replicas: 3` behind one service name would let DNS spread
