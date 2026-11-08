@@ -1,6 +1,13 @@
 package orchestrator.flow;
 
 import orchestrator.flow.FlowModel.Flow;
+import orchestrator.flow.FlowModel.Plan;
+import orchestrator.llm.LoginStep;
+import orchestrator.product.ProductModel;
+import orchestrator.product.ProductService;
+import orchestrator.product.Rule;
+import orchestrator.vocabulary.Vocabulary;
+import orchestrator.vocabulary.VocabularyService;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
@@ -18,6 +25,7 @@ import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * The drawn flow: read it, save it, attach screenshots, have the screens read.
@@ -34,10 +42,20 @@ public class FlowController {
 
     private final FlowStore store;
     private final ObjectProvider<ScreenReader> readers;
+    private final FlowPlanner planner;
+    private final FlowSuggestService suggester;
+    private final ProductService products;
+    private final VocabularyService vocabularies;
 
-    public FlowController(FlowStore store, ObjectProvider<ScreenReader> readers) {
+    public FlowController(FlowStore store, ObjectProvider<ScreenReader> readers,
+                          FlowPlanner planner, FlowSuggestService suggester,
+                          ProductService products, VocabularyService vocabularies) {
         this.store = store;
         this.readers = readers;
+        this.planner = planner;
+        this.suggester = suggester;
+        this.products = products;
+        this.vocabularies = vocabularies;
     }
 
     /** The drawing, which nodes carry a screenshot, what was read, and the plan. */
@@ -127,4 +145,136 @@ public class FlowController {
         }
         return ResponseEntity.ok(Map.of("screens", reads));
     }
+
+    /* ------------------------- plan and generate ------------------------- */
+
+    /** {@code ruleIds} empty = every rule the product has. */
+    public record PlanRequest(Integer count, List<String> ruleIds) {
+    }
+
+    /**
+     * Stage 3: which scenarios to write. One cheap text call, so the analyst
+     * can delete and add lines before generation is spent.
+     */
+    @PostMapping("/plan")
+    public ResponseEntity<?> plan(@PathVariable String app, @PathVariable String product,
+                                  @RequestBody(required = false) PlanRequest body) {
+        Flow flow = store.read(app, product);
+        if (flow.nodes().isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Önce akışı çizin."));
+        }
+        int count = body == null || body.count() == null ? DEFAULT_COUNT : body.count();
+        if (count < 1 || count > MAX_COUNT) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "Senaryo sayısı 1 ile " + MAX_COUNT + " arasında olmalı."));
+        }
+        ProductModel model = products.load(app, product).orElse(null);
+        List<Rule> rules = FlowSuggestService.rulesFor(model,
+                body == null ? List.of() : body.ruleIds());
+        try {
+            return ResponseEntity.ok(planner.plan(app, product, flow, model, rules, count));
+        } catch (RuntimeException failed) {
+            return ResponseEntity.status(502).body(Map.of(
+                    "error", "Plan üretilemedi", "detail", String.valueOf(failed.getMessage())));
+        }
+    }
+
+    /** The analyst's edited plan, saved before generation reads it back. */
+    @PutMapping("/plan")
+    public ResponseEntity<?> savePlan(@PathVariable String app, @PathVariable String product,
+                                      @RequestBody Plan plan) {
+        store.writePlan(app, product, plan == null ? Plan.empty() : plan);
+        return ResponseEntity.ok(Map.of("saved", true));
+    }
+
+    /** {@code cif}/{@code userid}: the login every generated scenario runs under. */
+    public record SuggestRequest(String cif, String userid, List<String> ruleIds) {
+    }
+
+    /**
+     * Stage 5: write every scenario in the saved plan.
+     *
+     * A CIF is required, for the reason the scenario batch already records:
+     * these are N separate model calls, and a blank cif makes each invent its
+     * own customer number.
+     */
+    @PostMapping("/suggest")
+    public ResponseEntity<?> suggest(@PathVariable String app, @PathVariable String product,
+                                     @RequestBody(required = false) SuggestRequest body) {
+        Flow flow = store.read(app, product);
+        Plan plan = store.plan(app, product);
+        if (plan.scenarios().isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "Plan boş — önce \"Senaryoları Planla\"."));
+        }
+        Optional<Vocabulary> vocabulary = vocabularies.get();
+        if (vocabulary.isEmpty()) {
+            return ResponseEntity.status(503).body(Map.of(
+                    "error", "Executor'a ulaşılamadı, adım listesi bilinmiyor."));
+        }
+        String loginStep = LoginStep.forApp(app, body == null ? null : body.cif(),
+                body == null ? null : body.userid());
+        if (loginStep == null) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "Üretim için test kullanıcısı (CIF) zorunlu",
+                    "hint", "Ayrı çağrılarla üretilen senaryolar, CIF verilmezse her biri"
+                            + " kendi müşteri numarasını uydurur."));
+        }
+        ProductModel model = products.load(app, product).orElse(null);
+        List<Rule> rules = FlowSuggestService.rulesFor(model,
+                body == null ? List.of() : body.ruleIds());
+        String testData = testData(model);
+        try {
+            return ResponseEntity.ok(suggester.write(app, product, flow, plan.scenarios(),
+                    vocabulary.get(), model, rules, loginStep, testData));
+        } catch (RuntimeException failed) {
+            return ResponseEntity.status(502).body(Map.of(
+                    "error", "Senaryolar üretilemedi", "detail", String.valueOf(failed.getMessage())));
+        }
+    }
+
+    /**
+     * The test data as the model may read it: what exists in the environment,
+     * and for anything not yet supplied, that it is NOT available.
+     *
+     * An alias nobody has provided is written down as missing on purpose. The
+     * alternative — leaving it out — reads as "no constraint" and the model
+     * invents an invoice number; saying "eksik" makes it write the scenario
+     * without that step, or say so in the precondition.
+     */
+    private static String testData(ProductModel model) {
+        if (model == null || model.aliases().isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        model.aliases().forEach(alias -> {
+            sb.append("- ").append(alias.id());
+            if (alias.label() != null && !alias.label().isBlank()) {
+                sb.append(" (").append(alias.label()).append(")");
+            }
+            if (alias.value() != null && !alias.value().isBlank()) {
+                sb.append(" = ").append(alias.value());
+            }
+            if ("eksik".equalsIgnoreCase(alias.how())) {
+                sb.append("  [HENÜZ YOK — bu veriye dayanan adım yazma]");
+            } else if (alias.blockedBy() != null && !alias.blockedBy().isBlank()) {
+                sb.append("  [KULLANILAMAZ: ").append(alias.blockedBy()).append("]");
+            }
+            if (alias.description() != null && !alias.description().isBlank()) {
+                sb.append("\n    ").append(alias.description().replaceAll("\\s+", " ").trim());
+            }
+            sb.append('\n');
+        });
+        return sb.toString();
+    }
+
+    private static final int DEFAULT_COUNT = 25;
+
+    /**
+     * Past this the plan is longer than anyone reads and the generation is
+     * tens of minutes. Not {@code llm.max-scenarios}, which caps a
+     * single-screen batch where every extra scenario is a near-duplicate; a
+     * flow genuinely has more distinct things to test.
+     */
+    private static final int MAX_COUNT = 40;
 }

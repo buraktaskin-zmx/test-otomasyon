@@ -499,7 +499,32 @@ export function WorkspaceView({
             showPanel("product");
           }}
         />
-        <FlowPanel active={sideTab === "flow"} products={products.products} />
+        <FlowPanel
+          active={sideTab === "flow"}
+          products={products.products}
+          users={users.users}
+          onBatch={(flowDrafts, flowApp, flowProduct) => {
+            /* Into the SAME batch review the other generator uses: the list in
+               place of the editor, a card per draft, each openable, editable,
+               validatable and runnable. Nothing new to learn. */
+            handleBatchGenerated(flowDrafts.map((draft) => ({
+              label: draft.title,
+              values: {},
+              ticked: [],
+              excluded: [],
+              feature: draft.feature,
+              valid: draft.valid,
+              validation: draft.validation,
+              attempts: draft.attempts,
+              origin: {
+                app: flowApp,
+                flow: "",
+                intent: draft.intent,
+                product: flowProduct,
+              },
+            })));
+          }}
+        />
         <UsersPanel active={sideTab === "users"} users={users} />
         <ProductPanel
           active={sideTab === "product"}

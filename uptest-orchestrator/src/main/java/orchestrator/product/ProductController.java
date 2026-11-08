@@ -110,6 +110,50 @@ public class ProductController {
         return ResponseEntity.status(201).body(Map.of("path", created.key()));
     }
 
+    /** One scenario of a bulk save. {@code heading} optional. */
+    public record BulkScenario(String flow, String feature, String heading) {
+    }
+
+    /** What a bulk save did, item by item. */
+    public record BulkResult(List<String> created, List<Map<String, Object>> refused) {
+    }
+
+    /**
+     * Many scenarios at once — what a generated batch needs.
+     *
+     * <p>One at a time was the only way until now, because the only producer
+     * was the "+" form. A batch of twenty-five would be twenty-five requests,
+     * each re-reading the product and re-numbering the files, and a failure
+     * halfway would leave the analyst guessing which ones landed.
+     *
+     * <p><b>A refusal does not stop the rest.</b> One scenario whose Gherkin
+     * will not parse is reported with its index and kept out; the other
+     * twenty-four are saved. Refusing the whole batch over one bad draft
+     * would throw away work the model already paid for.
+     */
+    @PostMapping("/{app}/{product}/scenarios/bulk")
+    public ResponseEntity<?> createScenarios(@PathVariable String app, @PathVariable String product,
+                                             @RequestBody List<BulkScenario> body) {
+        if (body == null || body.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Kaydedilecek senaryo yok"));
+        }
+        List<String> created = new ArrayList<>();
+        List<Map<String, Object>> refused = new ArrayList<>();
+        for (int i = 0; i < body.size(); i++) {
+            BulkScenario item = body.get(i);
+            ProductService.Created result = products.createScenario(app, product,
+                    item == null ? null : item.flow(), item == null ? null : item.feature(),
+                    item == null ? null : item.heading());
+            if (result.refused() != null) {
+                refused.add(Map.of("index", i, "error", result.refused()));
+            } else {
+                created.add(result.key());
+            }
+        }
+        return ResponseEntity.status(created.isEmpty() ? 400 : 201)
+                .body(new BulkResult(created, refused));
+    }
+
     /** "Taşı": moves a scenario to another declared screen of the same app. */
     @PostMapping("/{app}/{product}/scenario/move")
     public ResponseEntity<?> moveScenario(@PathVariable String app, @PathVariable String product,

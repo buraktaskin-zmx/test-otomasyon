@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  deleteScreenshot, getFlow, putScreenshot, readScreens, saveCatalog, saveFlow,
+  createScenariosBulk, deleteScreenshot, getFlow, planFlow, putScreenshot, readScreens,
+  saveCatalog, saveFlow, savePlan, suggestFromFlow,
 } from "../api/endpoints";
-import type { FlowNode, FlowTree, ProductSummary, ScreenRead } from "../api/types";
+import type {
+  FlowDraft, FlowNode, FlowPlan, FlowTree, ProductSummary, ScreenRead, TestUser,
+} from "../api/types";
 import { PanelHead } from "../workspace/side/PanelHead";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { useToast } from "../ui/Toast";
 import { useAsyncAction } from "../hooks/useAsyncAction";
 import { FlowCanvas, newEdge, nextNodeId, placeChild } from "./FlowCanvas";
+import { FlowPlanList } from "./FlowPlanList";
 
 const EMPTY: FlowTree = { nodes: [], edges: [], intent: "", outOfScope: "" };
 
@@ -27,9 +31,14 @@ const EMPTY: FlowTree = { nodes: [], edges: [], intent: "", outOfScope: "" };
 export function FlowPanel({
   active,
   products,
+  users,
+  onBatch,
 }: {
   active: boolean;
   products: ProductSummary[];
+  users: TestUser[];
+  /** Hands the produced scenarios to the existing batch review. */
+  onBatch: (drafts: FlowDraft[], app: string, product: string) => void;
 }) {
   const toast = useToast();
   const [app, setApp] = useState("");
@@ -44,6 +53,15 @@ export function FlowPanel({
   const [results, setResults] = useState<ScreenRead[] | null>(null);
   const [dirty, setDirty] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [plan, setPlan] = useState<FlowPlan>({ scenarios: [], notes: [] });
+  const [count, setCount] = useState(25);
+  const [loginId, setLoginId] = useState("");
+  const [drafts, setDrafts] = useState<FlowDraft[] | null>(null);
+
+  const chosenUser = users.find((u) => u.id === loginId) ?? users[0] ?? null;
+  useEffect(() => {
+    if (!loginId && users[0]) setLoginId(users[0].id);
+  }, [loginId, users]);
 
   const chosen = products.find((p) => p.app === app && p.product === product) ?? null;
 
@@ -65,7 +83,9 @@ export function FlowPanel({
       setScreenshots(result.body.screenshots ?? {});
       setReads(result.body.reads ?? {});
       setVisionReady(result.body.visionReady);
+      setPlan(result.body.plan ?? { scenarios: [], notes: [] });
       setResults(null);
+      setDrafts(null);
       setSelected(null);
       setDirty(false);
     } else {
@@ -201,6 +221,61 @@ export function FlowPanel({
       + (failed ? ", " + failed + " okunamadı" : ""), failed > 0);
   });
 
+  /* ------------------------- plan and generate ------------------------- */
+
+  const makePlan = useAsyncAction(async () => {
+    if (dirty) {
+      const saved = await saveFlow(app, product, flow);
+      if (!saved.ok) { toast("Önce akış kaydedilemedi: " + saved.error, true); return; }
+      setDirty(false);
+    }
+    const result = await planFlow(app, product, count, []);
+    if (!result.ok) { toast("Plan üretilemedi: " + result.error, true); return; }
+    setPlan(result.body);
+    setDrafts(null);
+    toast(result.body.scenarios.length + " senaryo planlandı — üretmeden önce gözden geçirin");
+  });
+
+  const generate = useAsyncAction(async () => {
+    if (!chosenUser) { toast("Önce bir test kullanıcısı seçin.", true); return; }
+    const saved = await savePlan(app, product, plan);
+    if (!saved.ok) { toast("Plan kaydedilemedi: " + saved.error, true); return; }
+    const result = await suggestFromFlow(app, product,
+      { cif: chosenUser.cif, userid: chosenUser.userid, id: chosenUser.id }, []);
+    if (!result.ok) { toast("Senaryolar üretilemedi: " + result.error, true); return; }
+    setDrafts(result.body.scenarios);
+    result.body.notes.forEach((note) => toast(note, true));
+    const invalid = result.body.scenarios.filter((d) => !d.valid).length;
+    toast(result.body.scenarios.length + " senaryo üretildi"
+      + (invalid ? ", " + invalid + " doğrulamadan geçmedi" : "")
+      + " · ~" + result.body.tokens.toLocaleString("tr-TR") + " token");
+  });
+
+  const saveAll = useAsyncAction(async () => {
+    if (!drafts) return;
+    /* A scenario is registered under the screen its path ENDS on: that is
+       where the thing being tested happens. A journey through three screens
+       belongs to the last one, not to the menu it started from. */
+    const items = drafts.map((draft) => {
+      const last = draft.path[draft.path.length - 1];
+      const target = flow.nodes.find((n) => n.id === last);
+      return { flow: (target?.flow || "").trim(), feature: draft.feature, heading: "" };
+    });
+    const missing = items.filter((item) => !item.flow).length;
+    if (missing > 0) {
+      toast(missing + " senaryonun ekranında katalog adı yok. Kutuları seçip"
+        + " Katalog adı alanını doldurun.", true);
+      return;
+    }
+    const result = await createScenariosBulk(app, product, items);
+    if (!result.ok) { toast("Kaydedilemedi: " + result.error, true); return; }
+    toast(result.body.created.length + " senaryo kaydedildi"
+      + (result.body.refused.length ? ", " + result.body.refused.length + " reddedildi" : ""),
+      result.body.refused.length > 0);
+    result.body.refused.forEach((item) =>
+      toast("#" + (item.index + 1) + " " + item.error, true));
+  });
+
   const keepCatalog = async (screen: ScreenRead) => {
     const node = flow.nodes.find((n) => n.id === screen.nodeId);
     const name = node?.flow?.trim();
@@ -215,6 +290,7 @@ export function FlowPanel({
 
   const node = flow.nodes.find((n) => n.id === selected) ?? null;
   const withShots = flow.nodes.filter((n) => screenshots[n.id]).length;
+  const busy = save.busy || read.busy || makePlan.busy || generate.busy || saveAll.busy;
 
   return (
     <div id="side-flow" className={"side-panel flow-panel" + (active ? " is-active" : "")} ref={panel}>
@@ -241,12 +317,23 @@ export function FlowPanel({
                 onClick={() => void save.run()}>
           {save.busy ? "Kaydediliyor…" : dirty ? "Kaydet" : "Kaydedildi"}
         </button>
-        <button type="button" className="btn btn-primary"
+        <button type="button" className="btn btn-ghost"
                 disabled={read.busy || withShots === 0 || !visionReady}
                 title={!visionReady ? "Görsel model kapalı (uptest.vision.enabled)"
                   : withShots === 0 ? "Önce kutulara ekran görüntüsü ekleyin" : undefined}
                 onClick={() => void read.run()}>
           {read.busy ? "Okunuyor…" : "Ekranları Oku"}
+        </button>
+        <label className="fc-product">
+          <span>Senaryo</span>
+          <input className="search fc-count" type="number" min={1} max={40} value={count}
+                 disabled={busy} aria-label="Kaç senaryo planlansın"
+                 onChange={(event) => setCount(Number(event.target.value) || 1)} />
+        </label>
+        <button type="button" className="btn btn-primary"
+                disabled={busy || flow.nodes.length === 0}
+                onClick={() => void makePlan.run()}>
+          {makePlan.busy ? "Planlanıyor…" : "Senaryoları Planla"}
         </button>
       </PanelHead>
 
@@ -270,7 +357,7 @@ export function FlowPanel({
         ) : (
           <FlowCanvas
             app={app} product={product} flow={flow} screenshots={screenshots}
-            imageVersion={imageVersion} selected={selected} busy={save.busy || read.busy}
+            imageVersion={imageVersion} selected={selected} busy={busy}
             onSelect={setSelected} onChange={change} onAddChild={addChild}
             onDeleteNode={(id) => setDeleting(flow.nodes.find((n) => n.id === id) ?? null)}
           />
@@ -340,6 +427,68 @@ export function FlowPanel({
                       onChange={(event) => change({ ...flow, outOfScope: event.target.value })} />
           </label>
         </section>
+
+        {plan.scenarios.length > 0 || makePlan.busy ? (
+          <>
+            <FlowPlanList plan={plan} flow={flow} busy={busy}
+                          onChange={(next) => { setPlan(next); setDrafts(null); }} />
+            <section className="fc-editor">
+              <div className="fc-editor-actions">
+                <label className="fc-product">
+                  <span>Test kullanıcısı</span>
+                  <select className="search" value={loginId} disabled={busy}
+                          onChange={(event) => setLoginId(event.target.value)}>
+                    {users.length === 0 ? <option value="">(kayıtlı kullanıcı yok)</option> : null}
+                    {users.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.cif}{user.name ? " — " + user.name : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button type="button" className="btn btn-primary"
+                        disabled={busy || plan.scenarios.length === 0 || !chosenUser}
+                        title={!chosenUser ? "Önce bir test kullanıcısı seçin" : undefined}
+                        onClick={() => void generate.run()}>
+                  {generate.busy ? "Üretiliyor…" : plan.scenarios.length + " senaryo üret"}
+                </button>
+                {drafts ? (
+                  <button type="button" className="btn btn-ghost" disabled={busy}
+                          onClick={() => void saveAll.run()}>
+                    {saveAll.busy ? "Kaydediliyor…" : "Hepsini kütüphaneye kaydet"}
+                  </button>
+                ) : null}
+                {drafts ? (
+                  <button type="button" className="btn btn-ghost" disabled={busy}
+                          onClick={() => onBatch(drafts, app, product)}>
+                    Editörde incele
+                  </button>
+                ) : null}
+              </div>
+              {generate.busy ? (
+                <p className="db-note">
+                  Her senaryo ayrı bir model çağrısı, dörder dörder paralel.
+                  {" " + plan.scenarios.length} senaryo birkaç dakika sürebilir.
+                </p>
+              ) : null}
+              {drafts ? (
+                <ul className="fc-drafts">
+                  {drafts.map((draft) => (
+                    <li key={draft.index}>
+                      <span className={"pill pill-" + (draft.valid ? "DONE" : "FAILED")}>
+                        {draft.valid ? "geçerli" : draft.validation.errors.length + " bulgu"}
+                      </span>
+                      <span className="fc-plan-title">{draft.title}</span>
+                      {draft.attempts > 1 ? (
+                        <span className="db-note">{draft.attempts} deneme</span>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </section>
+          </>
+        ) : null}
 
         {results ? (
           <section className="fc-editor">

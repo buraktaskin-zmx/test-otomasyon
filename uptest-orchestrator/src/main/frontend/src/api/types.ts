@@ -1163,3 +1163,28 @@ export interface ScreenRead {
 export interface ScreenReadResponse {
   screens: ScreenRead[];
 }
+
+/** One scenario produced from the drawn flow (stage 5). */
+export interface FlowDraft {
+  index: number;
+  title: string;
+  intent: string;
+  path: string[];
+  ruleIds: string[];
+  feature: string;
+  valid: boolean;
+  validation: ValidationResult;
+  attempts: number;
+  log: string[];
+}
+
+export interface FlowBatch {
+  scenarios: FlowDraft[];
+  notes: string[];
+  tokens: number;
+}
+
+export interface BulkSaveResult {
+  created: string[];
+  refused: Array<{ index: number; error: string }>;
+}

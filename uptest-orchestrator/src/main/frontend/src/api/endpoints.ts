@@ -43,7 +43,7 @@ import type {
 import type { ProductSummary } from "./types";
 import type {
   DashboardHistory, DashboardOverview, DashboardPeriod, DashboardScreenDetail, RunMeta,
-  FlowState, FlowTree, ScreenReadResponse,
+  FlowState, FlowTree, ScreenReadResponse, FlowPlan, FlowBatch, BulkSaveResult,
 } from "./types";
 
 /*
@@ -436,3 +436,29 @@ export const screenshotHref = (app: string, product: string, nodeId: string, v: 
  */
 export const readScreens = (app: string, product: string) =>
   api<ScreenReadResponse>("POST", flowBase(app, product) + "/read");
+
+/**
+ * Stage 3: which scenarios to write. ONE cheap text call, so the analyst can
+ * delete and add lines before generation is spent. Seconds, not minutes.
+ */
+export const planFlow = (app: string, product: string, count: number, ruleIds: string[]) =>
+  api<FlowPlan>("POST", flowBase(app, product) + "/plan", { count, ruleIds });
+
+export const savePlan = (app: string, product: string, plan: FlowPlan) =>
+  api<{ saved: boolean }>("PUT", flowBase(app, product) + "/plan", plan);
+
+/**
+ * Stage 5: write every scenario in the saved plan — one model call each, run
+ * in parallel. MINUTES for twenty-five. Keep the button disabled throughout.
+ * 400 without a CIF: separate calls would each invent a customer number.
+ */
+export const suggestFromFlow = (app: string, product: string, login: RunLogin, ruleIds: string[]) =>
+  api<FlowBatch>("POST", flowBase(app, product) + "/suggest",
+    { cif: login.cif, userid: login.userid, ruleIds });
+
+/** Registers many scenarios at once; a refusal keeps the others. */
+export const createScenariosBulk = (app: string, product: string,
+                                    items: Array<{ flow: string; feature: string; heading: string }>) =>
+  api<BulkSaveResult>("POST",
+    "/api/v1/products/" + encodeURIComponent(app) + "/" + encodeURIComponent(product)
+      + "/scenarios/bulk", items);

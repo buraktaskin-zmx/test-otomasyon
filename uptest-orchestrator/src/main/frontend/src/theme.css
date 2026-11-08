@@ -2442,3 +2442,13 @@ button.db-screen:hover .db-screen-name { color: var(--link); text-decoration: un
 .fc-read summary { cursor: pointer; font-size: var(--text-sm); color: var(--link); }
 .fc-result { padding-top: var(--space-2); border-top: 1px solid var(--row-line); }
 .fc-result-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-1); }
+.fc-count { width: 68px; }
+.fc-plan { list-style: decimal; margin: 0; padding-left: var(--space-5); display: flex; flex-direction: column; gap: var(--space-2); }
+.fc-plan li.is-negative::marker { color: var(--warn); }
+.fc-plan-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
+.fc-plan-title { flex: 1 1 220px; min-width: 0; font-weight: 600; }
+.fc-plan-path { font-size: var(--text-sm); color: var(--soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 320px; }
+.fc-plan-intent { width: 100%; margin-top: var(--space-1); font-size: var(--text-sm); }
+.sc-delete.is-plain { opacity: 1; width: 20px; height: 20px; font-size: 15px; }
+.fc-drafts { list-style: none; margin: var(--space-2) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.fc-drafts li { display: flex; align-items: center; gap: var(--space-2); }

@@ -237,6 +237,34 @@ public class SuggestService {
     }
 
     /**
+     * One scenario written from a DRAWN FLOW — the sibling of
+     * {@link #suggestFromWalk}, with one difference that is the whole reason
+     * it exists separately: a catalog may be passed.
+     *
+     * <p>A drawn journey crosses screens, so it goes the walk's way with
+     * {@code catalog = null} and leans on {@code provenance}. But a scenario
+     * whose path is a SINGLE screen, and whose screen has a saved catalog, is
+     * an ordinary single-screen scenario: handing the catalog over turns the
+     * six catalog checks back on — labels, verbs, options, entry row, earned
+     * assertions, paraphrased messages — which is most of the validator's
+     * value and far better than a substring check over the drawing.
+     *
+     * <p>The caller decides which it is; this method does not guess.
+     */
+    public Suggestion suggestFromDrawing(String userMessage, String intent, Vocabulary vocabulary,
+                                         CatalogModel catalog, ProductContext product,
+                                         String loginStep,
+                                         Function<String, List<ValidationError>> provenance) {
+        return one(prompts.system(vocabulary), userMessage, catalog, product.product(), vocabulary,
+                loginStep, intent, null, maxRepairs, provenance);
+    }
+
+    /** A plain model call for the planning turn, which produces no Gherkin. */
+    public String ask(String system, String user) {
+        return LlmOutputCleaner.clean(llm.ask(system, user));
+    }
+
+    /**
      * Everything done TO a draft between the model answering and the validator
      * reading it, in the order it has to happen.
      *

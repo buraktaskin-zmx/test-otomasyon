@@ -197,7 +197,9 @@ Elsewhere:
   the database does not know yet (`ProductService.importMissing`) — after that
   the database is the source, and "Dosyaya aktar" (`POST
   /api/v1/products/export`) writes it back to files for git, never deleting.
-  Rules, test data and the analysts' notes stay files. **Editing a `.feature`
+  Rules, test data and the analysts' notes stay files. Twenty-five generated
+  scenarios reach it through `POST .../scenarios/bulk`, which saves what it can
+  and reports each refusal with its index rather than losing the batch. **Editing a `.feature`
   by hand changes nothing in a running UI**, and neither does pulling one.
   `SourceSnapshot` stores what each scenario's rules and aliases said when it
   was last reviewed and marks it "bayat" when they move.
@@ -474,6 +476,37 @@ handing that list to something that invents plausible text defeats it. It is
 shown to the analyst instead.
 
 ## Where catalogs come from
+
+**Three producers now**, the third added 2026-11-09: a DOM scan, an MCP agent,
+and **a drawn flow read by a vision model** ("Senaryo Üret", `orchestrator/flow/`
++ `frontend/src/flow/`). The third is the only one that does NOT need a running
+screen — an analyst pastes a screenshot of a design mockup and gets a catalog
+draft — and the only one that carries the flow BETWEEN screens, which is what
+makes multi-screen journey scenarios possible. Its blind spots are its own: it
+guesses a field's type from appearance, and it cannot see a closed dropdown's
+options, so it must say "emin değilim" rather than invent them.
+
+**Its pipeline is a chain of short stateless calls, not a conversation, and the
+memory is the DISK.** Each stage writes a file a person can read and fix; the
+next stage reads that file, never a transcript. One call per screen (a
+screenshot is 1-3k tokens and a misread must not poison the others), then one
+cheap planning call that produces a LIST of scenario intents for the analyst to
+edit, then one call per planned scenario. Nothing survives a call except what
+was written down, so a restart loses nothing and any stage can be re-run. This
+is the agent lesson applied before the fact: a forty-turn walk that dies leaves
+nothing, and `note_field` exists because what is seen early must not have to
+survive forty turns.
+Files: `products/<app>/<product>/flow/flow.json`, `screens/<id>.png`,
+`screens/<id>.read.yaml` (the model's FIRST read, kept so "how wrong was it"
+stays answerable), `plan.json`.
+`FlowProvenance` is `Provenance` for a drawing: a quoted label must appear in a
+screen read, an edge label, the catalog, the rules or the test data — and it
+compares with whitespace stripped, because a `<br>` label reads run-together on
+one side and spaced on the other.
+`VisionClient` is a SEPARATE client on its own endpoint (`uptest.vision.*`),
+over plain HTTP rather than Spring AI: one `ChatClient` serves both the
+generator and the MCP agent, and pointing it at the proxy that hosts the vision
+model would break the agent's tool calls.
 
 A catalog is the screen's **dictionary**, not a scenario and not a template:
 labels, types, options, how to reach the screen. It carries no test data — a
