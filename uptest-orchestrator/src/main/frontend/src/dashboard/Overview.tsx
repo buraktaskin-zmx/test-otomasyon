@@ -62,8 +62,10 @@ export function Overview({
         </Card>
       </div>
 
-      <div className="db-grid">
-        <Card
+      {/* Full width, one under the other: the run table has nine columns and
+          a failing step's text is a whole Gherkin line -- side by side they
+          each got half a panel and wrapped. */}
+      <Card
           title="Son çalıştırmalar"
           aside={day
             ? <button type="button" className="btn btn-ghost" onClick={() => setDay(null)}>{day} · tümü</button>
@@ -112,15 +114,14 @@ export function Overview({
               {paged.pager}
             </>
           )}
-        </Card>
+      </Card>
 
-        <Card
-          title="En çok takılan adımlar"
-          note="Sayılar koşu sayısıdır. Açıklamalar executor'ın kendi hata mesajının ilk satırıdır."
-        >
-          <FailingList failing={data.failing} />
-        </Card>
-      </div>
+      <Card
+        title="En çok takılan adımlar"
+        note="Sayılar koşu sayısıdır. Açıklamalar executor'ın kendi hata mesajının ilk satırıdır."
+      >
+        <FailingList failing={data.failing} pageSize={6} />
+      </Card>
 
       <Card title="CIF bazında özet" aside="satıra tıklayınca dashboard o CIF'e süzülür"
             note="Yalnızca CIF'i kaydedilmiş koşular (bu sürümden sonra başlayanlar) sayılır.">

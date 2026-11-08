@@ -4,6 +4,7 @@ import type {
   DashboardHistory, DashboardOverview, DashboardPeriod, DashboardScreenDetail,
 } from "../api/types";
 import { PanelHead } from "../workspace/side/PanelHead";
+import type { useTestUsers } from "../hooks/useTestUsers";
 import { Overview } from "./Overview";
 import { ScreenDetail } from "./ScreenDetail";
 import { ScenarioHistory } from "./ScenarioHistory";
@@ -43,16 +44,21 @@ const PERIODS: Array<[DashboardPeriod, string]> = [["24h", "24 saat"], ["7d", "7
 */
 export function DashboardPanel({
   active,
+  users,
   onRerun,
 }: {
   active: boolean;
+  /** The saved logins: what the CIF filter offers, before any run has one. */
+  users: ReturnType<typeof useTestUsers>;
   onRerun: (request: RerunRequest) => void;
 }) {
   const [period, setPeriod] = useState<DashboardPeriod>("7d");
   const [cif, setCif] = useState<string | null>(null);
-  /* The CIFs to offer in the filter: learned from an UNFILTERED overview, so
-     picking one does not shrink the list to itself. */
-  const [knownCifs, setKnownCifs] = useState<Array<{ cif: string; name: string | null }>>([]);
+  /* CIFs seen in runs, from an UNFILTERED overview so picking one does not
+     shrink the list to itself. They are MERGED with the saved logins below:
+     on their own they would leave the filter empty until runs start recording
+     a CIF, and a filter that offers nothing looks broken. */
+  const [ranCifs, setRanCifs] = useState<Array<{ cif: string; name: string | null }>>([]);
   const [screen, setScreen] = useState<ScreenRef | null>(null);
   const [scenario, setScenario] = useState<ScenarioRef | null>(null);
   const [overview, setOverview] = useState<DashboardOverview | null>(null);
@@ -76,7 +82,7 @@ export function DashboardPanel({
       const result = await getDashboard(period, cif);
       if (result.ok) {
         setOverview(result.body);
-        if (!cif) setKnownCifs(result.body.cifs.map((row) => ({ cif: row.cif, name: row.name })));
+        if (!cif) setRanCifs(result.body.cifs.map((row) => ({ cif: row.cif, name: row.name })));
       } else {
         setError(result.error);
       }
@@ -102,6 +108,13 @@ export function DashboardPanel({
     setHistory(null);
     setScenario(ref);
   };
+
+  /* Saved logins first, in the order Test Kullanıcıları lists them; then any
+     CIF a run used that is no longer saved, so old runs stay filterable. */
+  const cifOptions = [
+    ...users.users.map((user) => ({ cif: user.cif, name: user.name })),
+    ...ranCifs.filter((row) => !users.users.some((user) => user.cif === row.cif)),
+  ].filter((row, index, all) => all.findIndex((other) => other.cif === row.cif) === index);
 
   const title = scenario ? scenario.title : screen ? screen.name : "Dashboard";
 
@@ -134,12 +147,12 @@ export function DashboardPanel({
                 onChange={(event) => setCif(event.target.value || null)}
               >
                 <option value="">tümü</option>
-                {knownCifs.map((row) => (
+                {cifOptions.map((row) => (
                   <option key={row.cif} value={row.cif}>
                     {row.cif}{row.name ? " — " + row.name : ""}
                   </option>
                 ))}
-                {cif && !knownCifs.some((row) => row.cif === cif) ? <option value={cif}>{cif}</option> : null}
+                {cif && !cifOptions.some((row) => row.cif === cif) ? <option value={cif}>{cif}</option> : null}
               </select>
             </label>
           </>

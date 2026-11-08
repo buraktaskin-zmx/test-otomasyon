@@ -492,6 +492,7 @@ export function WorkspaceView({
         />
         <DashboardPanel
           active={sideTab === "dashboard"}
+          users={users}
           onRerun={(request) => {
             setRerun({ ...request, nonce: Date.now() });
             showPanel("product");
