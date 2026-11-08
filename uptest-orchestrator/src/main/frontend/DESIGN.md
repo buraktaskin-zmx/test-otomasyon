@@ -116,6 +116,29 @@ metin olmayan işaretler ≥ **3:1**. Oranlar hesaplandı, tahmin değil.
 | seed `#667085` / `#F2F4F7` | 4.51 | ✅ sınırda — zemini koyulaştırma |
 | başarılı `#067647` / `#FFFFFF` | 5.69 | ✅ |
 | `#FFFFFF` / engelli `#D92D20` | 4.83 | ✅ silme butonu yazısı (`.btn-danger`) — yalnızca geri alınamaz işlemin onayında |
+| `--warn-mark` `#F79009` / `#FFFFFF` | 2.29 | ❌ metin değil — yalnızca çubuk/nokta (§8); sayısı her zaman yanında sözcükle yazılır |
+
+### Grafik işaretleri — dashboard
+
+Durum **pill**'leri yeşil/kırmızı kalır (§1). Dashboard'un **çubuk ve
+noktaları** ise mavi ve kehribar kullanır, ve bu tercih ölçülmüştür: bir
+dötorenop için yeşil↔kırmızı ayrımı ΔE **6.4** (ikinci bir kodlama şart olan
+bant), mavi↔kehribar ise **22.2**. Yani grafik için bu çift hem tasarımın
+istediği hem erişilebilir olanı.
+
+| Rol | Jeton | Nerede |
+|---|---|---|
+| başarılı | `--primary` `#1570EF` | çubuk, nokta, günlük grafik |
+| başarısız | `--warn-mark` `#F79009` | aynı |
+| durduruldu / çalışıyor | `--skip` | aynı |
+| bilinmiyor | `--skip-bg` + kesik kenar | aynı |
+| hiç koşmadı | `--chip-bg` + kenarlık | ekran/başlık çubukları |
+| koşulamaz | `--chip-bg` + 45° tarama | aynı |
+
+Bu, "doygun maviyi yalnızca birincil buton ve aktif şeritte kullan"
+kuralının tek istisnasıdır: bir grafikte mavi bir seri rengidir, aktiflik
+göstergesi değil, ve aynı ekranda aktif öğe şeridiyle yan yana gelmez.
+Sayılar her çubuğun altında sözcükle yazılır; renk tek başına anlam taşımaz.
 
 Yeni bir renk çifti eklersen oranını hesapla ve bu tabloya yaz.
 

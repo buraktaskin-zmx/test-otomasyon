@@ -1995,6 +1995,7 @@ body {
     --fail-bg: #FEF3F2;
     --warn:    #B54708;
     --warn-bg: #FFFAEB;
+    --warn-mark: #F79009;  /* eksik/başarısız as a BAR or DOT, never as text */
     --skip:    #667085;
     --skip-bg: #F2F4F7;
     --ok:      #067647;   /* başarılı as TEXT */
@@ -2245,7 +2246,8 @@ body {
 .db-kpi-value.is-fail { color: var(--fail); }
 .db-kpi-sub { margin-top: var(--space-1); font-size: var(--text-sm); color: var(--muted); }
 
-.db-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: var(--space-4); align-items: start; }
+.db-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); align-items: start; }
+@media (max-width: 1100px) { .db-grid { grid-template-columns: minmax(0, 1fr); } }
 .db-card { padding: var(--space-4); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); min-width: 0; }
 .db-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-3); }
 .db-card-title { margin: 0; font-size: var(--text-md); font-weight: 600; color: var(--ink-title); }
@@ -2253,8 +2255,8 @@ body {
 
 /* Status segments */
 .db-seg { display: block; min-width: 2px; border-radius: 2px; }
-.db-seg.is-passed { background: var(--ok-mark); }
-.db-seg.is-failed { background: var(--fail); }
+.db-seg.is-passed { background: var(--primary); }
+.db-seg.is-failed { background: var(--warn-mark); }
 .db-seg.is-canceled, .db-seg.is-running { background: var(--skip); }
 .db-seg.is-unknown { background: var(--skip-bg); outline: 1px dashed var(--skip); outline-offset: -1px; }
 .db-seg.is-never { background: var(--chip-bg); outline: 1px solid var(--border); outline-offset: -1px; }
@@ -2266,24 +2268,41 @@ body {
 .db-bar { display: flex; gap: 2px; height: 10px; }
 .db-bar-legend { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); margin-top: var(--space-1); font-family: var(--mono); font-size: var(--text-sm); }
 .db-count { color: var(--soft); }
-.db-count.is-passed { color: var(--ok); }
-.db-count.is-failed { color: var(--fail); }
+.db-count.is-passed { color: var(--link); }
+.db-count.is-failed { color: var(--warn); }
 
 .db-legend { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-bottom: var(--space-2); font-size: var(--text-sm); color: var(--muted); }
 .db-legend-item::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: var(--space-1); border-radius: 2px; vertical-align: -1px; }
-.db-legend-item.is-passed::before { background: var(--ok-mark); }
-.db-legend-item.is-failed::before { background: var(--fail); }
+.db-legend-item.is-passed::before { background: var(--primary); }
+.db-legend-item.is-failed::before { background: var(--warn-mark); }
 .db-legend-item.is-canceled::before { background: var(--skip); }
 .db-legend-item.is-unknown::before { background: var(--skip-bg); outline: 1px dashed var(--skip); }
 
-/* Daily columns */
-.db-daily { display: flex; align-items: stretch; gap: var(--space-2); height: 180px; }
-.db-day { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: var(--space-1); border-radius: var(--radius-badge); padding: var(--space-1) 0; }
+/* Daily columns, with a y-axis so a bar's height can be read as a number */
+.db-chart { display: flex; gap: var(--space-2); }
+.db-axis {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    width: 2.2em;
+    height: 190px;
+    padding-bottom: 20px;
+    text-align: right;
+    font-family: var(--mono);
+    font-size: var(--text-sm);
+    color: var(--soft);
+}
+.db-plot { position: relative; flex: 1 1 auto; min-width: 0; }
+.db-lines { position: absolute; inset: 0 0 20px 0; display: flex; flex-direction: column; justify-content: space-between; }
+.db-lines span { display: block; border-top: 1px solid var(--row-line); }
+.db-daily { position: relative; display: flex; align-items: stretch; gap: var(--space-2); height: 190px; }
+.db-day { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 2px; border-radius: var(--radius-badge); }
 .db-day:hover, .db-day.is-selected { background: var(--surface-2); }
-.db-day-col { display: flex; flex-direction: column-reverse; gap: 2px; width: 70%; max-width: 44px; min-height: 0; }
-.db-day-col .db-seg { width: 100%; }
-.db-day-total { font-family: var(--mono); font-size: var(--text-sm); color: var(--muted); }
-.db-day-label { font-size: var(--text-sm); color: var(--soft); white-space: nowrap; }
+.db-day.is-selected { outline: 1px solid var(--primary-line); }
+.db-day-col { display: flex; flex-direction: column-reverse; gap: 2px; width: 72%; max-width: 46px; min-height: 0; border-radius: 4px 4px 0 0; overflow: hidden; }
+.db-day-col .db-seg { width: 100%; border-radius: 0; }
+.db-day-total { font-family: var(--mono); font-size: var(--text-sm); font-weight: 600; color: var(--muted); }
+.db-day-label { height: 20px; line-height: 20px; font-size: var(--text-sm); color: var(--soft); white-space: nowrap; }
 
 /* Screens and headings */
 .db-screens { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-3); }
@@ -2300,9 +2319,32 @@ button.db-screen:hover .db-screen-name { color: var(--link); text-decoration: un
 .db-failing-why { grid-column: 1; font-size: var(--text-sm); color: var(--muted); }
 .db-failing-count { grid-column: 2; grid-row: 1; font-family: var(--mono); font-size: var(--text-sm); font-weight: 600; color: var(--fail); white-space: nowrap; }
 
-/* Tables */
-.db-table-wrap { overflow-x: auto; }
-.db-table { width: 100%; }
+/* Tables: the rows scroll inside the card, so the page does not move under
+   someone reading row forty, and wide tables scroll sideways instead of
+   squeezing every column into an unreadable two-line wrap. */
+.db-table-wrap { overflow: auto; max-height: 420px; overscroll-behavior: contain; }
+.db-table { width: 100%; min-width: 620px; table-layout: fixed; }
+.db-table td, .db-table th { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The two columns allowed to use what is left over. */
+.db-table td:first-child, .db-table th:first-child { width: 34%; }
+.db-table .db-name, .db-table .sc-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Numbers and short words never wrap into a second line. */
+.db-table .h-mono, .db-table .h-links { white-space: nowrap; }
+.db-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--surface-head);
+    box-shadow: inset 0 -1px 0 var(--border);
+}
+.db-list-wrap { overflow-y: auto; max-height: 300px; overscroll-behavior: contain; }
+
+/* Paging, so a long list stays one screen tall */
+.db-pager { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-2); }
+.db-pager-count { font-family: var(--mono); font-size: var(--text-sm); color: var(--muted); margin-right: auto; }
+
+/* A card that needs the full width: the run tables, not the small charts */
+.db-wide { grid-column: 1 / -1; }
 .db-name { font-weight: 600; }
 .db-risk { display: inline-block; margin-right: var(--space-1); font-size: var(--text-sm); color: var(--warn); }
 .db-filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); margin-bottom: var(--space-3); }

@@ -51,8 +51,9 @@ public class DashboardService {
     /** Days are cut where the analysts' day is, not at UTC midnight. */
     static final ZoneId ZONE = ZoneId.of("Europe/Istanbul");
 
-    private static final int RECENT_RUNS = 20;
-    private static final int TOP_STEPS = 5;
+    /** The UI pages through these; a card never grows with the list. */
+    private static final int RECENT_RUNS = 60;
+    private static final int TOP_STEPS = 25;
 
     private final TestRunRepository runs;
     private final TestRunStepRepository steps;

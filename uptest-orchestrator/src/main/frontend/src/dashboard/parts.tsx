@@ -1,11 +1,16 @@
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import type { DashboardFailing, DashboardKpis } from "../api/types";
 
 /*
-  The dashboard's small pieces. Colours are the STATUS tokens (DESIGN.md §1),
-  never blue, and never alone: every bar has its counts in words beside it,
-  and segments are separated by a gap, because green and red are only 6.4 ΔE
-  apart for a deuteranope (measured with the dataviz validator).
+  The dashboard's small pieces.
+
+  CHART MARKS ARE BLUE AND AMBER, not the green/red of the status pills, and
+  that is measured rather than taste: for a deuteranope green↔red separate by
+  ΔE 6.4, which is inside the "needs a second encoding" band, while blue↔amber
+  separate by 22.2. The pills keep green/red — they carry a word, they are
+  shared with Geçmiş, and one pill is read on its own, never against another.
+  Every bar still prints its counts in words, and segments keep a 2px gap.
 */
 
 export type Segment = "passed" | "failed" | "canceled" | "unknown" | "running" | "never" | "notRunnable";
@@ -171,28 +176,79 @@ export function Pending({ title, stage, text }: { title: string; stage: string; 
   );
 }
 
-export function FailingList({ failing }: { failing: DashboardFailing }) {
+/**
+ * A page of a long list: the slice, and the controls under it.
+ *
+ * Paging rather than a taller card, because these lists grow without bound
+ * (fifty runs, thirty failing steps) and a card that grows with them pushes
+ * everything below it off the screen.
+ */
+export function usePaged<T>(items: T[], size: number, resetKey?: unknown) {
+  const [page, setPage] = useState(0);
+  const pages = Math.max(1, Math.ceil(items.length / size));
+  // A filter changed under us: page 3 of the old list is not page 3 of this one.
+  useEffect(() => setPage(0), [resetKey, items.length]);
+  const current = Math.min(page, pages - 1);
+  return {
+    slice: items.slice(current * size, current * size + size),
+    pager: items.length > size
+      ? <Pager page={current} pages={pages} total={items.length} size={size} onPage={setPage} />
+      : null,
+  };
+}
+
+function Pager({ page, pages, total, size, onPage }: {
+  page: number;
+  pages: number;
+  total: number;
+  size: number;
+  onPage: (page: number) => void;
+}) {
+  return (
+    <div className="db-pager">
+      <span className="db-pager-count">
+        {page * size + 1}–{Math.min(total, (page + 1) * size)} / {total}
+      </span>
+      <button type="button" className="btn btn-ghost" disabled={page === 0}
+              onClick={() => onPage(page - 1)} aria-label="Önceki sayfa">
+        ‹ Önceki
+      </button>
+      <span className="db-pager-count">{page + 1} / {pages}</span>
+      <button type="button" className="btn btn-ghost" disabled={page >= pages - 1}
+              onClick={() => onPage(page + 1)} aria-label="Sonraki sayfa">
+        Sonraki ›
+      </button>
+    </div>
+  );
+}
+
+export function FailingList({ failing, pageSize = 5 }: { failing: DashboardFailing; pageSize?: number }) {
+  const { slice, pager } = usePaged(failing.steps, pageSize);
   if (failing.steps.length === 0 && failing.loginFailures === 0) {
     return <p className="db-empty">Bu dönemde düşen adım yok.</p>;
   }
   return (
-    <ul className="db-failing">
-      {failing.steps.map((step) => (
-        <li key={step.step}>
-          <div className="db-failing-step">{step.step}</div>
-          {step.lastError ? <div className="db-failing-why">{step.lastError}</div> : null}
-          <span className="db-failing-count">
-            {step.runs}× · {step.scenarios} senaryo
-          </span>
-        </li>
-      ))}
-      {failing.loginFailures > 0 ? (
-        <li className="is-login">
-          <div className="db-failing-step">Giriş başarısız</div>
-          <span className="db-failing-count">{failing.loginFailures} koşu</span>
-        </li>
-      ) : null}
-    </ul>
+    <>
+      <ul className="db-failing">
+        {slice.map((step) => (
+          <li key={step.step}>
+            <div className="db-failing-step">{step.step}</div>
+            {step.lastError ? <div className="db-failing-why">{step.lastError}</div> : null}
+            <span className="db-failing-count">
+              {step.runs}× · {step.scenarios} senaryo
+            </span>
+          </li>
+        ))}
+        {/* Always visible, on every page: it is a total, not a row of the list. */}
+        {failing.loginFailures > 0 ? (
+          <li className="is-login">
+            <div className="db-failing-step">Giriş başarısız</div>
+            <span className="db-failing-count">{failing.loginFailures} koşu</span>
+          </li>
+        ) : null}
+      </ul>
+      {pager}
+    </>
   );
 }
 

@@ -1,7 +1,10 @@
 import { useState } from "react";
 import { formatDuration } from "../lib/format";
 import type { DashboardScenarioRow, DashboardScreenDetail } from "../api/types";
-import { Approx, Card, FailingList, KpiRow, StackBar, StatusWord, relativeTime } from "./parts";
+import { Approx, Card, FailingList, KpiRow, StackBar, StatusWord, relativeTime, usePaged } from "./parts";
+
+/** Rows per page, as the overview's run table uses. */
+const PER_PAGE = 12;
 
 /* Ekran detayı — docs/DASHBOARD.md §5. */
 
@@ -33,6 +36,7 @@ export function ScreenDetail({
     .filter((s) => s.runnable && s.lastStatus === "FAILED")
     .map((s) => s.path);
   const rows = data.scenarios.filter((s) => matches(s, filter));
+  const paged = usePaged(rows, PER_PAGE, filter);
 
   return (
     <div className="db-page">
@@ -45,7 +49,7 @@ export function ScreenDetail({
       <div className="db-grid">
         <Card title="Başlık bazında senaryolar" aside={<Approx on={approx} />}>
           {data.headings.length === 0 ? <p className="db-empty">Bu ekranda senaryo yok.</p> : (
-            <ul className="db-screens">
+            <div className="db-list-wrap"><ul className="db-screens">
               {data.headings.map((h) => (
                 <li key={h.name}>
                   <div className="db-screen">
@@ -57,7 +61,7 @@ export function ScreenDetail({
                   ]} />
                 </li>
               ))}
-            </ul>
+            </ul></div>
           )}
         </Card>
 
@@ -110,7 +114,7 @@ export function ScreenDetail({
               </tr>
             </thead>
             <tbody>
-              {rows.map((s) => (
+              {paged.slice.map((s) => (
                 <tr key={s.path} className="is-clickable" onClick={() => onOpenScenario(s.path, s.title)}>
                   <td>
                     <button type="button" className="unstyled-button db-name">{s.title}</button>
@@ -139,6 +143,7 @@ export function ScreenDetail({
             </tbody>
           </table>
         </div>
+        {paged.pager}
       </Card>
     </div>
   );

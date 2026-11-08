@@ -2,9 +2,12 @@ import { useState } from "react";
 import { artifactHref } from "../api/endpoints";
 import { formatDuration } from "../lib/format";
 import type { DashboardDay, DashboardOverview, DashboardScreenBar } from "../api/types";
-import { Approx, Card, FailingList, KpiRow, Pending, StackBar, StatusWord, relativeTime } from "./parts";
+import { Approx, Card, FailingList, KpiRow, Pending, StackBar, StatusWord, relativeTime, usePaged } from "./parts";
 import type { Segment } from "./parts";
 import { SEGMENT_WORD } from "./parts";
+
+/** Rows per page. One screenful, so a card never pushes the next one away. */
+const RUNS_PER_PAGE = 8;
 
 /* Genel Bakış — docs/DASHBOARD.md §4. */
 export function Overview({
@@ -23,6 +26,7 @@ export function Overview({
   const runs = day
     ? data.recentRuns.filter((run) => localDate(run.submittedAt) === day)
     : data.recentRuns;
+  const paged = usePaged(runs, RUNS_PER_PAGE, day);
 
   return (
     <div className="db-page">
@@ -31,6 +35,7 @@ export function Overview({
       <div className="db-grid">
         <Card
           title="Günlük çalıştırmalar"
+          aside={<DayLegend />}
           note="Çubuk = o gün başlayan koşu sayısı (senaryo değil). Bir güne tıklayınca aşağıdaki liste o güne süzülür."
         >
           <DailyChart days={data.daily} selected={day} onSelect={(d) => setDay(d === day ? null : d)} />
@@ -40,64 +45,72 @@ export function Overview({
           {data.screens.length === 0 ? (
             <p className="db-empty">Kütüphanede senaryo yok.</p>
           ) : (
-            <ul className="db-screens">
-              {data.screens.map((screen) => (
-                <li key={screen.app + screen.product + screen.flow}>
-                  <button type="button" className="db-screen unstyled-button" onClick={() => onOpenScreen(screen)}>
-                    <span className="db-screen-name">{screen.name}</span>
-                    <span className="db-screen-total">{screen.total}</span>
-                  </button>
-                  <StackBar total={screen.total} parts={screenParts(screen)} />
-                </li>
-              ))}
-            </ul>
+            <div className="db-list-wrap">
+              <ul className="db-screens">
+                {data.screens.map((screen) => (
+                  <li key={screen.app + screen.product + screen.flow}>
+                    <button type="button" className="db-screen unstyled-button" onClick={() => onOpenScreen(screen)}>
+                      <span className="db-screen-name">{screen.name}</span>
+                      <span className="db-screen-total">{screen.total}</span>
+                    </button>
+                    <StackBar total={screen.total} parts={screenParts(screen)} />
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </Card>
+      </div>
 
+      <div className="db-grid">
         <Card
           title="Son çalıştırmalar"
-          aside={day ? <button type="button" className="btn btn-ghost" onClick={() => setDay(null)}>{day} · tümü</button>
-            : "son " + data.recentRuns.length + " koşu · en yeni üstte"}
+          aside={day
+            ? <button type="button" className="btn btn-ghost" onClick={() => setDay(null)}>{day} · tümü</button>
+            : "en yeni üstte"}
           note="CIF ve tetik, bu sürümden sonra başlayan koşularda dolar; eski koşularda boş kalır."
         >
           {runs.length === 0 ? <p className="db-empty">Bu dönemde koşu yok.</p> : (
-            <div className="db-table-wrap">
-              <table className="registry db-table">
-                <thead>
-                  <tr>
-                    <th>Senaryo</th>
-                    <th>Ekran</th>
-                    <th>CIF</th>
-                    <th>Tetik</th>
-                    <th>Durum</th>
-                    <th>Adım</th>
-                    <th>Süre</th>
-                    <th>Ne zaman</th>
-                    <th aria-label="Çıktılar" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {runs.map((run) => (
-                    <tr key={run.runId}>
-                      <td>
-                        <div className="db-name">{run.scenario || "(isimsiz)"}</div>
-                        <div className="sc-path">{run.path ?? "kayıtlı bir senaryoyla eşleşmedi"}</div>
-                      </td>
-                      <td>{run.screen ?? "—"}</td>
-                      <td className="h-mono">{run.cif ?? "—"}</td>
-                      <td>{run.trigger === "queue" ? "kuyruk" : run.trigger === "single" ? "tekli" : "—"}</td>
-                      <td><StatusWord status={run.status} /></td>
-                      <td className="h-mono">{run.total ? run.passed + "/" + run.total : "—"}</td>
-                      <td className="h-mono">{run.durationMs ? formatDuration(run.durationMs) : "—"}</td>
-                      <td className="h-mono">{relativeTime(run.submittedAt)}</td>
-                      <td className="h-links">
-                        <a className="artifact" target="_blank" rel="noopener" href={artifactHref(run.runId, "report.html")}>Rapor</a>
-                      </td>
+            <>
+              <div className="db-table-wrap">
+                <table className="registry db-table">
+                  <thead>
+                    <tr>
+                      <th>Senaryo</th>
+                      <th>Ekran</th>
+                      <th>CIF</th>
+                      <th>Tetik</th>
+                      <th>Durum</th>
+                      <th>Adım</th>
+                      <th>Süre</th>
+                      <th>Ne zaman</th>
+                      <th aria-label="Çıktılar" />
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {paged.slice.map((run) => (
+                      <tr key={run.runId}>
+                        <td>
+                          <div className="db-name" title={run.scenario}>{run.scenario || "(isimsiz)"}</div>
+                          <div className="sc-path">{run.path ?? "kayıtlı bir senaryoyla eşleşmedi"}</div>
+                        </td>
+                        <td title={run.screen ?? ""}>{run.screen ?? "—"}</td>
+                        <td className="h-mono">{run.cif ?? "—"}</td>
+                        <td>{run.trigger === "queue" ? "kuyruk" : run.trigger === "single" ? "tekli" : "—"}</td>
+                        <td><StatusWord status={run.status} /></td>
+                        <td className="h-mono">{run.total ? run.passed + "/" + run.total : "—"}</td>
+                        <td className="h-mono">{run.durationMs ? formatDuration(run.durationMs) : "—"}</td>
+                        <td className="h-mono">{relativeTime(run.submittedAt)}</td>
+                        <td className="h-links">
+                          <a className="artifact" target="_blank" rel="noopener" href={artifactHref(run.runId, "report.html")}>Rapor</a>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {paged.pager}
+            </>
           )}
         </Card>
 
@@ -150,20 +163,22 @@ export function Overview({
         <Card title="Kararsız senaryolar" aside={<Approx on={data.kpis.approximate} />}
               note="Bu dönemde hem geçen hem düşen senaryolar.">
           {data.flaky.length === 0 ? <p className="db-empty">Bu dönemde kararsız senaryo yok.</p> : (
-            <ul className="db-failing">
-              {data.flaky.map((f) => (
-                <li key={f.app + f.product + f.path}>
-                  <button type="button" className="unstyled-button db-failing-step db-link"
-                          onClick={() => onOpenScenario(f.app, f.product, f.path, f.title)}>
-                    {f.title}
-                  </button>
-                  <div className="db-failing-why">
-                    {f.screen}{f.lastFailedStep ? " · son düştüğü adım: " + f.lastFailedStep : ""}
-                  </div>
-                  <span className="db-failing-count">{f.passed} geçti · {f.failed} düştü</span>
-                </li>
-              ))}
-            </ul>
+            <div className="db-list-wrap">
+              <ul className="db-failing">
+                {data.flaky.map((f) => (
+                  <li key={f.app + f.product + f.path}>
+                    <button type="button" className="unstyled-button db-failing-step db-link"
+                            onClick={() => onOpenScenario(f.app, f.product, f.path, f.title)}>
+                      {f.title}
+                    </button>
+                    <div className="db-failing-why">
+                      {f.screen}{f.lastFailedStep ? " · son düştüğü adım: " + f.lastFailedStep : ""}
+                    </div>
+                    <span className="db-failing-count">{f.passed} geçti · {f.failed} düştü</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </Card>
         <Pending title="AI üretim hattı" stage="aşama 3" text="AI üretim metrikleri henüz kaydedilmiyor." />
@@ -186,46 +201,70 @@ const DAY_SEGMENTS: Array<[Segment, keyof DashboardDay]> = [
   ["unknown", "unknown"], ["running", "running"],
 ];
 
+function DayLegend() {
+  return (
+    <span className="db-legend">
+      {DAY_SEGMENTS.slice(0, 3).map(([s]) => (
+        <span key={s} className={"db-legend-item is-" + s}>{SEGMENT_WORD[s]}</span>
+      ))}
+    </span>
+  );
+}
+
+/**
+ * The days as columns, with a y-axis: without one a bar is a shape, and the
+ * question ("is thirty a lot?") needs a scale to answer.
+ */
 function DailyChart({ days, selected, onSelect }: {
   days: DashboardDay[];
   selected: string | null;
   onSelect: (date: string) => void;
 }) {
   const totals = days.map((d) => d.passed + d.failed + d.canceled + d.unknown + d.running);
-  const max = Math.max(1, ...totals);
+  const peak = Math.max(1, ...totals);
+  // A round top, so the axis reads 30 rather than 28.
+  const step = peak <= 5 ? 1 : peak <= 20 ? 5 : peak <= 60 ? 10 : 25;
+  const max = Math.ceil(peak / step) * step;
+
   return (
-    <>
-      <div className="db-legend">
-        {DAY_SEGMENTS.slice(0, 4).map(([s]) => (
-          <span key={s} className={"db-legend-item is-" + s}>{SEGMENT_WORD[s]}</span>
-        ))}
+    <div className="db-chart">
+      <div className="db-axis" aria-hidden="true">
+        <span>{max}</span>
+        <span>{Math.round(max / 2)}</span>
+        <span>0</span>
       </div>
-      <div className="db-daily">
-        {days.map((d, i) => {
-          const label = new Date(d.date + "T12:00:00").toLocaleDateString("tr-TR", { day: "numeric", month: "short" });
-          const parts = DAY_SEGMENTS.filter(([, key]) => (d[key] as number) > 0);
-          const describe = totals[i] + " koşu: " + parts.map(([s, key]) => d[key] + " " + SEGMENT_WORD[s]).join(", ");
-          return (
-            <button
-              key={d.date}
-              type="button"
-              className={"db-day unstyled-button" + (selected === d.date ? " is-selected" : "")}
-              title={label + " — " + describe}
-              aria-label={label + ", " + describe}
-              aria-pressed={selected === d.date}
-              onClick={() => onSelect(d.date)}
-            >
-              <span className="db-day-total">{totals[i] || ""}</span>
-              <span className="db-day-col" style={{ height: (100 * (totals[i] ?? 0)) / max + "%" }}>
-                {parts.map(([s, key]) => (
-                  <span key={s} className={"db-seg is-" + s} style={{ flexGrow: d[key] as number }} />
-                ))}
-              </span>
-              <span className="db-day-label">{label}</span>
-            </button>
-          );
-        })}
+      <div className="db-plot">
+        <div className="db-lines" aria-hidden="true"><span /><span /><span /></div>
+        <div className="db-daily">
+          {days.map((d, i) => {
+            const total = totals[i] ?? 0;
+            const label = new Date(d.date + "T12:00:00")
+              .toLocaleDateString("tr-TR", { day: "numeric", month: "short" });
+            const parts = DAY_SEGMENTS.filter(([, key]) => (d[key] as number) > 0);
+            const describe = total + " koşu"
+              + (parts.length ? ": " + parts.map(([s, key]) => d[key] + " " + SEGMENT_WORD[s]).join(", ") : "");
+            return (
+              <button
+                key={d.date}
+                type="button"
+                className={"db-day unstyled-button" + (selected === d.date ? " is-selected" : "")}
+                title={label + " — " + describe}
+                aria-label={label + ", " + describe}
+                aria-pressed={selected === d.date}
+                onClick={() => onSelect(d.date)}
+              >
+                <span className="db-day-total">{total || ""}</span>
+                <span className="db-day-col" style={{ height: (100 * total) / max + "%" }}>
+                  {parts.map(([s, key]) => (
+                    <span key={s} className={"db-seg is-" + s} style={{ flexGrow: d[key] as number }} />
+                  ))}
+                </span>
+                <span className="db-day-label">{label}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
-    </>
+    </div>
   );
 }
