@@ -528,6 +528,17 @@ export interface Origin {
 export interface RunLogin {
   cif: string;
   userid: string;
+  /** The saved login's id (testdata/users.yaml), recorded with the run. */
+  id?: string;
+}
+
+/** Where a run comes from -- recorded for the dashboard, never changes the run. */
+export interface RunMeta {
+  /** The saved scenario's path in the run's product; the server resolves its id. */
+  scenarioPath?: string;
+  trigger?: "single" | "queue";
+  /** One press of the queue's Çalıştır. */
+  batchId?: string;
 }
 
 /** StepState's five getters, in Jackson's serialization order. `durationMs`
@@ -902,4 +913,180 @@ export interface ErrorBody {
   rootCause?: string;
   /** Present only on SuggestManyRequest's count validation 400. */
   count?: number;
+}
+
+/* ------------------------------ dashboard ------------------------------ */
+/* DashboardService's records, field for field. See docs/DASHBOARD.md for what
+   each number means; `approximate` is true while runs are matched to
+   scenarios by title (stage 1). */
+
+export type DashboardPeriod = "24h" | "7d" | "30d";
+
+export interface DashboardKpis {
+  scenarios: number;
+  runnable: number;
+  notRunnable: number;
+  ran: number;
+  neverRun: number;
+  passed: number;
+  failed: number;
+  successRate: number | null;
+  failedSteps: number;
+  averageDurationMs: number | null;
+  previous: { passed: number; failed: number; successRate: number | null };
+  approximate: boolean;
+}
+
+export interface DashboardDay {
+  date: string;
+  passed: number;
+  failed: number;
+  canceled: number;
+  unknown: number;
+  running: number;
+}
+
+export interface DashboardRecentRun {
+  runId: string;
+  scenario: string;
+  path: string | null;
+  screen: string | null;
+  flow: string | null;
+  status: string | null;
+  passed: number;
+  total: number;
+  durationMs: number;
+  submittedAt: string;
+  executor: string;
+  cif: string | null;
+  trigger: string | null;
+}
+
+export interface DashboardCifRow {
+  cif: string;
+  name: string | null;
+  runs: number;
+  passed: number;
+  failed: number;
+  loginFailures: number;
+  lastRunAt: string | null;
+}
+
+export interface DashboardFlakyRow {
+  app: string;
+  product: string;
+  path: string;
+  title: string;
+  screen: string;
+  passed: number;
+  failed: number;
+  lastFailedStep: string | null;
+}
+
+export interface DashboardFailingStep {
+  step: string;
+  runs: number;
+  scenarios: number;
+  lastError: string | null;
+}
+
+export interface DashboardFailing {
+  steps: DashboardFailingStep[];
+  loginFailures: number;
+}
+
+export interface DashboardScreenBar {
+  app: string;
+  product: string;
+  productName: string;
+  flow: string;
+  name: string;
+  total: number;
+  passed: number;
+  failed: number;
+  neverRun: number;
+  notRunnable: number;
+}
+
+export interface DashboardOverview {
+  period: DashboardPeriod;
+  cif: string | null;
+  kpis: DashboardKpis;
+  daily: DashboardDay[];
+  recentRuns: DashboardRecentRun[];
+  failing: DashboardFailing;
+  screens: DashboardScreenBar[];
+  cifs: DashboardCifRow[];
+  flaky: DashboardFlakyRow[];
+}
+
+export interface DashboardHeadingBar {
+  name: string;
+  total: number;
+  runnable: number;
+  notRunnable: number;
+  passed: number;
+  failed: number;
+  neverRun: number;
+}
+
+/** `lastStatus`: DONE | FAILED, or NEVER_RUN / NOT_RUNNABLE. */
+export interface DashboardScenarioRow {
+  path: string;
+  title: string;
+  heading: string | null;
+  runnable: boolean;
+  lastStatus: string;
+  lastRunAt: string | null;
+  passed: number;
+  total: number;
+  durationMs: number | null;
+  ruleCount: number;
+  stale: boolean;
+  risks: string[];
+  lastCif: string | null;
+  /** The newest ten finished or stopped runs' statuses, oldest first. */
+  last10: string[];
+}
+
+export interface DashboardScreenDetail {
+  period: DashboardPeriod;
+  app: string;
+  product: string;
+  productName: string;
+  flow: string;
+  name: string;
+  /** null when the screen has no catalog file. */
+  catalog: string | null;
+  ruleCount: number;
+  kpis: DashboardKpis;
+  headings: DashboardHeadingBar[];
+  failing: DashboardFailing;
+  scenarios: DashboardScenarioRow[];
+}
+
+export interface DashboardHistoryRun {
+  runId: string;
+  submittedAt: string;
+  status: string | null;
+  cif: string | null;
+  trigger: string | null;
+  batchId: string | null;
+  executor: string;
+  durationMs: number;
+  passed: number;
+  total: number;
+  failedStep: string | null;
+  failedError: string | null;
+}
+
+export interface DashboardHistory {
+  app: string;
+  product: string;
+  path: string;
+  title: string;
+  screen: string;
+  heading: string | null;
+  rules: string[];
+  runs: DashboardHistoryRun[];
 }

@@ -95,6 +95,20 @@ public class RunStore {
         return runs.save(row);
     }
 
+    /** {@link #record}, with where the run came from (dashboard stage 2). */
+    @Transactional
+    public TestRunEntity record(UUID id, String feature, String executorName,
+                                String scenarioName, String app, String flow, String intent,
+                                String product, UUID scenarioId, String cif, String testUserId,
+                                String runTrigger, UUID batchId) {
+        TestRunEntity row = new TestRunEntity(
+                id, Instant.now(), "RUNNING", executorName, scenarioName,
+                blankToNull(app), blankToNull(flow), blankToNull(intent), feature,
+                blankToNull(product));
+        row.setOrigin(scenarioId, blankToNull(cif), blankToNull(testUserId), runTrigger, batchId);
+        return runs.save(row);
+    }
+
     @Transactional(readOnly = true)
     public Optional<TestRunEntity> find(UUID id) {
         return runs.findById(id);

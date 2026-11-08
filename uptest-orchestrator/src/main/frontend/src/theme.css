@@ -2210,3 +2210,106 @@ body {
 
 /* Git stays where it is while editing, visibly out of reach. */
 .sd-go:disabled { background: var(--empty); }
+
+/* ===================== Dashboard (docs/DASHBOARD.md) =====================
+   Status colours only, never blue (DESIGN.md §1). Green and red are close for
+   a deuteranope, so segments are split by a 2px gap and every bar carries its
+   counts in words; "hiç koşmadı" is near the surface, so it gets an outline. */
+.dashboard-panel { overflow: hidden; }
+.db-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: var(--space-3) var(--space-4) var(--space-5); }
+.db-page { display: flex; flex-direction: column; gap: var(--space-4); }
+.db-periods { display: inline-flex; gap: var(--space-1); }
+.db-chip.is-active { background: var(--primary-tint); border-color: var(--primary-line); color: var(--primary-ink); }
+.db-empty { margin: 0; color: var(--muted); font-size: var(--text-base); }
+.db-note { margin: var(--space-2) 0 0; font-size: var(--text-sm); color: var(--muted); }
+.db-stage { font-family: var(--mono); font-size: var(--text-sm); color: var(--soft); border: 1px solid var(--border); border-radius: var(--radius-badge); padding: 0 var(--space-1); }
+.db-approx { color: var(--soft); font-weight: 600; cursor: help; }
+.db-screen-meta { margin: 0; color: var(--muted); font-size: var(--text-base); }
+
+.db-kpis { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+.db-kpi-group { display: flex; flex-wrap: wrap; gap: var(--space-3); flex: 1 1 auto; }
+.db-kpi-group:first-child { flex: 0 1 auto; padding-right: var(--space-3); border-right: 1px solid var(--border); }
+.db-kpi {
+    flex: 1 1 140px;
+    min-width: 130px;
+    padding: var(--space-3);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow);
+}
+.db-kpi-label { font-size: var(--text-sm); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--soft); }
+.db-kpi-value { margin-top: var(--space-1); font-size: 28px; font-weight: 700; color: var(--ink-title); }
+.db-kpi-value small { font-size: var(--text-base); font-weight: 600; color: var(--muted); }
+.db-kpi-value.is-ok { color: var(--ok); }
+.db-kpi-value.is-fail { color: var(--fail); }
+.db-kpi-sub { margin-top: var(--space-1); font-size: var(--text-sm); color: var(--muted); }
+
+.db-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: var(--space-4); align-items: start; }
+.db-card { padding: var(--space-4); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); min-width: 0; }
+.db-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-3); }
+.db-card-title { margin: 0; font-size: var(--text-md); font-weight: 600; color: var(--ink-title); }
+.db-card-aside { font-size: var(--text-sm); color: var(--muted); }
+
+/* Status segments */
+.db-seg { display: block; min-width: 2px; border-radius: 2px; }
+.db-seg.is-passed { background: var(--ok-mark); }
+.db-seg.is-failed { background: var(--fail); }
+.db-seg.is-canceled, .db-seg.is-running { background: var(--skip); }
+.db-seg.is-unknown { background: var(--skip-bg); outline: 1px dashed var(--skip); outline-offset: -1px; }
+.db-seg.is-never { background: var(--chip-bg); outline: 1px solid var(--border); outline-offset: -1px; }
+.db-seg.is-notRunnable {
+    background: repeating-linear-gradient(45deg, var(--chip-bg) 0 4px, var(--border) 4px 6px);
+    outline: 1px solid var(--border);
+    outline-offset: -1px;
+}
+.db-bar { display: flex; gap: 2px; height: 10px; }
+.db-bar-legend { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); margin-top: var(--space-1); font-family: var(--mono); font-size: var(--text-sm); }
+.db-count { color: var(--soft); }
+.db-count.is-passed { color: var(--ok); }
+.db-count.is-failed { color: var(--fail); }
+
+.db-legend { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-bottom: var(--space-2); font-size: var(--text-sm); color: var(--muted); }
+.db-legend-item::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: var(--space-1); border-radius: 2px; vertical-align: -1px; }
+.db-legend-item.is-passed::before { background: var(--ok-mark); }
+.db-legend-item.is-failed::before { background: var(--fail); }
+.db-legend-item.is-canceled::before { background: var(--skip); }
+.db-legend-item.is-unknown::before { background: var(--skip-bg); outline: 1px dashed var(--skip); }
+
+/* Daily columns */
+.db-daily { display: flex; align-items: stretch; gap: var(--space-2); height: 180px; }
+.db-day { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: var(--space-1); border-radius: var(--radius-badge); padding: var(--space-1) 0; }
+.db-day:hover, .db-day.is-selected { background: var(--surface-2); }
+.db-day-col { display: flex; flex-direction: column-reverse; gap: 2px; width: 70%; max-width: 44px; min-height: 0; }
+.db-day-col .db-seg { width: 100%; }
+.db-day-total { font-family: var(--mono); font-size: var(--text-sm); color: var(--muted); }
+.db-day-label { font-size: var(--text-sm); color: var(--soft); white-space: nowrap; }
+
+/* Screens and headings */
+.db-screens { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+.db-screen { display: flex; justify-content: space-between; width: 100%; margin-bottom: var(--space-1); text-align: left; }
+button.db-screen:hover .db-screen-name { color: var(--link); text-decoration: underline; }
+.db-screen-name { font-weight: 600; color: var(--ink); }
+.db-screen-total { font-family: var(--mono); color: var(--muted); }
+
+/* Failing steps */
+.db-failing { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.db-failing li { display: grid; grid-template-columns: 1fr auto; column-gap: var(--space-3); padding-bottom: var(--space-2); border-bottom: 1px solid var(--row-line); }
+.db-failing li.is-login { border-bottom: 0; }
+.db-failing-step { font-family: var(--mono); font-size: var(--text-base); color: var(--ink); overflow-wrap: anywhere; }
+.db-failing-why { grid-column: 1; font-size: var(--text-sm); color: var(--muted); }
+.db-failing-count { grid-column: 2; grid-row: 1; font-family: var(--mono); font-size: var(--text-sm); font-weight: 600; color: var(--fail); white-space: nowrap; }
+
+/* Tables */
+.db-table-wrap { overflow-x: auto; }
+.db-table { width: 100%; }
+.db-name { font-weight: 600; }
+.db-risk { display: inline-block; margin-right: var(--space-1); font-size: var(--text-sm); color: var(--warn); }
+.db-filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); margin-bottom: var(--space-3); }
+.db-rerun { margin-left: auto; }
+.db-cif { display: inline-flex; align-items: center; gap: var(--space-1); font-size: var(--text-sm); color: var(--soft); }
+.db-cif select { min-width: 160px; }
+.db-link { text-align: left; }
+.db-link:hover { color: var(--link); text-decoration: underline; }
+.db-dots { display: inline-flex; gap: 3px; align-items: center; }
+.db-dot { width: 8px; height: 8px; border-radius: var(--radius-pill); }

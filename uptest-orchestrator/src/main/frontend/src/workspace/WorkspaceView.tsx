@@ -24,7 +24,9 @@ import { useRunArtifacts } from "../hooks/useRunArtifacts";
 import { useRunPoll } from "../hooks/useRunPoll";
 import { useValidation } from "../hooks/useValidation";
 import { useToast } from "../ui/Toast";
-import type { Origin, RunLogin, ValidationResult } from "../api/types";
+import { DashboardPanel } from "../dashboard/DashboardPanel";
+import type { RerunRequest } from "../dashboard/DashboardPanel";
+import type { Origin, RunLogin, RunMeta, ValidationResult } from "../api/types";
 import { splitTags } from "../lib/scenarioProse";
 import { loginStepFor, withLogin } from "../lib/loginLine";
 import type { useVocabulary } from "../hooks/useVocabulary";
@@ -73,6 +75,9 @@ export function WorkspaceView({
     setSideTab(tab);
     setPanelOpen(true);
   }, []);
+  /* Dashboard's "Düşenleri tekrar çalıştır": Kayıtlı Senaryolar opens on that
+     screen with those rows ticked, where the CIF is in sight before Çalıştır. */
+  const [rerun, setRerun] = useState<(RerunRequest & { nonce: number }) | null>(null);
   const toast = useToast();
   const origin = useOrigin();
   const catalogs = useCatalogs();
@@ -251,8 +256,8 @@ export function WorkspaceView({
      chat-written scenario as of a typed one, and a copy of it would be a
      copy that drifts. */
   const runWith = useCallback(
-    async (text: string, where: Origin, login?: RunLogin) => {
-      const result = await runPoll.start(text, where, login);
+    async (text: string, where: Origin, login?: RunLogin, meta?: RunMeta) => {
+      const result = await runPoll.start(text, where, login, meta ?? { trigger: "single" });
       if (!result.ok) {
         if (result.status === 422) {
           validation.applyResult(result.body as ValidationResult);
@@ -286,12 +291,19 @@ export function WorkspaceView({
   }, [chosenUser, users.users]);
 
   const runLogin: RunLogin | undefined = chosenUser
-    ? { cif: chosenUser.cif, userid: chosenUser.userid }
+    ? { cif: chosenUser.cif, userid: chosenUser.userid, id: chosenUser.id }
     : undefined;
 
+  /* A scenario opened from Kayıtlı Senaryolar is recorded as that scenario's
+     run (dashboard), edited or not -- it is still the scenario under test.
+     Only when the run is for the same app and product the file belongs to. */
   const handleRunClick = useCallback(
-    () => runWith(feature, resolvedOrigin, runLogin),
-    [runWith, feature, resolvedOrigin, runLogin],
+    () => runWith(feature, resolvedOrigin, runLogin, {
+      trigger: "single",
+      scenarioPath: linked && linked.app === resolvedOrigin.app
+        && (linked.product === (resolvedOrigin.product ?? "")) ? linked.path : undefined,
+    }),
+    [runWith, feature, resolvedOrigin, runLogin, linked],
   );
 
   /**
@@ -391,7 +403,7 @@ export function WorkspaceView({
      open, which is the test -- not how much markup it happens to have. */
   const wideMode = panelOpen
     && (sideTab === "chat" || sideTab === "product" || sideTab === "users"
-      || sideTab === "agent");
+      || sideTab === "agent" || sideTab === "dashboard");
 
   const liveRun = runPoll.run?.status === "RUNNING";
   const agentVisible = !tools.loaded || tools.available;
@@ -478,12 +490,20 @@ export function WorkspaceView({
           onHandOff={handleGenerated}
           onRunDraft={runDraft}
         />
+        <DashboardPanel
+          active={sideTab === "dashboard"}
+          onRerun={(request) => {
+            setRerun({ ...request, nonce: Date.now() });
+            showPanel("product");
+          }}
+        />
         <UsersPanel active={sideTab === "users"} users={users} />
         <ProductPanel
           active={sideTab === "product"}
           users={users}
           products={products}
           onOpen={openRegistered}
+          preselect={rerun}
         />
         <TimelinePanel
           active={sideTab === "timeline"}

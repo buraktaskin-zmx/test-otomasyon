@@ -155,6 +155,16 @@ public class RunService {
      */
     public StartOutcome start(String submitted, String app, String flow, String intent, String product,
                               String cif, String userid) {
+        return start(submitted, app, flow, intent, product, cif, userid, RunMeta.NONE);
+    }
+
+    /**
+     * {@link #start(String, String, String, String, String, String, String)},
+     * plus where the run came from — recorded for the dashboard, never used to
+     * decide anything about the run itself.
+     */
+    public StartOutcome start(String submitted, String app, String flow, String intent, String product,
+                              String cif, String userid, RunMeta meta) {
         String login = LoginStep.forApp(app, cif, userid);
         String feature = login == null ? submitted : LoginStep.apply(submitted, login);
 
@@ -213,9 +223,38 @@ public class RunService {
          * and deriving it before redaction keeps the two concerns apart.
          */
         store.record(runId, Redactor.redactFeature(feature), executor.get().name(),
-                ScenarioName.of(feature), app, flow, intent, product);
+                ScenarioName.of(feature), app, flow, intent, product,
+                scenarioIdOf(app, product, meta), cif, meta == null ? null : meta.testUserId(),
+                triggerOf(meta), uuidOrNull(meta == null ? null : meta.batchId()));
 
         return new StartOutcome(runId, executor.get().name(), null, validation);
+    }
+
+    /** The saved scenario's id, or null when the path names none in that product. */
+    private java.util.UUID scenarioIdOf(String app, String product, RunMeta meta) {
+        if (meta == null || meta.scenarioPath() == null || meta.scenarioPath().isBlank()
+                || product == null || product.isBlank() || app == null || app.isBlank()) {
+            return null;
+        }
+        return products.scenario(app, product, meta.scenarioPath())
+                .map(orchestrator.product.ScenarioStore.Stored::id)
+                .orElse(null);
+    }
+
+    private static String triggerOf(RunMeta meta) {
+        String trigger = meta == null ? null : meta.trigger();
+        return "single".equals(trigger) || "queue".equals(trigger) ? trigger : null;
+    }
+
+    private static UUID uuidOrNull(String text) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(text.trim());
+        } catch (IllegalArgumentException notAnId) {
+            return null;
+        }
     }
 
     /**

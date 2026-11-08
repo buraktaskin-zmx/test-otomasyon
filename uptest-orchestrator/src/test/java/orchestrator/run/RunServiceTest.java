@@ -258,7 +258,9 @@ class RunServiceTest {
                         && feature.contains("login with cif \"***\"")),
                 eq("executor-2:9035"),
                 eq("Kullanıcı ödeme talep eder"),
-                eq("ngc"), eq("banko-payment"), eq("fatura testi"), isNull());
+                eq("ngc"), eq("banko-payment"), eq("fatura testi"), isNull(),
+                // Dashboard stage 2: no scenario, login, trigger or batch on this path.
+                isNull(), isNull(), isNull(), isNull(), isNull());
     }
 
     /** The executor still gets the REAL feature — redaction is for the row. */

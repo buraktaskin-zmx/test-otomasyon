@@ -28,4 +28,15 @@ public interface TestRunStepRepository extends JpaRepository<TestRunStepEntity, 
     void deleteByRunId(@Param("runId") UUID runId);
 
     List<TestRunStepEntity> findByRunIdOrderByStepIndexAsc(UUID runId);
+
+    /**
+     * The steps of every run submitted since a moment, in ONE statement — a
+     * join rather than an IN list of run ids, which a month of runs would
+     * make thousands long.
+     */
+    @Query("""
+           select s from TestRunStepEntity s, TestRunEntity r
+            where s.runId = r.id and r.submittedAt >= :since
+           """)
+    List<TestRunStepEntity> findForRunsSince(@Param("since") java.time.Instant since);
 }

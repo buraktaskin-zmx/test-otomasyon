@@ -46,7 +46,9 @@ public class RunController {
      * name and a step count, and nothing derived from the request body.
      */
     public record StartRunRequest(String feature, String app, String flow, String intent,
-                                  String product, String cif, String userid) {
+                                  String product, String cif, String userid,
+                                  String scenarioPath, String testUserId, String trigger,
+                                  String batchId) {
     }
 
     private final RunService runService;
@@ -70,7 +72,9 @@ public class RunController {
 
         RunService.StartOutcome outcome = runService.start(
                 request.feature(), request.app(), request.flow(), request.intent(), request.product(),
-                request.cif(), request.userid());
+                request.cif(), request.userid(),
+                new orchestrator.run.RunMeta(request.scenarioPath(), request.testUserId(),
+                        request.trigger(), request.batchId()));
 
         if (outcome.accepted()) {
             return ResponseEntity.accepted().body(Map.of(

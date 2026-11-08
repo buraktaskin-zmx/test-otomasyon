@@ -61,8 +61,11 @@ export function ProductPanel({
   products,
   users,
   onOpen,
+  preselect,
 }: {
   active: boolean;
+  /** Dashboard's "Düşenleri tekrar çalıştır": open this screen with these rows ticked. */
+  preselect?: { app: string; product: string; flow: string; paths: string[]; nonce: number } | null;
   products: ReturnType<typeof useProducts>;
   users: ReturnType<typeof useTestUsers>;
   /** "Git": opens a registered scenario in the Çalıştır editor, with the
@@ -233,6 +236,23 @@ export function ProductPanel({
     setSelected(new Set());
   }, [selection?.app, selection?.product]);
 
+  /* From the dashboard: the screen first, the ticks after the product-change
+     reset above has run (the nonce makes a second click on the same button
+     count as a new request). */
+  const pendingTicks = useRef<string[] | null>(null);
+  useEffect(() => {
+    if (!preselect || queue.busy) return;
+    pendingTicks.current = preselect.paths;
+    setSelection({ app: preselect.app, product: preselect.product, flow: preselect.flow, path: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preselect?.nonce]);
+  useEffect(() => {
+    if (pendingTicks.current && selection) {
+      setSelected(new Set(pendingTicks.current));
+      pendingTicks.current = null;
+    }
+  }, [selection]);
+
   /* Changing screen closes whatever scenario was open. Without this the
      detail view would survive into a screen the file does not belong to,
      and the breadcrumb above it would be lying. */
@@ -264,7 +284,7 @@ export function ProductPanel({
     if (!selection || !chosenUser || runBlocked) return;
     queue.run(selectedRows.map((row) => ({
       path: row.path, title: row.title, flow: row.flow, description: row.description,
-    })), selection.app, selection.product, { cif: chosenUser.cif, userid: chosenUser.userid });
+    })), selection.app, selection.product, { cif: chosenUser.cif, userid: chosenUser.userid, id: chosenUser.id });
     setSelected(new Set());
   };
 
@@ -591,7 +611,7 @@ export function ProductPanel({
                       product: selection.product,
                     },
                     chosenUser
-                      ? { cif: chosenUser.cif, userid: chosenUser.userid }
+                      ? { cif: chosenUser.cif, userid: chosenUser.userid, id: chosenUser.id }
                       : undefined,
                     { app: selection.app, product: selection.product, path: selection.path! },
                   )}

@@ -39,6 +39,14 @@ export interface QueueRow {
   description: string;
 }
 
+/** One press of Çalıştır, so the dashboard can tell this queue's runs apart. */
+function newBatchId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  // Same 8-4-4-4-12 shape; only uniqueness within a few weeks matters here.
+  const hex = () => Math.floor(Math.random() * 0x10000).toString(16).padStart(4, "0");
+  return hex() + hex() + "-" + hex() + "-4" + hex().slice(1) + "-a" + hex().slice(1) + "-" + hex() + hex() + hex();
+}
+
 const ACTIVE: ReadonlySet<QueueStatus> = new Set(["starting", "running", "stopping"]);
 
 /*
@@ -61,7 +69,7 @@ const ACTIVE: ReadonlySet<QueueStatus> = new Set(["starting", "running", "stoppi
 export function useRunQueue() {
   const [items, setItems] = useState<QueueItem[]>([]);
   const itemsRef = useRef<QueueItem[]>([]);
-  const context = useRef<{ app: string; product: string; login?: RunLogin } | null>(null);
+  const context = useRef<{ app: string; product: string; login?: RunLogin; batchId: string } | null>(null);
   const stopRequested = useRef(false);
   const timer = useRef<number | null>(null);
 
@@ -88,7 +96,8 @@ export function useRunQueue() {
     }
     const started = await startRun(detail.body.feature,
       { app: where.app, flow: item.flow, intent: item.description, product: where.product },
-      where.login);
+      where.login,
+      { scenarioPath: item.path, trigger: "queue", batchId: where.batchId });
     if (started.ok) {
       patch(item.path, {
         status: "running",
@@ -182,7 +191,7 @@ export function useRunQueue() {
   const run = useCallback((rows: QueueRow[], app: string, product: string, login?: RunLogin) => {
     if (rows.length === 0) return;
     stopRequested.current = false;
-    context.current = { app, product, login };
+    context.current = { app, product, login, batchId: newBatchId() };
     commit(rows.map((row) => ({ ...row, status: "queued" as const })));
     stopTicking();
     timer.current = window.setInterval(() => void tick(), TICK_MS);

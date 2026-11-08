@@ -41,6 +41,9 @@ import type {
   VocabularyResponse,
 } from "./types";
 import type { ProductSummary } from "./types";
+import type {
+  DashboardHistory, DashboardOverview, DashboardPeriod, DashboardScreenDetail, RunMeta,
+} from "./types";
 
 /*
   All 24 orchestrator endpoints, named once, each a thin wrapper around api().
@@ -92,8 +95,13 @@ export const validateScenario = (feature: string, where: Origin) =>
 /** `login` is the saved test user the analyst picked, or undefined to run
  *  the scenario with whatever login its own text carries. The orchestrator
  *  writes the Gherkin line from it -- see RunService.start. */
-export const startRun = (feature: string, where: Origin, login?: RunLogin) =>
-  api<RunStarted>("POST", "/api/v1/runs", { feature, ...where, ...login });
+export const startRun = (feature: string, where: Origin, login?: RunLogin, meta?: RunMeta) =>
+  api<RunStarted>("POST", "/api/v1/runs", {
+    feature,
+    ...where,
+    ...(login ? { cif: login.cif, userid: login.userid, testUserId: login.id } : {}),
+    ...meta,
+  });
 
 /* ------------------------------- runs --------------------------------- */
 
@@ -372,4 +380,26 @@ export const llmHello = (prompt?: string) =>
   api<LlmHelloResponse>(
     "GET",
     "/api/v1/llm/hello" + (prompt ? "?prompt=" + encodeURIComponent(prompt) : ""),
+  );
+
+/* ------------------------------ dashboard ------------------------------ */
+
+const cifParam = (cif: string | null) => (cif ? "&cif=" + encodeURIComponent(cif) : "");
+
+export const getDashboard = (period: DashboardPeriod, cif: string | null) =>
+  api<DashboardOverview>("GET", "/api/v1/dashboard?period=" + period + cifParam(cif));
+
+export const getScreenDashboard = (app: string, product: string, flow: string,
+                                   period: DashboardPeriod, cif: string | null) =>
+  api<DashboardScreenDetail>(
+    "GET",
+    "/api/v1/dashboard/screens/" + encodeURIComponent(app) + "/" + encodeURIComponent(product)
+      + "/" + encodeURIComponent(flow) + "?period=" + period + cifParam(cif),
+  );
+
+export const getScenarioHistory = (app: string, product: string, path: string) =>
+  api<DashboardHistory>(
+    "GET",
+    "/api/v1/dashboard/scenarios/" + encodeURIComponent(app) + "/" + encodeURIComponent(product)
+      + "?period=30d&path=" + encodeURIComponent(path),
   );

@@ -222,6 +222,38 @@ public class TestRunEntity {
     @Column(name = "error_message", length = Length.LONG32)
     private String errorMessage;
 
+    /*
+     * Dashboard stage 2 (docs/DASHBOARD.md §10). All nullable: ddl-auto=update
+     * adds them to a table that already has rows, and runs from before this
+     * change simply have none.
+     */
+
+    /** The saved scenario this run came from; null for text run from the editor unsaved. */
+    @Column(name = "scenario_id")
+    private UUID scenarioId;
+
+    /**
+     * The test login's CIF, in its own column. The feature text above stays
+     * redacted (Redactor); this column exists because "which user did it fail
+     * with" cannot be answered without it. Test-environment users, not
+     * customers — the 2026-11-07 decision that reversed only this half of
+     * the 2026-10-06 one. The user id is still not stored anywhere.
+     */
+    @Column(name = "cif", length = 64)
+    private String cif;
+
+    /** The saved login's id in testdata/users.yaml, for its name. */
+    @Column(name = "test_user_id", length = 128)
+    private String testUserId;
+
+    /** "single" (Çalıştır / Git) or "queue" (çoklu çalıştırma). "trigger" is an SQL keyword. */
+    @Column(name = "run_trigger", length = 16)
+    private String runTrigger;
+
+    /** One press of the queue's Çalıştır; null for a single run. */
+    @Column(name = "batch_id")
+    private UUID batchId;
+
     /** JPA requires it. Never call it. */
     protected TestRunEntity() {
     }
@@ -243,6 +275,35 @@ public class TestRunEntity {
 
     public UUID getId() {
         return id;
+    }
+
+    /** Where the run came from and as whom; every argument may be null. */
+    public void setOrigin(UUID scenarioId, String cif, String testUserId, String runTrigger, UUID batchId) {
+        this.scenarioId = scenarioId;
+        this.cif = cif;
+        this.testUserId = testUserId;
+        this.runTrigger = runTrigger;
+        this.batchId = batchId;
+    }
+
+    public UUID getScenarioId() {
+        return scenarioId;
+    }
+
+    public String getCif() {
+        return cif;
+    }
+
+    public String getTestUserId() {
+        return testUserId;
+    }
+
+    public String getRunTrigger() {
+        return runTrigger;
+    }
+
+    public UUID getBatchId() {
+        return batchId;
     }
 
     public Long getVersion() {

@@ -74,4 +74,75 @@ public interface TestRunRepository extends JpaRepository<TestRunEntity, UUID> {
 
     /** Diagnostics: what is still unsettled, newest first. */
     List<TestRunEntity> findByFinishedAtIsNullOrderBySubmittedAtDesc();
+
+    /** The dashboard's view of a run: the short columns only. */
+    interface RunSummary {
+        UUID getId();
+
+        Instant getSubmittedAt();
+
+        String getStatus();
+
+        String getExecutorName();
+
+        String getScenarioName();
+
+        String getApp();
+
+        String getFlow();
+
+        String getProduct();
+
+        UUID getScenarioId();
+
+        String getCif();
+
+        String getTestUserId();
+
+        String getRunTrigger();
+
+        UUID getBatchId();
+    }
+
+    /** Runs not yet tied to a saved scenario — what the startup backfill matches by title. */
+    @Query("""
+           select r.id as id, r.submittedAt as submittedAt, r.status as status,
+                  r.executorName as executorName, r.scenarioName as scenarioName,
+                  r.app as app, r.flow as flow, r.product as product,
+                  r.scenarioId as scenarioId, r.cif as cif, r.testUserId as testUserId,
+                  r.runTrigger as runTrigger, r.batchId as batchId
+             from TestRunEntity r
+            where r.scenarioId is null
+           """)
+    List<RunSummary> findUnlinkedSummaries();
+
+    /**
+     * Ties one old run to a scenario, only if nothing tied it already. A bulk
+     * update, so the version is bumped by hand — see settleStale.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+           update TestRunEntity r
+              set r.scenarioId = :scenarioId,
+                  r.version = r.version + 1
+            where r.id = :id and r.scenarioId is null
+           """)
+    int linkScenario(@Param("id") UUID id, @Param("scenarioId") UUID scenarioId);
+
+    /**
+     * Every run submitted since a moment, newest first, WITHOUT the feature
+     * text and the status JSON — a month of runs with those would be tens of
+     * megabytes read to count rows.
+     */
+    @Query("""
+           select r.id as id, r.submittedAt as submittedAt, r.status as status,
+                  r.executorName as executorName, r.scenarioName as scenarioName,
+                  r.app as app, r.flow as flow, r.product as product,
+                  r.scenarioId as scenarioId, r.cif as cif, r.testUserId as testUserId,
+                  r.runTrigger as runTrigger, r.batchId as batchId
+             from TestRunEntity r
+            where r.submittedAt >= :since
+            order by r.submittedAt desc, r.id desc
+           """)
+    List<RunSummary> findSummariesSince(@Param("since") Instant since);
 }

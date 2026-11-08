@@ -232,6 +232,18 @@ Elsewhere:
   out of every path that writes scenario text down. H2 file mode, schema by
   `ddl-auto=update`, orchestrator only — the executor never gets a database.
   Details in the server-side document.
+  Since 2026-11-08 a run also records WHERE it came from, in its own columns:
+  `scenario_id` (resolved on the server from the `scenarioPath` the UI sends),
+  `cif` and `test_user_id`, `run_trigger` (`single` / `queue` — `trigger` is
+  an SQL keyword) and `batch_id`. The CIF column reverses only half of the
+  2026-10-06 decision: the scenario and step TEXT stays redacted, the CIF of
+  the test login is kept because "which user did it fail with" had no answer.
+  `RunScenarioBackfill` ties older runs to the scenario their title names at
+  startup, so a later rename does not cut them loose.
+- Dashboard (orchestrator): `orchestrator/dashboard/` (`GET /api/v1/dashboard`,
+  `/screens/{app}/{product}/{flow}`, `/scenarios/{app}/{product}?path=`) and
+  `frontend/src/dashboard/`. What every number means is `docs/DASHBOARD.md`;
+  runs without a `scenario_id` are matched by title and marked "≈".
 - MCP exploration agent (orchestrator): `orchestrator/explore/` + `.mcp.json`.
   The agent's prompts (`SYSTEM`, `ANSWER_RULES`, `CATALOG_RULES`, `CLOSING`)
   live in `AgentPrompts`, the draft checks (`problems()`) in
