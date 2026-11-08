@@ -1090,3 +1090,76 @@ export interface DashboardHistory {
   rules: string[];
   runs: DashboardHistoryRun[];
 }
+
+/* -------------------------- Senaryo Üret (akış) ------------------------- */
+/* The tree an analyst draws: screens and the labelled transitions between
+   them. See docs — the edge label is the text ON the control, because the
+   generator turns it into `click "<label>"`. */
+
+export interface FlowNode {
+  id: string;
+  title: string;
+  /** The catalog name this screen will be saved as, or "". */
+  flow: string;
+  /** What the screenshot cannot show: permissions, how much data is listed. */
+  note: string;
+  x: number;
+  y: number;
+}
+
+export interface FlowEdge {
+  id: string;
+  from: string;
+  to: string;
+  /** The control's own text, e.g. "Fatura Oluştur". */
+  label: string;
+}
+
+export interface FlowTree {
+  nodes: FlowNode[];
+  edges: FlowEdge[];
+  /** What the analyst wants tested. */
+  intent: string;
+  /** Branches to leave alone. */
+  outOfScope: string;
+}
+
+/** One planned scenario, before it is written (stage 3). */
+export interface FlowIntent {
+  id: string;
+  title: string;
+  intent: string;
+  /** Node ids this scenario walks, in order. */
+  path: string[];
+  ruleIds: string[];
+  negative: boolean;
+}
+
+export interface FlowPlan {
+  scenarios: FlowIntent[];
+  notes: string[];
+}
+
+export interface FlowState {
+  flow: FlowTree;
+  /** nodeId → does it have a screenshot. The image itself is fetched by URL. */
+  screenshots: Record<string, boolean>;
+  /** nodeId → the catalog draft the vision model read off it. */
+  reads: Record<string, string>;
+  plan: FlowPlan;
+  /** False when uptest.vision.enabled is off: drawing works, reading does not. */
+  visionReady: boolean;
+}
+
+/** One screen's result from "Ekranları Oku". */
+export interface ScreenRead {
+  nodeId: string;
+  title: string;
+  yaml: string | null;
+  error: string | null;
+  problems: string[];
+}
+
+export interface ScreenReadResponse {
+  screens: ScreenRead[];
+}

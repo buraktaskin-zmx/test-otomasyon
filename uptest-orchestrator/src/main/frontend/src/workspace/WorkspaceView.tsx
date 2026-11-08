@@ -25,6 +25,7 @@ import { useRunPoll } from "../hooks/useRunPoll";
 import { useValidation } from "../hooks/useValidation";
 import { useToast } from "../ui/Toast";
 import { DashboardPanel } from "../dashboard/DashboardPanel";
+import { FlowPanel } from "../flow/FlowPanel";
 import type { RerunRequest } from "../dashboard/DashboardPanel";
 import type { Origin, RunLogin, RunMeta, ValidationResult } from "../api/types";
 import { splitTags } from "../lib/scenarioProse";
@@ -403,7 +404,7 @@ export function WorkspaceView({
      open, which is the test -- not how much markup it happens to have. */
   const wideMode = panelOpen
     && (sideTab === "chat" || sideTab === "product" || sideTab === "users"
-      || sideTab === "agent" || sideTab === "dashboard");
+      || sideTab === "agent" || sideTab === "dashboard" || sideTab === "flow");
 
   const liveRun = runPoll.run?.status === "RUNNING";
   const agentVisible = !tools.loaded || tools.available;
@@ -498,6 +499,7 @@ export function WorkspaceView({
             showPanel("product");
           }}
         />
+        <FlowPanel active={sideTab === "flow"} products={products.products} />
         <UsersPanel active={sideTab === "users"} users={users} />
         <ProductPanel
           active={sideTab === "product"}

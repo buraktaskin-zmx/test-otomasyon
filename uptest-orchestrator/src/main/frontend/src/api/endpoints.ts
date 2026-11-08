@@ -43,6 +43,7 @@ import type {
 import type { ProductSummary } from "./types";
 import type {
   DashboardHistory, DashboardOverview, DashboardPeriod, DashboardScreenDetail, RunMeta,
+  FlowState, FlowTree, ScreenReadResponse,
 } from "./types";
 
 /*
@@ -403,3 +404,35 @@ export const getScenarioHistory = (app: string, product: string, path: string) =
     "/api/v1/dashboard/scenarios/" + encodeURIComponent(app) + "/" + encodeURIComponent(product)
       + "?period=30d&path=" + encodeURIComponent(path),
   );
+
+/* ------------------------ Senaryo Üret (akış) -------------------------- */
+
+const flowBase = (app: string, product: string) =>
+  "/api/v1/products/" + encodeURIComponent(app) + "/" + encodeURIComponent(product) + "/flow";
+
+export const getFlow = (app: string, product: string) =>
+  api<FlowState>("GET", flowBase(app, product));
+
+export const saveFlow = (app: string, product: string, flow: FlowTree) =>
+  api<{ saved: boolean }>("PUT", flowBase(app, product), flow);
+
+/** `dataUrl`: data:image/png;base64,… — the only way an image can travel here. */
+export const putScreenshot = (app: string, product: string, nodeId: string, dataUrl: string) =>
+  api<{ saved: boolean }>("PUT", flowBase(app, product) + "/screens/" + encodeURIComponent(nodeId),
+    { dataUrl });
+
+export const deleteScreenshot = (app: string, product: string, nodeId: string) =>
+  api<{ deleted: boolean }>("DELETE", flowBase(app, product) + "/screens/" + encodeURIComponent(nodeId));
+
+/** For `<img src>`; `v` busts the browser cache after a replace. */
+export const screenshotHref = (app: string, product: string, nodeId: string, v: number) =>
+  flowBase(app, product) + "/screens/" + encodeURIComponent(nodeId) + "?v=" + v;
+
+/**
+ * Stage 1: the vision model reads every screen that has a screenshot.
+ * One model call per screen, run in parallel — still SLOW (tens of seconds
+ * for four screens). Keep the button disabled until it answers.
+ * 404 when uptest.vision.enabled is off.
+ */
+export const readScreens = (app: string, product: string) =>
+  api<ScreenReadResponse>("POST", flowBase(app, product) + "/read");

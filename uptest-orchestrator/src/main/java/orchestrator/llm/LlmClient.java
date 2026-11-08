@@ -109,4 +109,13 @@ public class LlmClient {
     public static long spent() {
         return SPENT.get();
     }
+
+    /**
+     * Lets {@link VisionClient} add to the same counter. One number for "what
+     * did this flow cost", whichever model answered — the analyst is billed
+     * for both and does not care which endpoint served which call.
+     */
+    static void addSpent(long tokens) {
+        SPENT.addAndGet(tokens);
+    }
 }

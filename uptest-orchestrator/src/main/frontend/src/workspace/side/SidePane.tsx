@@ -14,7 +14,7 @@ import type { ReactNode } from "react";
   .is-active, exactly as the tab strip did.
 */
 
-export type SideTab = "dashboard" | "product" | "users" | "timeline" | "chat" | "suggest" | "agent";
+export type SideTab = "dashboard" | "flow" | "product" | "users" | "timeline" | "chat" | "suggest" | "agent";
 
 /*
   Inline SVG, 16px, stroke-based.
@@ -42,6 +42,14 @@ function Icon({ children }: { children: ReactNode }) {
 }
 
 const ICONS: Record<SideTab, ReactNode> = {
+  // The drawn flow: two boxes joined by an arrow.
+  flow: (
+    <Icon>
+      <rect x="1.8" y="3" width="5" height="4" rx="1" />
+      <rect x="9.2" y="9" width="5" height="4" rx="1" />
+      <path d="M6.8 5h2.6a1.4 1.4 0 0 1 1.4 1.4V9" />
+    </Icon>
+  ),
   // The overview: four tiles.
   dashboard: (
     <Icon>
@@ -117,6 +125,7 @@ export function SideRail({
 }) {
   const tabs: ReadonlyArray<{ id: SideTab; label: string }> = [
     { id: "dashboard", label: "Dashboard" },
+    { id: "flow", label: "Senaryo Üret" },
     { id: "product", label: "Kayıtlı Senaryolar" },
     { id: "chat", label: "Chat" },
     { id: "suggest", label: "AI ile Senaryo Üret" },
