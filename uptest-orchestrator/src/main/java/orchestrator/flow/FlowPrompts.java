@@ -71,6 +71,7 @@ final class FlowPrompts {
                 .append("   [").append(FlowModel.pathTitle(flow, path)).append("]\n"));
 
         sb.append('\n').append(rulesBlock(rules));
+        sb.append(freeTextBlocks(flow));
 
         if (notBlank(flow.intent())) {
             sb.append("\nANALİSTİN AMACI — öncelik bu:\n").append(flow.intent().trim()).append('\n');
@@ -153,6 +154,7 @@ final class FlowPrompts {
         }
 
         sb.append('\n').append(rulesBlock(rules));
+        sb.append(freeTextBlocks(flow));
 
         if (notBlank(testData)) {
             sb.append("\nORTAMDA BULUNAN TEST VERİSİ — değerler yalnız buradan:\n")
@@ -212,6 +214,42 @@ final class FlowPrompts {
             """;
 
     /* ------------------------------ shared ------------------------------- */
+
+    /**
+     * The analyst's free-text rules and preconditions, each labelled with what
+     * the model is to DO with it.
+     *
+     * <p>They are two blocks and not one for the reason {@code WALK_RULES}
+     * item H states: a rule becomes a {@code verify}, a precondition becomes a
+     * line in the "Ön koşul" section and is never verified. Pasted into one
+     * box the model cannot tell them apart, and the failure is the expensive
+     * direction — "fatura ödenmemiş olmalı" asserted as an expectation turns a
+     * missing test fixture into a red run that looks like a defect.
+     *
+     * <p>Marked as having no ids on purpose. {@code rules.yaml} rules are
+     * quoted back with {@code [R-...]} and the validator checks their
+     * messages; these cannot be checked by anything, so the model is told not
+     * to treat their wording as text printed on a screen. Otherwise a sentence
+     * an analyst wrote as a note comes back as an asserted error message that
+     * the application never prints.
+     */
+    private static String freeTextBlocks(Flow flow) {
+        StringBuilder sb = new StringBuilder();
+        if (notBlank(flow.rules())) {
+            sb.append("\nANALİSTİN YAZDIĞI EK KURALLAR — uygulamanın yapmak ZORUNDA olduğu şeyler.\n")
+                    .append("Bir mesajı ancak burada BİREBİR yazıyorsa doğrulayabilirsin; metni\n")
+                    .append("kendi cümlenle yeniden yazma, kısaltma, tamamlama.\n")
+                    .append(flow.rules().trim()).append('\n');
+        }
+        if (notBlank(flow.preconditions())) {
+            sb.append("\nORTAM ÖN KOŞULLARI — koşmadan ÖNCE doğru olması gerekenler.\n")
+                    .append("Bunlar DOĞRULANMAZ: senaryonun \"Ön koşul\" bölümüne yazılır. Biri\n")
+                    .append("tutmazsa test koşamamıştır, uygulama hatalı değildir — bu yüzden\n")
+                    .append("hiçbiri için `verify` yazma.\n")
+                    .append(flow.preconditions().trim()).append('\n');
+        }
+        return sb.toString();
+    }
 
     /**
      * The rules, as {@code PromptBuilder.rulesBlock} renders them — messages

@@ -13,6 +13,7 @@ import tools.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -70,8 +71,22 @@ public class ScreenReader {
      * killing the batch — the same choice {@code awaitOne} makes for scenarios.
      */
     public List<Read> readAll(String app, String product, Flow flow) {
+        return readAll(app, product, flow, false);
+    }
+
+    /**
+     * @param onlyMissing skip the nodes already read. Planning calls it this
+     *                    way: it needs every screen read, but a screenshot
+     *                    that has not changed costs one to three thousand
+     *                    vision tokens to read again for the same answer, and
+     *                    an analyst presses "Planla" repeatedly while editing
+     *                    the plan. A re-read is asked for explicitly instead,
+     *                    per node, where the analyst can see what it said.
+     */
+    public List<Read> readAll(String app, String product, Flow flow, boolean onlyMissing) {
         List<Node> withImage = flow.nodes().stream()
                 .filter(node -> store.screenshot(app, product, node.id()).isPresent())
+                .filter(node -> !onlyMissing || store.read(app, product, node.id()).isEmpty())
                 .toList();
         if (withImage.isEmpty()) {
             return List.of();
@@ -98,6 +113,19 @@ public class ScreenReader {
         } finally {
             pool.shutdown();
         }
+    }
+
+    /**
+     * One named screen, read again whether or not it has been read before.
+     *
+     * The only way to spend vision tokens on a screen deliberately, which is
+     * what the analyst wants after replacing a screenshot or correcting the
+     * node's note — and the reason {@link #readAll} may skip what it already
+     * has without that becoming "the draft can never be refreshed".
+     */
+    public Optional<Read> readNode(String app, String product, Flow flow, String nodeId) {
+        Node node = flow.node(nodeId);
+        return node == null ? Optional.empty() : Optional.of(readOne(app, product, flow, node));
     }
 
     private Read readOne(String app, String product, Flow flow, Node node) {

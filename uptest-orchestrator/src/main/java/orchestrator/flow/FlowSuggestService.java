@@ -140,10 +140,17 @@ public class FlowSuggestService {
         String edges = String.join("\n", flow.edges().stream().map(FlowModel.Edge::label).toList());
         String titles = String.join("\n", flow.nodes().stream().map(Node::title).toList());
         String notes = String.join("\n", flow.nodes().stream().map(Node::note).toList());
-        String ruleText = rules == null ? "" : String.join("\n",
+        // The analyst's free-text rules and preconditions count as evidence
+        // for the same reason an edge label does: a person typed that sentence
+        // about this screen. The prompt still tells the model not to reword
+        // them — this only keeps a message the analyst DID write verbatim from
+        // being refused as invented.
+        String ruleText = (rules == null ? "" : String.join("\n",
                 rules.stream().map(rule -> rule.title() + " " + rule.description() + " "
                         + String.join(" ", rule.messages()) + " "
-                        + String.join(" ", rule.allValues())).toList());
+                        + String.join(" ", rule.allValues())).toList()))
+                + "\n" + nullToEmpty(flow.rules())
+                + "\n" + nullToEmpty(flow.preconditions());
 
         SuggestService.Suggestion made = suggest.suggestFromDrawing(
                 user, intent.intent(), vocabulary, catalog, context, loginStep,
@@ -170,6 +177,11 @@ public class FlowSuggestService {
             return null;
         }
         return catalogs.read(app, node.flow()).orElse(null);
+    }
+
+    /** An old flow.json has no free-text fields, so Jackson leaves them null. */
+    private static String nullToEmpty(String text) {
+        return text == null ? "" : text;
     }
 
     /** The rules the analyst ticked, or every rule the product has. */

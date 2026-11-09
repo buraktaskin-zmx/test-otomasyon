@@ -1122,6 +1122,18 @@ export interface FlowTree {
   intent: string;
   /** Branches to leave alone. */
   outOfScope: string;
+  /** Free-text rules not (yet) in rules.yaml. What the application MUST do,
+   *  so the scenario asserts it with a `verify`. No id, so nothing binds a
+   *  scenario to it and `SourceSnapshot` cannot tell when it changes --
+   *  rules.yaml stays the oracle; this only steers the prompt. */
+  rules: string;
+  /** What must already be true in the environment -- a company exists, an
+   *  invoice is unpaid, the user holds the authority. Written into the
+   *  scenario's "On kosul" section and NEVER verified: if one fails the test
+   *  could not run and the application is not at fault. Separate from `rules`
+   *  precisely because one box for both turns a missing fixture into a red
+   *  run that reads like a defect. */
+  preconditions: string;
 }
 
 /** One planned scenario, before it is written (stage 3). */
@@ -1138,6 +1150,10 @@ export interface FlowIntent {
 export interface FlowPlan {
   scenarios: FlowIntent[];
   notes: string[];
+  /** What reading the screens produced on the way to the plan. Planning reads
+   *  the screens it has no draft for, so this is present on a plan response
+   *  and absent on the stored plan. */
+  screens?: ScreenRead[];
 }
 
 export interface FlowState {

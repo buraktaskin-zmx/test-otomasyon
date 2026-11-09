@@ -71,8 +71,9 @@ public class FlowPlanner {
                     + " Ekranları okutmak ya da daha fazla kural seçmek sayıyı artırır.");
         }
         if (reads.isEmpty()) {
-            notes.add("Hiçbir ekran okunmamış: model yalnızca kutu adlarını ve ok etiketlerini"
-                    + " gördü, alan adlarını görmedi. Önce \"Ekranları Oku\".");
+            notes.add("Hiçbir ekran okunamadı: model yalnızca kutu adlarını ve ok etiketlerini"
+                    + " gördü, alan adlarını görmedi. Kutulara ekran görüntüsü ekleyin"
+                    + " (kutuyu seçip Ctrl+V) — planlama okunmamış olanları kendisi okur.");
         }
 
         Plan plan = new Plan(scenarios, notes);

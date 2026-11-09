@@ -39,15 +39,35 @@ public final class FlowModel {
     }
 
     /**
-     * A whole drawing, plus the two things the analyst says about the batch.
+     * A whole drawing, plus what the analyst says about the batch as a whole.
      *
-     * @param intent     what is to be tested — happy paths, refusals, permissions
-     * @param outOfScope branches to leave alone ("dosya yükleme dalını test etme")
+     * <p>{@code rules} and {@code preconditions} are free text, and the
+     * distinction between them is the one this whole feature turns on. A RULE
+     * is what the application must do: if it fails there is a defect, so the
+     * scenario asserts it with a {@code verify}. A PRECONDITION is what has to
+     * be true in the environment before the test can run at all — a company
+     * exists, an invoice is unpaid, the user holds the authority: if it fails
+     * the test could not run and nothing is wrong with the application, so it
+     * is written into the "Ön koşul" section and never verified. Handing the
+     * model one box for both is how a precondition becomes an assertion that
+     * fails red over a missing invoice.
+     *
+     * <p>Neither is an oracle. {@code rules.yaml} keeps that job: its rules
+     * carry ids, scenarios bind to them, {@code SourceSnapshot} diffs them
+     * when they move and the validator enforces their {@code messages} and
+     * {@code degerler}. Free text can do none of that — it only steers the
+     * prompt, exactly as a node's {@code note} does.
+     *
+     * @param intent        what is to be tested — happy paths, refusals, permissions
+     * @param outOfScope    branches to leave alone ("dosya yükleme dalını test etme")
+     * @param rules         rules not (yet) in {@code rules.yaml}, pasted or loaded from a .txt
+     * @param preconditions what must already be true in the environment
      */
-    public record Flow(List<Node> nodes, List<Edge> edges, String intent, String outOfScope) {
+    public record Flow(List<Node> nodes, List<Edge> edges, String intent, String outOfScope,
+                       String rules, String preconditions) {
 
         public static Flow empty() {
-            return new Flow(List.of(), List.of(), "", "");
+            return new Flow(List.of(), List.of(), "", "", "", "");
         }
 
         public Node node(String id) {

@@ -1,6 +1,7 @@
 package orchestrator.flow;
 
 import orchestrator.flow.FlowModel.Flow;
+import orchestrator.flow.FlowModel.Intent;
 import orchestrator.flow.FlowModel.Plan;
 import orchestrator.llm.LoginStep;
 import orchestrator.product.ProductModel;
@@ -19,9 +20,11 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -124,13 +127,17 @@ public class FlowController {
     }
 
     /**
-     * Stage 1: the vision model reads every screen that has a screenshot.
+     * Stage 1, on demand: read ONE screen again.
      *
-     * Answers per node, including the ones that failed, so one unreadable
-     * screenshot does not hide the three that worked.
+     * There is no "read everything" button any more — planning reads what it
+     * is missing, below. This endpoint is what remains for the case the
+     * automatic read cannot serve: a screenshot that was replaced, or a node
+     * note added after the fact, where the stored draft is stale and only the
+     * analyst knows it.
      */
     @PostMapping("/read")
-    public ResponseEntity<?> read(@PathVariable String app, @PathVariable String product) {
+    public ResponseEntity<?> read(@PathVariable String app, @PathVariable String product,
+                                  @RequestParam String nodeId) {
         ScreenReader reader = readers.getIfAvailable();
         if (reader == null) {
             return ResponseEntity.status(404).body(Map.of(
@@ -138,12 +145,10 @@ public class FlowController {
                     "detail", "uptest.vision.enabled=true ve uptest.vision.* ayarları gerekli."));
         }
         Flow flow = store.read(app, product);
-        List<ScreenReader.Read> reads = reader.readAll(app, product, flow);
-        if (reads.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of(
-                    "error", "Okunacak ekran yok — önce kutulara ekran görüntüsü ekleyin."));
-        }
-        return ResponseEntity.ok(Map.of("screens", reads));
+        return reader.readNode(app, product, flow, nodeId)
+                .<ResponseEntity<?>>map(read -> ResponseEntity.ok(Map.of("screens", List.of(read))))
+                .orElseGet(() -> ResponseEntity.badRequest().body(Map.of(
+                        "error", "Çizimde böyle bir ekran yok: " + nodeId)));
     }
 
     /* ------------------------- plan and generate ------------------------- */
@@ -152,9 +157,22 @@ public class FlowController {
     public record PlanRequest(Integer count, List<String> ruleIds) {
     }
 
+    /** The plan, plus whatever reading the screens produced on the way to it. */
+    public record PlanResponse(List<Intent> scenarios, List<String> notes,
+                               List<ScreenReader.Read> screens) {
+    }
+
     /**
      * Stage 3: which scenarios to write. One cheap text call, so the analyst
      * can delete and add lines before generation is spent.
+     *
+     * <p><b>It reads the unread screens first.</b> There used to be an
+     * "Ekranları Oku" button and it was a step for nothing: reading is not a
+     * decision an analyst makes, it is what planning needs in order to see
+     * field names at all, and a plan made without it names no field on any
+     * screen. Only the screens with no stored draft are read, so pressing
+     * Planla again while editing the plan costs no vision tokens; a screen
+     * whose draft is stale is re-read per node, from its own box.
      */
     @PostMapping("/plan")
     public ResponseEntity<?> plan(@PathVariable String app, @PathVariable String product,
@@ -171,8 +189,20 @@ public class FlowController {
         ProductModel model = products.load(app, product).orElse(null);
         List<Rule> rules = FlowSuggestService.rulesFor(model,
                 body == null ? List.of() : body.ruleIds());
+
+        ScreenReader reader = readers.getIfAvailable();
+        List<ScreenReader.Read> reads = reader == null
+                ? List.of()
+                : reader.readAll(app, product, flow, true);
+
         try {
-            return ResponseEntity.ok(planner.plan(app, product, flow, model, rules, count));
+            Plan plan = planner.plan(app, product, flow, model, rules, count);
+            List<String> notes = new ArrayList<>(plan.notes());
+            // A screen that would not read is named here rather than left to
+            // be noticed as a missing field thirty scenarios later.
+            reads.stream().filter(read -> read.error() != null).forEach(read ->
+                    notes.add("\"" + read.title() + "\" okunamadı: " + read.error()));
+            return ResponseEntity.ok(new PlanResponse(plan.scenarios(), notes, reads));
         } catch (RuntimeException failed) {
             return ResponseEntity.status(502).body(Map.of(
                     "error", "Plan üretilemedi", "detail", String.valueOf(failed.getMessage())));

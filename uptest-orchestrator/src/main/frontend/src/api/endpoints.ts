@@ -429,17 +429,24 @@ export const screenshotHref = (app: string, product: string, nodeId: string, v: 
   flowBase(app, product) + "/screens/" + encodeURIComponent(nodeId) + "?v=" + v;
 
 /**
- * Stage 1: the vision model reads every screen that has a screenshot.
- * One model call per screen, run in parallel — still SLOW (tens of seconds
- * for four screens). Keep the button disabled until it answers.
+ * Stage 1, on demand: read ONE screen again, whether or not it has been read.
+ *
+ * There is no "read everything" button: `planFlow` reads the screens it has
+ * no draft for, because reading is what planning NEEDS and not a decision an
+ * analyst makes. This is what remains for the stale case -- a screenshot that
+ * was replaced, a node note written afterwards -- which only the analyst can
+ * recognise. Tens of seconds, and it spends vision tokens every time.
  * 404 when uptest.vision.enabled is off.
  */
-export const readScreens = (app: string, product: string) =>
-  api<ScreenReadResponse>("POST", flowBase(app, product) + "/read");
+export const readScreen = (app: string, product: string, nodeId: string) =>
+  api<ScreenReadResponse>("POST",
+    flowBase(app, product) + "/read?nodeId=" + encodeURIComponent(nodeId));
 
 /**
  * Stage 3: which scenarios to write. ONE cheap text call, so the analyst can
- * delete and add lines before generation is spent. Seconds, not minutes.
+ * delete and add lines before generation is spent -- plus a vision call for
+ * each screen with no stored draft, so the FIRST plan of a flow is slow and
+ * the ones after it are not.
  */
 export const planFlow = (app: string, product: string, count: number, ruleIds: string[]) =>
   api<FlowPlan>("POST", flowBase(app, product) + "/plan", { count, ruleIds });

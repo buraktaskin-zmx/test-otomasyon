@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  createScenariosBulk, deleteScreenshot, getFlow, planFlow, putScreenshot, readScreens,
-  saveCatalog, saveFlow, savePlan, suggestFromFlow,
+  createScenariosBulk, deleteScreenshot, getFlow, getProduct, planFlow, putScreenshot,
+  readScreen, saveCatalog, saveFlow, savePlan, suggestFromFlow,
 } from "../api/endpoints";
 import type {
-  FlowDraft, FlowNode, FlowPlan, FlowTree, ProductSummary, ScreenRead, TestUser,
+  FlowDraft, FlowNode, FlowPlan, FlowTree, ProductRule, ProductSummary, ScreenRead, TestUser,
 } from "../api/types";
 import { PanelHead } from "../workspace/side/PanelHead";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
@@ -12,8 +12,27 @@ import { useToast } from "../ui/Toast";
 import { useAsyncAction } from "../hooks/useAsyncAction";
 import { FlowCanvas, newEdge, nextNodeId, placeChild } from "./FlowCanvas";
 import { FlowPlanList } from "./FlowPlanList";
+import { FlowRulesCard } from "./FlowRulesCard";
 
-const EMPTY: FlowTree = { nodes: [], edges: [], intent: "", outOfScope: "" };
+const EMPTY: FlowTree = {
+  nodes: [], edges: [], intent: "", outOfScope: "", rules: "", preconditions: "",
+};
+
+/* A flow.json written before the free-text fields existed has no keys for
+   them, and Jackson answers null rather than omitting them — `?? EMPTY` does
+   not help, and a null in a <textarea value> makes React drop to uncontrolled
+   and the box stops accepting input. */
+function whole(flow: FlowTree | null | undefined): FlowTree {
+  if (!flow) return EMPTY;
+  return {
+    nodes: flow.nodes ?? [],
+    edges: flow.edges ?? [],
+    intent: flow.intent ?? "",
+    outOfScope: flow.outOfScope ?? "",
+    rules: flow.rules ?? "",
+    preconditions: flow.preconditions ?? "",
+  };
+}
 
 /*
   Senaryo Üret — the analyst draws the flow, the vision model reads the
@@ -57,6 +76,11 @@ export function FlowPanel({
   const [count, setCount] = useState(25);
   const [loginId, setLoginId] = useState("");
   const [drafts, setDrafts] = useState<FlowDraft[] | null>(null);
+  const [rules, setRules] = useState<ProductRule[]>([]);
+  /* Which rules.yaml rules reach the prompt. Empty = every one of them, which
+     is what the server already means by an empty ruleIds — so a product whose
+     rules have not been looked at behaves exactly as before. */
+  const [picked, setPicked] = useState<string[]>([]);
 
   const chosenUser = users.find((u) => u.id === loginId) ?? users[0] ?? null;
   useEffect(() => {
@@ -79,7 +103,7 @@ export function FlowPanel({
     setLoaded(false);
     const result = await getFlow(app, product);
     if (result.ok) {
-      setFlow(result.body.flow ?? EMPTY);
+      setFlow(whole(result.body.flow));
       setScreenshots(result.body.screenshots ?? {});
       setReads(result.body.reads ?? {});
       setVisionReady(result.body.visionReady);
@@ -97,6 +121,20 @@ export function FlowPanel({
   useEffect(() => {
     if (active) void load();
   }, [active, load]);
+
+  /* The product's own rules.yaml — the oracle. Loaded separately because the
+     picker's product list deliberately leaves rules out (a product may carry
+     fifty and three pickers load that list). */
+  useEffect(() => {
+    if (!active || !app || !product) return;
+    let live = true;
+    void getProduct(app, product).then((result) => {
+      if (!live) return;
+      setRules(result.ok ? result.body.rules : []);
+      setPicked([]);
+    });
+    return () => { live = false; };
+  }, [active, app, product]);
 
   const change = (next: FlowTree) => {
     setFlow(next);
@@ -196,29 +234,34 @@ export function FlowPanel({
 
   /* ---------------------------- read screens ---------------------------- */
 
-  const read = useAsyncAction(async () => {
-    if (dirty) {
-      const saved = await saveFlow(app, product, flow);
-      if (!saved.ok) {
-        toast("Önce akış kaydedilemedi: " + saved.error, true);
-        return;
-      }
-      setDirty(false);
-    }
-    const result = await readScreens(app, product);
-    if (!result.ok) {
-      toast("Ekranlar okunamadı: " + result.error, true);
-      return;
-    }
-    setResults(result.body.screens);
+  /* Folds a read result into what the panel shows, whether it came from
+     planning or from one box's "Yeniden oku". */
+  const absorb = useCallback((screens: ScreenRead[]) => {
+    if (screens.length === 0) return;
+    setResults(screens);
     const next: Record<string, string> = {};
-    result.body.screens.forEach((screen) => {
+    screens.forEach((screen) => {
       if (screen.yaml) next[screen.nodeId] = screen.yaml;
     });
     setReads((was) => ({ ...was, ...next }));
-    const failed = result.body.screens.filter((s) => s.error).length;
-    toast(result.body.screens.length - failed + " ekran okundu"
-      + (failed ? ", " + failed + " okunamadı" : ""), failed > 0);
+  }, []);
+
+  /* One screen, read again on purpose. There is no "read everything" button:
+     planning reads what it has no draft for, because reading is what planning
+     NEEDS rather than a decision an analyst makes. This is the stale case —
+     the screenshot was replaced, or the note was written afterwards — which
+     only the analyst can recognise, and it spends vision tokens every press. */
+  const reread = useAsyncAction(async (nodeId: string) => {
+    if (dirty) {
+      const saved = await saveFlow(app, product, flow);
+      if (!saved.ok) { toast("Önce akış kaydedilemedi: " + saved.error, true); return; }
+      setDirty(false);
+    }
+    const result = await readScreen(app, product, nodeId);
+    if (!result.ok) { toast("Ekran okunamadı: " + result.error, true); return; }
+    absorb(result.body.screens);
+    const failed = result.body.screens.find((screen) => screen.error);
+    toast(failed ? "Okunamadı: " + failed.error : "Ekran yeniden okundu", Boolean(failed));
   });
 
   /* ------------------------- plan and generate ------------------------- */
@@ -229,10 +272,11 @@ export function FlowPanel({
       if (!saved.ok) { toast("Önce akış kaydedilemedi: " + saved.error, true); return; }
       setDirty(false);
     }
-    const result = await planFlow(app, product, count, []);
+    const result = await planFlow(app, product, count, picked);
     if (!result.ok) { toast("Plan üretilemedi: " + result.error, true); return; }
     setPlan(result.body);
     setDrafts(null);
+    absorb(result.body.screens ?? []);
     toast(result.body.scenarios.length + " senaryo planlandı — üretmeden önce gözden geçirin");
   });
 
@@ -241,7 +285,7 @@ export function FlowPanel({
     const saved = await savePlan(app, product, plan);
     if (!saved.ok) { toast("Plan kaydedilemedi: " + saved.error, true); return; }
     const result = await suggestFromFlow(app, product,
-      { cif: chosenUser.cif, userid: chosenUser.userid, id: chosenUser.id }, []);
+      { cif: chosenUser.cif, userid: chosenUser.userid, id: chosenUser.id }, picked);
     if (!result.ok) { toast("Senaryolar üretilemedi: " + result.error, true); return; }
     setDrafts(result.body.scenarios);
     result.body.notes.forEach((note) => toast(note, true));
@@ -289,15 +333,22 @@ export function FlowPanel({
   };
 
   const node = flow.nodes.find((n) => n.id === selected) ?? null;
-  const withShots = flow.nodes.filter((n) => screenshots[n.id]).length;
-  const busy = save.busy || read.busy || makePlan.busy || generate.busy || saveAll.busy;
+  /* Screens planning will have to pay a vision call for. Shown because that
+     is the difference between a plan that takes seconds and one that takes a
+     minute, and the analyst is the only one who can see it coming. */
+  const unread = flow.nodes.filter((n) => screenshots[n.id] && !reads[n.id]).length;
+  /* A box with no screenshot is not an error — a screen may be drawn before
+     anyone has one — but the model will see only its title, so say it once
+     rather than let it surface as a plan that names no field. */
+  const noShot = flow.nodes.filter((n) => !screenshots[n.id]).length;
+  const busy = save.busy || reread.busy || makePlan.busy || generate.busy || saveAll.busy;
 
   return (
     <div id="side-flow" className={"side-panel flow-panel" + (active ? " is-active" : "")} ref={panel}>
       <PanelHead title="Senaryo Üret">
         <label className="fc-product">
           <span>Ürün</span>
-          <select className="search" value={app + "/" + product} disabled={save.busy || read.busy}
+          <select className="search" value={app + "/" + product} disabled={busy}
                   onChange={(event) => {
                     const [a, p] = event.target.value.split("/");
                     setApp(a ?? ""); setProduct(p ?? "");
@@ -317,13 +368,6 @@ export function FlowPanel({
                 onClick={() => void save.run()}>
           {save.busy ? "Kaydediliyor…" : dirty ? "Kaydet" : "Kaydedildi"}
         </button>
-        <button type="button" className="btn btn-ghost"
-                disabled={read.busy || withShots === 0 || !visionReady}
-                title={!visionReady ? "Görsel model kapalı (uptest.vision.enabled)"
-                  : withShots === 0 ? "Önce kutulara ekran görüntüsü ekleyin" : undefined}
-                onClick={() => void read.run()}>
-          {read.busy ? "Okunuyor…" : "Ekranları Oku"}
-        </button>
         <label className="fc-product">
           <span>Senaryo</span>
           <input className="search fc-count" type="number" min={1} max={40} value={count}
@@ -332,16 +376,23 @@ export function FlowPanel({
         </label>
         <button type="button" className="btn btn-primary"
                 disabled={busy || flow.nodes.length === 0}
+                title={unread > 0
+                  ? unread + " ekran henüz okunmadı; planlama önce onları okuyacak (yavaş)"
+                  : undefined}
                 onClick={() => void makePlan.run()}>
-          {makePlan.busy ? "Planlanıyor…" : "Senaryoları Planla"}
+          {makePlan.busy
+            ? (unread > 0 ? "Ekranlar okunuyor…" : "Planlanıyor…")
+            : "Senaryoları Planla"}
         </button>
       </PanelHead>
 
       <div className="flow-body">
         {!visionReady && loaded ? (
           <p className="product-warn">
-            Görsel model kapalı: akışı çizebilir ve görüntü ekleyebilirsiniz, ama
-            "Ekranları Oku" çalışmaz. Sunucuda <code>uptest.vision.enabled=true</code> ve
+            Görsel model kapalı: akışı çizebilir, görüntü ekleyebilir ve plan
+            isteyebilirsiniz — ama ekranlar okunmaz, yani model alan adlarını
+            görmez, yalnız kutu adlarını ve ok etiketlerini görür. Sunucuda
+            <code> uptest.vision.enabled=true</code> ve
             <code> uptest.vision.api-key</code> gerekiyor.
           </p>
         ) : null}
@@ -350,7 +401,16 @@ export function FlowPanel({
           Kutular ekran, oklar geçiş. Bir okun etiketi, o geçişi yapan kontrolün
           ÜSTÜNDEKİ yazıdır ("Fatura Oluştur") — senaryo onu <code>click</code> olarak
           kullanır. Bir kutuyu seçip <strong>Ctrl+V</strong> ile ekran görüntüsü yapıştırın.
+          Ekranları ayrıca okutmanız gerekmez: <strong>Senaryoları Planla</strong> taslağı
+          olmayanları kendisi okur.
         </p>
+
+        {noShot > 0 && flow.nodes.length > 0 && loaded ? (
+          <p className="db-note">
+            {noShot} kutuda ekran görüntüsü yok — model o ekranların yalnız adını
+            görecek, alanlarını görmeyecek.
+          </p>
+        ) : null}
 
         {flow.nodes.length === 0 && loaded ? (
           <p className="db-empty">Henüz ekran yok. "+ Ekran ekle" ile başlayın.</p>
@@ -395,7 +455,18 @@ export function FlowPanel({
                        }} />
               </label>
               {screenshots[node.id] ? (
-                <button type="button" className="btn btn-ghost" onClick={async () => {
+                <button type="button" className="btn btn-ghost" disabled={busy || !visionReady}
+                        title={!visionReady ? "Görsel model kapalı (uptest.vision.enabled)"
+                          : reads[node.id]
+                            ? "Kayıtlı taslağı atıp bu ekranı yeniden okutur"
+                            : "Bu ekranı şimdi okutur; planlama da okuyacaktı"}
+                        onClick={() => void reread.run(node.id)}>
+                  {reread.busy ? "Okunuyor…" : reads[node.id] ? "Yeniden oku" : "Ekranı oku"}
+                </button>
+              ) : null}
+              {screenshots[node.id] ? (
+                <button type="button" className="btn btn-ghost" disabled={busy}
+                        onClick={async () => {
                   await deleteScreenshot(app, product, node.id);
                   setScreenshots((was) => ({ ...was, [node.id]: false }));
                   setReads((was) => { const next = { ...was }; delete next[node.id]; return next; });
@@ -427,6 +498,9 @@ export function FlowPanel({
                       onChange={(event) => change({ ...flow, outOfScope: event.target.value })} />
           </label>
         </section>
+
+        <FlowRulesCard flow={flow} rules={rules} picked={picked} busy={busy}
+                       onChange={change} onPick={setPicked} />
 
         {plan.scenarios.length > 0 || makePlan.busy ? (
           <>
