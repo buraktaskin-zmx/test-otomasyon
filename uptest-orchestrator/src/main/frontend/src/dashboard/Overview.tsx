@@ -2,7 +2,7 @@ import { useState } from "react";
 import { artifactHref } from "../api/endpoints";
 import { formatDuration } from "../lib/format";
 import type { DashboardDay, DashboardOverview, DashboardScreenBar } from "../api/types";
-import { Approx, Card, FailingList, KpiRow, StackBar, StatusWord, relativeTime, usePaged } from "./parts";
+import { Approx, Card, FailingList, KpiRow, StackBar, relativeTime, usePaged } from "./parts";
 import type { Segment } from "./parts";
 import { SEGMENT_WORD } from "./parts";
 
@@ -68,7 +68,7 @@ export function Overview({
           aside={day
             ? <button type="button" className="btn btn-ghost" onClick={() => setDay(null)}>{day} · tümü</button>
             : "en yeni üstte"}
-          note="CIF ve tetik, bu sürümden sonra başlayan koşularda dolar; eski koşularda boş kalır."
+          note="CIF, bu sürümden sonra başlayan koşularda dolar; eski koşularda boş kalır."
         >
           {runs.length === 0 ? <p className="db-empty">Bu dönemde koşu yok.</p> : (
             <>
@@ -79,8 +79,6 @@ export function Overview({
                       <th>Senaryo</th>
                       <th>Ekran</th>
                       <th>CIF</th>
-                      <th>Tetik</th>
-                      <th>Durum</th>
                       <th>Adım</th>
                       <th>Süre</th>
                       <th>Ne zaman</th>
@@ -96,8 +94,6 @@ export function Overview({
                         </td>
                         <td title={run.screen ?? ""}>{run.screen ?? "—"}</td>
                         <td className="h-mono">{run.cif ?? "—"}</td>
-                        <td>{run.trigger === "queue" ? "kuyruk" : run.trigger === "single" ? "tekli" : "—"}</td>
-                        <td><StatusWord status={run.status} /></td>
                         <td className="h-mono">{run.total ? run.passed + "/" + run.total : "—"}</td>
                         <td className="h-mono">{run.durationMs ? formatDuration(run.durationMs) : "—"}</td>
                         <td className="h-mono">{relativeTime(run.submittedAt)}</td>
