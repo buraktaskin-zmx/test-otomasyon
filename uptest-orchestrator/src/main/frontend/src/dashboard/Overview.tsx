@@ -2,7 +2,7 @@ import { useState } from "react";
 import { artifactHref } from "../api/endpoints";
 import { formatDuration } from "../lib/format";
 import type { DashboardDay, DashboardOverview, DashboardScreenBar } from "../api/types";
-import { Approx, Card, FailingList, KpiRow, Pending, StackBar, StatusWord, relativeTime, usePaged } from "./parts";
+import { Approx, Card, FailingList, KpiRow, StackBar, StatusWord, relativeTime, usePaged } from "./parts";
 import type { Segment } from "./parts";
 import { SEGMENT_WORD } from "./parts";
 
@@ -14,12 +14,10 @@ export function Overview({
   data,
   onOpenScreen,
   onPickCif,
-  onOpenScenario,
 }: {
   data: DashboardOverview;
   onOpenScreen: (screen: DashboardScreenBar) => void;
   onPickCif: (cif: string) => void;
-  onOpenScenario: (app: string, product: string, path: string, title: string) => void;
 }) {
   const [day, setDay] = useState<string | null>(null);
   const screens = new Set(data.screens.map((s) => s.app + "/" + s.product + "/" + s.flow));
@@ -160,30 +158,6 @@ export function Overview({
         )}
       </Card>
 
-      <div className="db-grid">
-        <Card title="Kararsız senaryolar" aside={<Approx on={data.kpis.approximate} />}
-              note="Bu dönemde hem geçen hem düşen senaryolar.">
-          {data.flaky.length === 0 ? <p className="db-empty">Bu dönemde kararsız senaryo yok.</p> : (
-            <div className="db-list-wrap">
-              <ul className="db-failing">
-                {data.flaky.map((f) => (
-                  <li key={f.app + f.product + f.path}>
-                    <button type="button" className="unstyled-button db-failing-step db-link"
-                            onClick={() => onOpenScenario(f.app, f.product, f.path, f.title)}>
-                      {f.title}
-                    </button>
-                    <div className="db-failing-why">
-                      {f.screen}{f.lastFailedStep ? " · son düştüğü adım: " + f.lastFailedStep : ""}
-                    </div>
-                    <span className="db-failing-count">{f.passed} geçti · {f.failed} düştü</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </Card>
-        <Pending title="AI üretim hattı" stage="aşama 3" text="AI üretim metrikleri henüz kaydedilmiyor." />
-      </div>
     </div>
   );
 }

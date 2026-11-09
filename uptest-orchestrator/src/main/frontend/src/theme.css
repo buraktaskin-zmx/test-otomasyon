@@ -2453,10 +2453,13 @@ button.db-screen:hover .db-screen-name { color: var(--link); text-decoration: un
 .fc-drafts { list-style: none; margin: var(--space-2) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); }
 .fc-drafts li { display: flex; align-items: center; gap: var(--space-2); }
 
-/* The product's rules.yaml, ticked. Scrolls rather than growing: a payments
-   product carries fifty rules and the panel below it has to stay reachable. */
-.fc-rules { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow-y: auto; border: 1px solid var(--border-soft); border-radius: var(--radius-sm); }
-.fc-rules li + li { border-top: 1px solid var(--border-soft); }
-.fc-rules label { display: flex; align-items: baseline; gap: var(--space-2); padding: var(--space-1) var(--space-2); cursor: pointer; font-size: var(--text-sm); }
-.fc-rules label:hover { background: var(--surface-2); }
-.fc-rules input { margin: 0; flex: none; accent-color: var(--primary); }
+/* Rules / preconditions: label, box, what the box means, and its buttons on
+   one row. The explanation sits BESIDE the box rather than under it because
+   the two boxes look identical and the difference between them is the only
+   thing that stops a precondition becoming a failed assertion. */
+.fc-source-hint { flex: 0 1 300px; min-width: 0; font-size: var(--text-xs); color: var(--text-muted); }
+.fc-source-actions { flex: none; display: flex; flex-direction: column; gap: var(--space-1); }
+@media (max-width: 900px) {
+    .users-field:has(.fc-source-hint) { flex-wrap: wrap; }
+    .fc-source-hint { flex-basis: 100%; }
+}

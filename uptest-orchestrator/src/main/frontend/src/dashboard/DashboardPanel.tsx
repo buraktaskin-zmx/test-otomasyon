@@ -180,8 +180,6 @@ export function DashboardPanel({
             data={overview}
             onOpenScreen={(s) => { setDetail(null); setScreen({ app: s.app, product: s.product, flow: s.flow, name: s.name }); }}
             onPickCif={(picked) => setCif(picked)}
-            onOpenScenario={(app, product, path, scenarioTitle) =>
-              openScenario({ app, product, path, title: scenarioTitle })}
           />
         ) : !error ? <p className="db-empty">Okunuyor…</p> : null}
       </div>

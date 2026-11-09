@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  createScenariosBulk, deleteScreenshot, getFlow, getProduct, planFlow, putScreenshot,
+  createScenariosBulk, deleteScreenshot, getFlow, planFlow, putScreenshot,
   readScreen, saveCatalog, saveFlow, savePlan, suggestFromFlow,
 } from "../api/endpoints";
 import type {
-  FlowDraft, FlowNode, FlowPlan, FlowTree, ProductRule, ProductSummary, ScreenRead, TestUser,
+  FlowDraft, FlowNode, FlowPlan, FlowTree, ProductSummary, ScreenRead, TestUser,
 } from "../api/types";
 import { PanelHead } from "../workspace/side/PanelHead";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
@@ -76,11 +76,6 @@ export function FlowPanel({
   const [count, setCount] = useState(25);
   const [loginId, setLoginId] = useState("");
   const [drafts, setDrafts] = useState<FlowDraft[] | null>(null);
-  const [rules, setRules] = useState<ProductRule[]>([]);
-  /* Which rules.yaml rules reach the prompt. Empty = every one of them, which
-     is what the server already means by an empty ruleIds — so a product whose
-     rules have not been looked at behaves exactly as before. */
-  const [picked, setPicked] = useState<string[]>([]);
 
   const chosenUser = users.find((u) => u.id === loginId) ?? users[0] ?? null;
   useEffect(() => {
@@ -121,20 +116,6 @@ export function FlowPanel({
   useEffect(() => {
     if (active) void load();
   }, [active, load]);
-
-  /* The product's own rules.yaml — the oracle. Loaded separately because the
-     picker's product list deliberately leaves rules out (a product may carry
-     fifty and three pickers load that list). */
-  useEffect(() => {
-    if (!active || !app || !product) return;
-    let live = true;
-    void getProduct(app, product).then((result) => {
-      if (!live) return;
-      setRules(result.ok ? result.body.rules : []);
-      setPicked([]);
-    });
-    return () => { live = false; };
-  }, [active, app, product]);
 
   const change = (next: FlowTree) => {
     setFlow(next);
@@ -272,7 +253,7 @@ export function FlowPanel({
       if (!saved.ok) { toast("Önce akış kaydedilemedi: " + saved.error, true); return; }
       setDirty(false);
     }
-    const result = await planFlow(app, product, count, picked);
+    const result = await planFlow(app, product, count, []);
     if (!result.ok) { toast("Plan üretilemedi: " + result.error, true); return; }
     setPlan(result.body);
     setDrafts(null);
@@ -285,7 +266,7 @@ export function FlowPanel({
     const saved = await savePlan(app, product, plan);
     if (!saved.ok) { toast("Plan kaydedilemedi: " + saved.error, true); return; }
     const result = await suggestFromFlow(app, product,
-      { cif: chosenUser.cif, userid: chosenUser.userid, id: chosenUser.id }, picked);
+      { cif: chosenUser.cif, userid: chosenUser.userid, id: chosenUser.id }, []);
     if (!result.ok) { toast("Senaryolar üretilemedi: " + result.error, true); return; }
     setDrafts(result.body.scenarios);
     result.body.notes.forEach((note) => toast(note, true));
@@ -499,8 +480,7 @@ export function FlowPanel({
           </label>
         </section>
 
-        <FlowRulesCard flow={flow} rules={rules} picked={picked} busy={busy}
-                       onChange={change} onPick={setPicked} />
+        <FlowRulesCard flow={flow} busy={busy} onChange={change} />
 
         {plan.scenarios.length > 0 || makePlan.busy ? (
           <>
