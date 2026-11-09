@@ -920,20 +920,27 @@ export interface ErrorBody {
    each number means; `approximate` is true while runs are matched to
    scenarios by title (stage 1). */
 
-export type DashboardPeriod = "24h" | "7d" | "30d";
+/** "all" = tümü: every run ever recorded. Nothing deletes a run (TEST_RUN has
+ *  no retention job), so a number that vanished was only excluded by the
+ *  window -- this is how to ask for the whole history back. */
+export type DashboardPeriod = "24h" | "7d" | "30d" | "all";
 
 export interface DashboardKpis {
   scenarios: number;
   runnable: number;
   notRunnable: number;
+  /** Coverage, per SCENARIO by its last run: how much of the library has been
+   *  touched. Deliberately does NOT go up when one scenario is run again. */
   ran: number;
   neverRun: number;
-  passed: number;
-  failed: number;
-  successRate: number | null;
+  /** Execution, per RUN. These are what go up every single run. */
+  runs: number;
+  runsPassed: number;
+  runsFailed: number;
   failedSteps: number;
   averageDurationMs: number | null;
-  previous: { passed: number; failed: number; successRate: number | null };
+  /** The same length just before the window -- also in runs. */
+  previous: { runs: number; passed: number; failed: number };
   approximate: boolean;
 }
 
@@ -968,7 +975,6 @@ export interface DashboardCifRow {
   runs: number;
   passed: number;
   failed: number;
-  loginFailures: number;
   lastRunAt: string | null;
 }
 
@@ -1158,8 +1164,10 @@ export interface FlowPlan {
 
 export interface FlowState {
   flow: FlowTree;
-  /** nodeId → does it have a screenshot. The image itself is fetched by URL. */
-  screenshots: Record<string, boolean>;
+  /** nodeId → HOW MANY pictures it has. A banking page does not fit in one
+    *  capture, so a screen holds a list and the vision model is given all of
+    *  them as one page. The images themselves are fetched by URL. */
+  screenshots: Record<string, number>;
   /** nodeId → the catalog draft the vision model read off it. */
   reads: Record<string, string>;
   plan: FlowPlan;

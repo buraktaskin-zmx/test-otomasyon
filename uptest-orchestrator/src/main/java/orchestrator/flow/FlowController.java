@@ -87,14 +87,23 @@ public class FlowController {
     public record ScreenshotBody(String dataUrl) {
     }
 
+    /**
+     * Adds a picture to a screen, or replaces picture {@code index}.
+     *
+     * <p>Appending is the default because a banking page does not fit in one
+     * capture: the analyst scrolls and pastes again, and those pictures are
+     * parts of ONE screen that the vision model is given together.
+     */
     @PutMapping("/screens/{nodeId}")
     public ResponseEntity<?> putScreenshot(@PathVariable String app, @PathVariable String product,
                                            @PathVariable String nodeId,
+                                           @RequestParam(required = false) Integer index,
                                            @RequestBody ScreenshotBody body) {
         String refused = store.writeScreenshot(app, product, nodeId,
-                body == null ? null : body.dataUrl());
+                index == null ? -1 : index, body == null ? null : body.dataUrl());
         return refused == null
-                ? ResponseEntity.ok(Map.of("saved", true))
+                ? ResponseEntity.ok(Map.of("saved", true,
+                        "count", store.screenshotCount(app, product, nodeId)))
                 : ResponseEntity.badRequest().body(Map.of("error", refused));
     }
 
@@ -108,8 +117,9 @@ public class FlowController {
      */
     @GetMapping("/screens/{nodeId}")
     public ResponseEntity<byte[]> getScreenshot(@PathVariable String app, @PathVariable String product,
-                                                @PathVariable String nodeId) {
-        return store.screenshot(app, product, nodeId)
+                                                @PathVariable String nodeId,
+                                                @RequestParam(required = false) Integer index) {
+        return store.screenshot(app, product, nodeId, index == null ? 0 : index)
                 .map(png -> ResponseEntity.ok()
                         .contentType(MediaType.IMAGE_PNG)
                         // Short and private: the analyst replaces a screenshot
@@ -119,11 +129,18 @@ public class FlowController {
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
+    /** One picture with {@code index}, or all of them without it. */
     @DeleteMapping("/screens/{nodeId}")
     public ResponseEntity<?> deleteScreenshot(@PathVariable String app, @PathVariable String product,
-                                              @PathVariable String nodeId) {
-        store.deleteScreenshot(app, product, nodeId);
-        return ResponseEntity.ok(Map.of("deleted", true));
+                                              @PathVariable String nodeId,
+                                              @RequestParam(required = false) Integer index) {
+        if (index == null) {
+            store.deleteScreenshot(app, product, nodeId);
+        } else {
+            store.deleteScreenshot(app, product, nodeId, index);
+        }
+        return ResponseEntity.ok(Map.of("deleted", true,
+                "count", store.screenshotCount(app, product, nodeId)));
     }
 
     /**

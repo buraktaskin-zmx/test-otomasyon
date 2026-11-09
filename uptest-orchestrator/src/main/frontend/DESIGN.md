@@ -116,20 +116,32 @@ metin olmayan işaretler ≥ **3:1**. Oranlar hesaplandı, tahmin değil.
 | seed `#667085` / `#F2F4F7` | 4.51 | ✅ sınırda — zemini koyulaştırma |
 | başarılı `#067647` / `#FFFFFF` | 5.69 | ✅ |
 | `#FFFFFF` / engelli `#D92D20` | 4.83 | ✅ silme butonu yazısı (`.btn-danger`) — yalnızca geri alınamaz işlemin onayında |
-| `--warn-mark` `#F79009` / `#FFFFFF` | 2.29 | ❌ metin değil — yalnızca çubuk/nokta (§8); sayısı her zaman yanında sözcükle yazılır |
+| `--warn-mark` `#F79009` / `#FFFFFF` | 2.29 | ❌ metin değil, ve 3:1'in altında olduğu için çubuk/nokta olarak da yalnızca "eksik" rolünde; başarısız artık `--fail` |
 
 ### Grafik işaretleri — dashboard
 
 Durum **pill**'leri yeşil/kırmızı kalır (§1). Dashboard'un **çubuk ve
-noktaları** ise mavi ve kehribar kullanır, ve bu tercih ölçülmüştür: bir
-dötorenop için yeşil↔kırmızı ayrımı ΔE **6.4** (ikinci bir kodlama şart olan
-bant), mavi↔kehribar ise **22.2**. Yani grafik için bu çift hem tasarımın
-istediği hem erişilebilir olanı.
+noktaları** başarılı için mavi, başarısız için kırmızı kullanır.
+
+Üç çift de ölçüldü, `dataviz/scripts/validate_palette.js` ile, beyaz zemine
+karşı — tahminle değil:
+
+| Çift | CVD ayrımı (protan) | Zemine kontrast |
+|---|---|---|
+| yeşil `#067647` ↔ kırmızı | ΔE **6.4** (dötorenop) | — |
+| mavi `#1570EF` ↔ kehribar `#F79009` | ΔE **34.2** | kehribar **2.29** ❌ |
+| mavi `#1570EF` ↔ kırmızı `#D92D20` | ΔE **30.8** | ikisi de ≥ 3 ✅ |
+
+Yeşil↔kırmızı elenir: 6.4 ikinci bir kodlamanın şart olduğu banttır. Kalan
+ikisi arasında CVD farkı önemsiz (34.2'ye karşı 30.8, eşik 8), ama kehribar
+beyaz zeminde 3:1'in ALTINDA kalıyordu — 8px'lik bir nokta için bu gerçek bir
+kayıp. Kırmızı altı kontrolün hepsini geçiyor. Yani kırmızı burada hem
+istenen hem ölçülen doğru seçim; kehribar yalnızca "eksik" rolünde kaldı.
 
 | Rol | Jeton | Nerede |
 |---|---|---|
 | başarılı | `--primary` `#1570EF` | çubuk, nokta, günlük grafik |
-| başarısız | `--warn-mark` `#F79009` | aynı |
+| başarısız | `--fail` `#D92D20` | aynı |
 | durduruldu / çalışıyor | `--skip` | aynı |
 | bilinmiyor | `--skip-bg` + kesik kenar | aynı |
 | hiç koşmadı | `--chip-bg` + kenarlık | ekran/başlık çubukları |

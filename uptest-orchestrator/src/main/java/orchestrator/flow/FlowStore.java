@@ -12,6 +12,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -53,6 +55,13 @@ public class FlowStore {
      * pasting a photograph.
      */
     static final int MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+
+    /**
+     * Pictures per screen. A long page takes three or four captures; past
+     * this it is not one screen any more, and a vision call carrying them all
+     * would be tens of thousands of tokens.
+     */
+    static final int MAX_IMAGES_PER_NODE = 8;
 
     private final Path root;
     private final ObjectMapper mapper;
@@ -112,8 +121,26 @@ public class FlowStore {
      * @return what was refused, or null when written
      */
     public String writeScreenshot(String app, String product, String nodeId, String dataUrl) {
+        return writeScreenshot(app, product, nodeId, -1, dataUrl);
+    }
+
+    /**
+     * Stores one of a node's screenshots.
+     *
+     * @param index which one to write, or negative to APPEND. A banking page
+     *              rarely fits in one capture -- the analyst scrolls and
+     *              pastes again -- so a screen is a LIST of pictures and the
+     *              vision model is given all of them at once.
+     * @return what was refused, or null when written
+     */
+    public String writeScreenshot(String app, String product, String nodeId, int index,
+                                  String dataUrl) {
         if (!SAFE_NAME.matcher(nodeId == null ? "" : nodeId).matches()) {
             return "Geçersiz ekran kimliği: " + nodeId;
+        }
+        int at = index < 0 ? screenshotCount(app, product, nodeId) : index;
+        if (at >= MAX_IMAGES_PER_NODE) {
+            return "Bir ekrana en fazla " + MAX_IMAGES_PER_NODE + " görüntü eklenebilir.";
         }
         byte[] png = decode(dataUrl);
         if (png == null) {
@@ -129,7 +156,7 @@ public class FlowStore {
         }
         try {
             Files.createDirectories(folder.get());
-            Files.write(folder.get().resolve(nodeId + ".png"), png);
+            Files.write(folder.get().resolve(shotName(nodeId, at)), png);
             return null;
         } catch (IOException e) {
             throw new UncheckedIOException("Cannot write screenshot " + nodeId, e);
@@ -137,11 +164,15 @@ public class FlowStore {
     }
 
     public Optional<byte[]> screenshot(String app, String product, String nodeId) {
-        if (!SAFE_NAME.matcher(nodeId == null ? "" : nodeId).matches()) {
+        return screenshot(app, product, nodeId, 0);
+    }
+
+    public Optional<byte[]> screenshot(String app, String product, String nodeId, int index) {
+        if (!SAFE_NAME.matcher(nodeId == null ? "" : nodeId).matches() || index < 0) {
             return Optional.empty();
         }
         return screensFolder(app, product)
-                .map(folder -> folder.resolve(nodeId + ".png"))
+                .map(folder -> folder.resolve(shotName(nodeId, index)))
                 .filter(Files::isRegularFile)
                 .map(file -> {
                     try {
@@ -152,30 +183,106 @@ public class FlowStore {
                 });
     }
 
-    /** Which nodes have a screenshot, so the UI can show it without sending megabytes. */
-    public Map<String, Boolean> screenshotPresence(String app, String product, Flow flow) {
-        Map<String, Boolean> out = new LinkedHashMap<>();
-        Optional<Path> folder = screensFolder(app, product);
+    /** How many pictures each node has, so the UI need not fetch megabytes. */
+    public Map<String, Integer> screenshotPresence(String app, String product, Flow flow) {
+        Map<String, Integer> out = new LinkedHashMap<>();
         for (FlowModel.Node node : flow.nodes()) {
-            out.put(node.id(), folder
-                    .map(f -> Files.isRegularFile(f.resolve(node.id() + ".png")))
-                    .orElse(false));
+            out.put(node.id(), screenshotCount(app, product, node.id()));
         }
         return out;
     }
 
+    /**
+     * How many pictures this node has, counted forward from index 0 until one
+     * is missing.
+     *
+     * <p>Counting rather than listing the directory is what keeps the index
+     * space DENSE, and every caller leans on that: the UI asks for
+     * {@code ?index=2}, the reader walks 0..n-1. It is also why
+     * {@link #deleteScreenshot(String, String, String, int)} closes the gap
+     * it makes.
+     */
+    public int screenshotCount(String app, String product, String nodeId) {
+        if (!SAFE_NAME.matcher(nodeId == null ? "" : nodeId).matches()) {
+            return 0;
+        }
+        Optional<Path> folder = screensFolder(app, product);
+        if (folder.isEmpty()) {
+            return 0;
+        }
+        int n = 0;
+        while (n < MAX_IMAGES_PER_NODE
+                && Files.isRegularFile(folder.get().resolve(shotName(nodeId, n)))) {
+            n++;
+        }
+        return n;
+    }
+
+    /** Every picture of one node, in order -- what the vision model is given. */
+    public List<byte[]> screenshots(String app, String product, String nodeId) {
+        List<byte[]> out = new ArrayList<>();
+        int count = screenshotCount(app, product, nodeId);
+        for (int i = 0; i < count; i++) {
+            screenshot(app, product, nodeId, i).ifPresent(out::add);
+        }
+        return out;
+    }
+
+    /** Every picture of this node, and the draft read off them. */
     public void deleteScreenshot(String app, String product, String nodeId) {
         if (!SAFE_NAME.matcher(nodeId == null ? "" : nodeId).matches()) {
             return;
         }
         screensFolder(app, product).ifPresent(folder -> {
             try {
-                Files.deleteIfExists(folder.resolve(nodeId + ".png"));
+                for (int i = 0; i < MAX_IMAGES_PER_NODE; i++) {
+                    Files.deleteIfExists(folder.resolve(shotName(nodeId, i)));
+                }
                 Files.deleteIfExists(folder.resolve(nodeId + ".read.yaml"));
             } catch (IOException e) {
-                throw new UncheckedIOException("Cannot delete screenshot " + nodeId, e);
+                throw new UncheckedIOException("Cannot delete screenshots " + nodeId, e);
             }
         });
+    }
+
+    /**
+     * One picture, with the ones after it shuffled down to close the gap.
+     *
+     * <p>The renumbering is the point. Leave a hole at index 1 of three and
+     * {@link #screenshotCount} stops at 1: the third picture still sits on
+     * disk, is never shown and is never sent to the model -- present and
+     * invisible, which is the worst of both.
+     */
+    public void deleteScreenshot(String app, String product, String nodeId, int index) {
+        if (!SAFE_NAME.matcher(nodeId == null ? "" : nodeId).matches() || index < 0) {
+            return;
+        }
+        int count = screenshotCount(app, product, nodeId);
+        if (index >= count) {
+            return;
+        }
+        screensFolder(app, product).ifPresent(folder -> {
+            try {
+                for (int i = index; i < count - 1; i++) {
+                    Files.move(folder.resolve(shotName(nodeId, i + 1)),
+                            folder.resolve(shotName(nodeId, i)),
+                            StandardCopyOption.REPLACE_EXISTING);
+                }
+                Files.deleteIfExists(folder.resolve(shotName(nodeId, count - 1)));
+            } catch (IOException e) {
+                throw new UncheckedIOException(
+                        "Cannot delete screenshot " + nodeId + "#" + index, e);
+            }
+        });
+    }
+
+    /**
+     * Index 0 keeps the plain {@code <id>.png} name deliberately: every flow
+     * folder written before a screen could hold more than one picture already
+     * IS that file, so it becomes picture 1 with nothing to migrate.
+     */
+    private static String shotName(String nodeId, int index) {
+        return index == 0 ? nodeId + ".png" : nodeId + "-" + index + ".png";
     }
 
     /* ------------------------ what the model read ------------------------ */

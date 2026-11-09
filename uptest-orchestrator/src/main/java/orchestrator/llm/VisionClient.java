@@ -9,6 +9,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -105,17 +106,36 @@ public class VisionClient {
      *                               rather than failing the batch
      */
     public String ask(String systemMessage, String userMessage, byte[] png) {
+        return ask(systemMessage, userMessage, List.of(png));
+    }
+
+    /**
+     * Several captures of ONE screen, one question, one answer.
+     *
+     * <p>They go in a single call rather than one call each because they are
+     * parts of the same page: a form whose lower half is in the second
+     * picture has to be read as one form, and two separate answers would have
+     * to be merged by something that cannot tell a repeated field from a new
+     * one. The cost is linear in pictures, which is why
+     * {@code FlowStore.MAX_IMAGES_PER_NODE} caps them.
+     *
+     * <p>Order is preserved and stated in the user turn: these are top to
+     * bottom of one page, not alternatives.
+     */
+    public String ask(String systemMessage, String userMessage, List<byte[]> images) {
+        List<Map<String, Object>> content = new ArrayList<>();
+        content.add(Map.of("type", "text", "text", userMessage));
+        for (byte[] png : images) {
+            content.add(Map.of("type", "image_url", "image_url", Map.of(
+                    "url", "data:image/png;base64," + Base64.getEncoder().encodeToString(png))));
+        }
         Map<String, Object> body = Map.of(
                 "model", model,
                 "max_tokens", MAX_TOKENS,
                 "temperature", TEMPERATURE,
                 "messages", List.of(
                         Map.of("role", "system", "content", systemMessage),
-                        Map.of("role", "user", "content", List.of(
-                                Map.of("type", "text", "text", userMessage),
-                                Map.of("type", "image_url", "image_url", Map.of(
-                                        "url", "data:image/png;base64,"
-                                                + Base64.getEncoder().encodeToString(png)))))));
+                        Map.of("role", "user", "content", content)));
 
         String answer;
         try {

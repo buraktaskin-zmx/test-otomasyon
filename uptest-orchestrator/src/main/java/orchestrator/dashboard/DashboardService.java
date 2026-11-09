@@ -28,6 +28,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Predicate;
 
 /**
  * The numbers behind the dashboard, as docs/DASHBOARD.md defines them — stage 1:
@@ -75,12 +76,32 @@ public class DashboardService {
 
     /* ------------------------------ shapes ------------------------------ */
 
+    /**
+     * The period's numbers.
+     *
+     * <p><b>{@code runs}/{@code runsPassed}/{@code runsFailed} count RUNS, not
+     * scenarios</b>, and that is the whole point of them. The older
+     * {@code ran}/{@code neverRun} pair asks "how much of the library has been
+     * touched" and answers it per SCENARIO, by that scenario's LAST run — so
+     * running one scenario four times leaves it at 1, which read as the
+     * dashboard not recording anything. Both questions are real and they are
+     * not the same question: coverage stays in the first card's sub-line,
+     * while the cards themselves now count what was actually executed and go
+     * up every single run.
+     *
+     * <p>Nothing here is derived from a cache. Every run lives in H2's
+     * {@code TEST_RUN} for good — there is no retention job and nothing
+     * prunes it (the 200-run cap is the EXECUTOR's in-memory pool, a
+     * different thing entirely). A number only "disappears" because the
+     * selected period excludes it, which is why there is a "tümü" period.
+     */
     public record Kpis(int scenarios, int runnable, int notRunnable, int ran, int neverRun,
-                       int passed, int failed, Double successRate, int failedSteps,
+                       int runs, int runsPassed, int runsFailed, int failedSteps,
                        Long averageDurationMs, Previous previous, boolean approximate) {
     }
 
-    public record Previous(int passed, int failed, Double successRate) {
+    /** The same length just before the window, for the deltas — also in runs. */
+    public record Previous(int runs, int passed, int failed) {
     }
 
     public record Day(String date, int passed, int failed, int canceled, int unknown, int running) {
@@ -93,7 +114,7 @@ public class DashboardService {
 
     /** One CIF's runs in the period; the name comes from testdata/users.yaml. */
     public record CifRow(String cif, String name, int runs, int passed, int failed,
-                         int loginFailures, String lastRunAt) {
+                         String lastRunAt) {
     }
 
     /** A scenario that both passed and failed in the period. */
@@ -150,7 +171,11 @@ public class DashboardService {
         Window window = Window.of(period);
         Data data = load(window, cif);
         List<Scenario> all = data.scenarios;
-        return new Overview(window.name, blankToNull(cif), kpis(all, data, window),
+        // Every run in the window counts here, including one that never
+        // matched a saved scenario: it was still executed, and a run the
+        // dashboard refuses to count is exactly what made these cards look
+        // frozen at 1.
+        return new Overview(window.name, blankToNull(cif), kpis(all, run -> true, data, window),
                 daily(data.current, window), recent(data),
                 failing(data.current, data.stepsByRun),
                 screens(all, data), cifs(data), flaky(data));
@@ -174,10 +199,9 @@ public class DashboardService {
                 .toList();
         Set<String> keys = new HashSet<>();
         mine.forEach(s -> keys.add(s.key));
-        List<Run> screenRuns = data.current.stream()
-                .filter(run -> run.scenario != null ? keys.contains(run.scenario.key)
-                        : lower(run.summary.getApp()).equals(lower(app)) && flow.equals(run.summary.getFlow()))
-                .toList();
+        Predicate<Run> mineRun = run -> run.scenario != null ? keys.contains(run.scenario.key)
+                : lower(run.summary.getApp()).equals(lower(app)) && flow.equals(run.summary.getFlow());
+        List<Run> screenRuns = data.current.stream().filter(mineRun).toList();
 
         String catalogKey = lower(app) + "/" + flow;
         String catalog = catalogs.list().contains(catalogKey) ? "catalogs/" + catalogKey + ".yaml" : null;
@@ -186,7 +210,7 @@ public class DashboardService {
         Map<String, Run> last = lastFinished(data.current);
         Map<String, List<Run>> byScenario = byScenario(data.current);
         return Optional.of(new ScreenDetail(window.name, lower(app), product, menu.get().name(), flow,
-                screen.get().name(), catalog, ruleCount, kpis(mine, data, window),
+                screen.get().name(), catalog, ruleCount, kpis(mine, mineRun, data, window),
                 headings(lower(app), product, flow, mine, data),
                 failing(screenRuns, data.stepsByRun),
                 mine.stream().map(s -> row(s, last.get(s.key), byScenario.getOrDefault(s.key, List.of()))).toList()));
@@ -250,14 +274,29 @@ public class DashboardService {
     /** A dashboard period: this one, and the same length just before it. */
     record Window(String name, Instant now, Instant since, Instant previousSince) {
 
+        /**
+         * {@code all} is "tümü": every run ever recorded.
+         *
+         * <p>It exists because nothing here deletes a run — {@code TEST_RUN}
+         * has no retention job — so a number that vanishes was only ever
+         * excluded by the window, and without this option there was no way to
+         * ask for the whole history. Ten years rather than {@code Instant.EPOCH}
+         * so the "previous period" arithmetic below stays inside what
+         * {@code Instant} can hold; its previous window is empty either way,
+         * which is correct: there is nothing before everything.
+         */
         static Window of(String period) {
-            Duration length = switch (period == null ? "" : period.trim().toLowerCase(Locale.ROOT)) {
+            String key = period == null ? "" : period.trim().toLowerCase(Locale.ROOT);
+            Duration length = switch (key) {
                 case "24h" -> Duration.ofHours(24);
                 case "30d" -> Duration.ofDays(30);
+                case "all" -> Duration.ofDays(3650);
                 default -> Duration.ofDays(7);
             };
-            String name = length.equals(Duration.ofHours(24)) ? "24h"
-                    : length.equals(Duration.ofDays(30)) ? "30d" : "7d";
+            String name = switch (key) {
+                case "24h", "30d", "all" -> key;
+                default -> "7d";
+            };
             Instant now = Instant.now();
             return new Window(name, now, now.minus(length), now.minus(length.multipliedBy(2)));
         }
@@ -438,69 +477,88 @@ public class DashboardService {
         return out;
     }
 
-    private Kpis kpis(List<Scenario> scope, Data data, Window window) {
-        Set<String> keys = new HashSet<>();
-        scope.forEach(s -> keys.add(s.key));
+    /**
+     * @param inScope which runs belong to this view. The overview takes every
+     *                run in the window; a screen takes its own, by the same
+     *                rule {@link #screen} already uses (linked by scenario,
+     *                or unlinked but on that app and flow). Passing the test
+     *                rather than a ready list is what lets the PREVIOUS window
+     *                be scoped identically, so the deltas compare like with
+     *                like.
+     */
+    private Kpis kpis(List<Scenario> scope, Predicate<Run> inScope, Data data, Window window) {
         Map<String, Run> now = lastFinished(data.current);
-        Map<String, Run> before = lastFinished(data.previous);
 
+        // Coverage, per scenario and by its LAST run: "how much of the library
+        // has been touched at all". Deliberately not a run count -- it is the
+        // one number that must NOT go up when the same scenario is run again.
         int runnable = 0;
         int ran = 0;
-        int passed = 0;
-        int failed = 0;
-        // "≈" only when a number actually rests on a title match.
         boolean approximate = false;
-        Set<String> failedSteps = new HashSet<>();
         for (Scenario s : scope) {
             if (!s.runnable) {
                 continue;
             }
             runnable++;
             Run last = now.get(s.key);
-            if (last == null) {
-                continue;
-            }
-            approximate |= last.byName;
-            ran++;
-            if ("DONE".equals(last.summary.getStatus())) {
-                passed++;
-            } else {
-                failed++;
-                firstFailed(data.stepsByRun.get(last.summary.getId()))
-                        .ifPresent(step -> failedSteps.add(step.getStepText()));
-            }
-        }
-
-        int prevPassed = 0;
-        int prevFailed = 0;
-        for (Scenario s : scope) {
-            Run last = s.runnable ? before.get(s.key) : null;
             if (last != null) {
-                if ("DONE".equals(last.summary.getStatus())) {
-                    prevPassed++;
-                } else {
-                    prevFailed++;
-                }
+                approximate |= last.byName;
+                ran++;
             }
         }
 
+        // Execution, per RUN. Runs the dashboard is still waiting on are left
+        // out of passed/failed but counted in `runs`, so a scenario in flight
+        // is visible without being called a result.
+        int runs = 0;
+        int runsPassed = 0;
+        int runsFailed = 0;
+        Set<String> failedSteps = new HashSet<>();
         long totalMs = 0;
         int timed = 0;
         for (Run run : data.current) {
-            if (run.scenario != null && keys.contains(run.scenario.key) && finished(run) && run.durationMs > 0) {
+            if (!inScope.test(run)) {
+                continue;
+            }
+            runs++;
+            if (!finished(run)) {
+                continue;
+            }
+            if ("DONE".equals(run.summary.getStatus())) {
+                runsPassed++;
+            } else {
+                runsFailed++;
+                firstFailed(data.stepsByRun.get(run.summary.getId()))
+                        .ifPresent(step -> failedSteps.add(step.getStepText()));
+            }
+            if (run.durationMs > 0) {
                 totalMs += run.durationMs;
                 timed++;
             }
         }
 
-        return new Kpis(scope.size(), runnable, scope.size() - runnable, ran, runnable - ran,
-                passed, failed, rate(passed, failed), failedSteps.size(),
-                timed == 0 ? null : totalMs / timed,
-                new Previous(prevPassed, prevFailed, rate(prevPassed, prevFailed)), approximate);
-    }
+        int prevRuns = 0;
+        int prevPassed = 0;
+        int prevFailed = 0;
+        for (Run run : data.previous) {
+            if (!inScope.test(run)) {
+                continue;
+            }
+            prevRuns++;
+            if (!finished(run)) {
+                continue;
+            }
+            if ("DONE".equals(run.summary.getStatus())) {
+                prevPassed++;
+            } else {
+                prevFailed++;
+            }
+        }
 
-    private static Double rate(int passed, int failed) {
-        return passed + failed == 0 ? null : (double) passed / (passed + failed);
+        return new Kpis(scope.size(), runnable, scope.size() - runnable, ran, runnable - ran,
+                runs, runsPassed, runsFailed, failedSteps.size(),
+                timed == 0 ? null : totalMs / timed,
+                new Previous(prevRuns, prevPassed, prevFailed), approximate);
     }
 
     private static List<Day> daily(List<Run> current, Window window) {
@@ -557,20 +615,17 @@ public class DashboardService {
             if (cif == null) {
                 continue;
             }
-            int[] row = counts.computeIfAbsent(cif, k -> new int[4]);
+            int[] row = counts.computeIfAbsent(cif, k -> new int[3]);
             row[0]++;
             if ("DONE".equals(run.summary.getStatus())) {
                 row[1]++;
             } else if ("FAILED".equals(run.summary.getStatus())) {
                 row[2]++;
-                if (firstFailed(data.stepsByRun.get(run.summary.getId())).map(DashboardService::isLogin).orElse(false)) {
-                    row[3]++;
-                }
             }
             lastAt.putIfAbsent(cif, run.summary.getSubmittedAt().toString());
         }
         List<CifRow> out = new ArrayList<>();
-        counts.forEach((cif, row) -> out.add(new CifRow(cif, names.get(cif), row[0], row[1], row[2], row[3],
+        counts.forEach((cif, row) -> out.add(new CifRow(cif, names.get(cif), row[0], row[1], row[2],
                 lastAt.get(cif))));
         out.sort((a, b) -> Integer.compare(b.runs(), a.runs()));
         return out;

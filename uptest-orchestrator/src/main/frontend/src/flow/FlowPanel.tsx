@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createScenariosBulk, deleteScreenshot, getFlow, planFlow, putScreenshot,
-  readScreen, saveCatalog, saveFlow, savePlan, suggestFromFlow,
+  readScreen, saveCatalog, saveFlow, savePlan, screenshotHref, suggestFromFlow,
 } from "../api/endpoints";
 import type {
   FlowDraft, FlowNode, FlowPlan, FlowTree, ProductSummary, ScreenRead, TestUser,
@@ -13,6 +13,7 @@ import { useAsyncAction } from "../hooks/useAsyncAction";
 import { FlowCanvas, newEdge, nextNodeId, placeChild } from "./FlowCanvas";
 import { FlowPlanList } from "./FlowPlanList";
 import { FlowRulesCard } from "./FlowRulesCard";
+import { ScreenPreview } from "./ScreenPreview";
 
 const EMPTY: FlowTree = {
   nodes: [], edges: [], intent: "", outOfScope: "", rules: "", preconditions: "",
@@ -63,12 +64,15 @@ export function FlowPanel({
   const [app, setApp] = useState("");
   const [product, setProduct] = useState("");
   const [flow, setFlow] = useState<FlowTree>(EMPTY);
-  const [screenshots, setScreenshots] = useState<Record<string, boolean>>({});
+  /** nodeId -> how many pictures it has. A long page needs several. */
+  const [screenshots, setScreenshots] = useState<Record<string, number>>({});
   const [reads, setReads] = useState<Record<string, string>>({});
   const [visionReady, setVisionReady] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [imageVersion, setImageVersion] = useState(1);
   const [deleting, setDeleting] = useState<FlowNode | null>(null);
+  /** The node whose pictures are open full size, and which one. */
+  const [preview, setPreview] = useState<{ nodeId: string; index: number } | null>(null);
   const [results, setResults] = useState<ScreenRead[] | null>(null);
   const [dirty, setDirty] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -161,7 +165,7 @@ export function FlowPanel({
   const removeNode = async (node: FlowNode) => {
     // The screenshot is a file; deleting the box has to take it with it, or
     // the folder fills with images nothing points at.
-    if (screenshots[node.id]) await deleteScreenshot(app, product, node.id);
+    if ((screenshots[node.id] ?? 0) > 0) await deleteScreenshot(app, product, node.id);
     const next: FlowTree = {
       ...flow,
       nodes: flow.nodes.filter((n) => n.id !== node.id),
@@ -171,7 +175,7 @@ export function FlowPanel({
     setSelected(null);
     const result = await saveFlow(app, product, next);
     setDirty(!result.ok);
-    setScreenshots((was) => ({ ...was, [node.id]: false }));
+    setScreenshots((was) => ({ ...was, [node.id]: 0 }));
   };
 
   const patchNode = (id: string, patch: Partial<FlowNode>) =>
@@ -188,9 +192,13 @@ export function FlowPanel({
     });
     const result = await putScreenshot(app, product, nodeId, dataUrl);
     if (result.ok) {
-      setScreenshots((was) => ({ ...was, [nodeId]: true }));
+      // The count comes from the server rather than ++: it is the one that
+      // knows whether this was an append or hit the per-screen ceiling.
+      setScreenshots((was) => ({ ...was, [nodeId]: result.body.count }));
       setImageVersion((v) => v + 1);
-      toast("Görüntü eklendi");
+      toast(result.body.count > 1
+        ? result.body.count + ". görüntü eklendi — hepsi aynı ekranın parçası sayılır"
+        : "Görüntü eklendi");
     } else {
       toast("Görüntü eklenemedi: " + result.error, true);
     }
@@ -199,6 +207,10 @@ export function FlowPanel({
   /* Ctrl+V anywhere in the panel attaches to the SELECTED box — the way a
      person actually works: take a screenshot, click the box, paste. */
   const panel = useRef<HTMLDivElement>(null);
+  /* One file input for the canvas, driven by whichever box's + was pressed.
+     One per node would be N inputs in the DOM for a control used once. */
+  const shotPicker = useRef<HTMLInputElement>(null);
+  const pickingFor = useRef<string | null>(null);
   useEffect(() => {
     if (!active || !selected) return;
     const onPaste = (event: ClipboardEvent) => {
@@ -317,11 +329,16 @@ export function FlowPanel({
   /* Screens planning will have to pay a vision call for. Shown because that
      is the difference between a plan that takes seconds and one that takes a
      minute, and the analyst is the only one who can see it coming. */
-  const unread = flow.nodes.filter((n) => screenshots[n.id] && !reads[n.id]).length;
+  const unread = flow.nodes.filter((n) => (screenshots[n.id] ?? 0) > 0 && !reads[n.id]).length;
   /* A box with no screenshot is not an error — a screen may be drawn before
      anyone has one — but the model will see only its title, so say it once
      rather than let it surface as a plan that names no field. */
-  const noShot = flow.nodes.filter((n) => !screenshots[n.id]).length;
+  const noShot = flow.nodes.filter((n) => (screenshots[n.id] ?? 0) === 0).length;
+  /* Resolved from the id rather than stored whole: the box can be renamed or
+     deleted while its picture is open, and a stale copy would outlive it. */
+  const previewNode = preview
+    ? flow.nodes.find((n) => n.id === preview.nodeId) ?? null
+    : null;
   const busy = save.busy || reread.busy || makePlan.busy || generate.busy || saveAll.busy;
 
   return (
@@ -401,6 +418,8 @@ export function FlowPanel({
             imageVersion={imageVersion} selected={selected} busy={busy}
             onSelect={setSelected} onChange={change} onAddChild={addChild}
             onDeleteNode={(id) => setDeleting(flow.nodes.find((n) => n.id === id) ?? null)}
+            onPreview={(nodeId, index) => setPreview({ nodeId, index })}
+            onAddShot={(nodeId) => { pickingFor.current = nodeId; shotPicker.current?.click(); }}
           />
         )}
 
@@ -435,7 +454,7 @@ export function FlowPanel({
                          event.target.value = "";
                        }} />
               </label>
-              {screenshots[node.id] ? (
+              {(screenshots[node.id] ?? 0) > 0 ? (
                 <button type="button" className="btn btn-ghost" disabled={busy || !visionReady}
                         title={!visionReady ? "Görsel model kapalı (uptest.vision.enabled)"
                           : reads[node.id]
@@ -445,15 +464,19 @@ export function FlowPanel({
                   {reread.busy ? "Okunuyor…" : reads[node.id] ? "Yeniden oku" : "Ekranı oku"}
                 </button>
               ) : null}
-              {screenshots[node.id] ? (
+              {(screenshots[node.id] ?? 0) > 0 ? (
                 <button type="button" className="btn btn-ghost" disabled={busy}
                         onClick={async () => {
                   await deleteScreenshot(app, product, node.id);
-                  setScreenshots((was) => ({ ...was, [node.id]: false }));
+                  setScreenshots((was) => ({ ...was, [node.id]: 0 }));
                   setReads((was) => { const next = { ...was }; delete next[node.id]; return next; });
-                }}>Görüntüyü kaldır</button>
+                }}>Tüm görüntüleri kaldır</button>
               ) : null}
-              <span className="db-note">Ya da kutu seçiliyken Ctrl+V.</span>
+              <span className="db-note">
+                {(screenshots[node.id] ?? 0) > 0
+                  ? (screenshots[node.id] ?? 0) + " görüntü · Ctrl+V bir tane daha ekler"
+                  : "Ya da kutu seçiliyken Ctrl+V."}
+              </span>
             </div>
             {reads[node.id] ? (
               <details className="fc-read">
@@ -572,6 +595,33 @@ export function FlowPanel({
           </section>
         ) : null}
       </div>
+
+      <input ref={shotPicker} type="file" accept="image/png,image/jpeg" hidden
+             onChange={(event) => {
+               const file = event.target.files?.[0];
+               const nodeId = pickingFor.current;
+               if (file && nodeId) void attach(nodeId, file);
+               event.target.value = "";
+               pickingFor.current = null;
+             }} />
+
+      {previewNode ? (
+        <ScreenPreview
+          title={previewNode.title}
+          count={screenshots[previewNode.id] ?? 0}
+          start={preview?.index ?? 0}
+          busy={busy}
+          href={(i) => screenshotHref(app, product, previewNode.id, imageVersion, i)}
+          onDelete={async (i) => {
+            const result = await deleteScreenshot(app, product, previewNode.id, i);
+            if (!result.ok) { toast("Silinemedi: " + result.error, true); return; }
+            setScreenshots((was) => ({ ...was, [previewNode.id]: result.body.count }));
+            setImageVersion((v) => v + 1);
+            if (result.body.count === 0) setPreview(null);
+          }}
+          onClose={() => setPreview(null)}
+        />
+      ) : null}
 
       {deleting ? (
         <ConfirmDialog

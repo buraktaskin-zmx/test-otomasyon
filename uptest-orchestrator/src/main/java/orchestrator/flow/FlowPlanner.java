@@ -70,6 +70,7 @@ public class FlowPlanner {
             notes.add(count + " istendi, " + scenarios.size() + " kullanılabilir niyet geldi."
                     + " Ekranları okutmak ya da daha fazla kural seçmek sayıyı artırır.");
         }
+        notes.addAll(edgeProblems(flow, reads));
         if (reads.isEmpty()) {
             notes.add("Hiçbir ekran okunamadı: model yalnızca kutu adlarını ve ok etiketlerini"
                     + " gördü, alan adlarını görmedi. Kutulara ekran görüntüsü ekleyin"
@@ -79,6 +80,58 @@ public class FlowPlanner {
         Plan plan = new Plan(scenarios, notes);
         store.writePlan(app, product, plan);
         return plan;
+    }
+
+    /**
+     * Arrow labels no screen actually prints.
+     *
+     * <p>An arrow's label is not a description of a transition, it is the
+     * TEXT ON THE CONTROL that makes it — the generator turns it straight
+     * into {@code click "<label>"}. An analyst who writes "faturayı oluşturma
+     * adımı" has written something {@code getByRole(BUTTON|LINK)} can never
+     * find, and the cost lands minutes into a browser run as a thirty-second
+     * timeout on a line that looks perfectly reasonable.
+     *
+     * <p>Checked here rather than asked for in the prompt, because the prompt
+     * already asks and this project has measured what that is worth: a rule
+     * only holds once it is code. Reported, never rewritten — the right label
+     * is on a screen only the analyst has seen, and guessing one would turn a
+     * visible mistake into an invisible one.
+     *
+     * <p>Only screens that were READ can be checked: with no draft there is
+     * nothing to compare against, and silence is the honest answer. Matching
+     * is {@link FlowProvenance#fold}'s, plus whitespace stripped on both
+     * sides — a label the page wraps over two lines reads run-together, which
+     * is exactly the bug that cost a debugging round on this application.
+     */
+    private static List<String> edgeProblems(Flow flow, Map<String, String> reads) {
+        List<String> out = new ArrayList<>();
+        for (FlowModel.Edge edge : flow.edges()) {
+            String label = edge.label() == null ? "" : edge.label().trim();
+            FlowModel.Node from = flow.node(edge.from());
+            FlowModel.Node to = flow.node(edge.to());
+            String fromName = from == null ? edge.from() : from.title();
+            String toName = to == null ? edge.to() : to.title();
+            if (label.isEmpty()) {
+                out.add("\"" + fromName + "\" → \"" + toName + "\" okunun etiketi boş."
+                        + " Etiket, o geçişi yapan butonun ÜSTÜNDEKİ yazı olmalı.");
+                continue;
+            }
+            String read = from == null ? null : reads.get(from.id());
+            if (read == null || read.isBlank()) {
+                continue; // not read yet; nothing to check against
+            }
+            String known = FlowProvenance.fold(read);
+            String folded = FlowProvenance.fold(label);
+            if (known.contains(folded) || known.replace(" ", "").contains(folded.replace(" ", ""))) {
+                continue;
+            }
+            out.add("\"" + fromName + "\" ekranında \"" + label + "\" diye bir şey okunmadı,"
+                    + " ama \"" + toName + "\" ekranına giden ok böyle etiketlenmiş."
+                    + " Senaryo bunu click \"" + label + "\" olarak yazacak ve tarayıcıda"
+                    + " bulamayacak — etiketi ekranda yazdığı gibi düzeltin.");
+        }
+        return out;
     }
 
     /**

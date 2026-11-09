@@ -117,6 +117,17 @@ final class FlowPrompts {
         sb.append("\nBU SENARYONUN GEÇTİĞİ YOL:\n  ")
                 .append(FlowModel.pathTitle(flow, intent.path())).append('\n');
 
+        FlowModel.Node first = intent.path().isEmpty() ? null : flow.node(intent.path().get(0));
+        if (first != null) {
+            boolean isRoot = flow.edges().stream().noneMatch(e -> e.to().equals(first.id()));
+            sb.append("\nBU SENARYO NEREDEN BAŞLIYOR:\n  ").append(first.title());
+            sb.append(isRoot
+                    ? " — bu ekrana hiç ok girmiyor, yani kullanıcı MENÜDEN açar."
+                      + " İlk adımın `navigate to` olmalı.\n"
+                    : " — bu ekrana bir ok giriyor, yani ona ancak o okun"
+                      + " etiketine basılarak gidilir. `navigate to` YAZMA.\n");
+        }
+
         sb.append("\nYOLDAKİ GEÇİŞLER — her okun etiketi, o geçişi yapan kontroldür:\n");
         boolean any = false;
         for (int i = 0; i + 1 < intent.path().size(); i++) {
@@ -186,9 +197,20 @@ final class FlowPrompts {
             BU MODDA, sistem kurallarıyla çeliştiği yerde BUNLAR geçer:
             A. GİRİŞ SATIRI YAZMA. Kural 7'nin login'ini iptal eder: koşu,
                seçilen test kullanıcısından ekler. `navigate to` ile başla.
-            B. YOLU SIRAYLA İZLE. Bir okun ETİKETİ o geçişi yapan kontrolün
-               üstündeki yazıdır: "Fatura Oluştur" etiketli ok
-               `click "Fatura Oluştur"` olur.
+            B. YOLU SIRAYLA İZLE, ve ekranlar arasında GEÇMENİN TEK YOLU oktur.
+               Bir okun ETİKETİ, o geçişi yapan kontrolün üstündeki yazıdır:
+               "Fatura Oluştur" etiketli ok `click "Fatura Oluştur"` olur.
+               Ok olmayan bir yerden başka bir ekrana geçme; iki ekran
+               arasında ok yoksa o geçiş yoktur.
+            B2. YOLUN İLK EKRANI NASIL AÇILIR, aşağıda her ekranın altında
+               yazıyor ve ikisi birbirinin yerine geçmez:
+               - O ekrana hiç ok GİRMİYORSA kullanıcı onu MENÜDEN açmıştır:
+                 ilk adım `navigate to "<ana menü>" "<alt menü>"`.
+               - O ekrana bir ok giriyorsa oraya yalnızca o okun etiketine
+                 basılarak gidilir. Böyle bir ekran için `navigate to` YAZMA —
+                 menüde öyle bir girdi yok, adım tarayıcıda zaman aşımına uğrar.
+               Yolun ortasındaki ekranlar için de aynısı: araya `navigate to`
+               sıkıştırma, oklar zaten oraya götürüyor.
             C. YALNIZ YOLUN GEREKTİRDİĞİ ALANLARI DOLDUR. Kural 8'in "her
                katalog alanını doldur"unu iptal eder: bir yolculuk ekranlar
                arasında geçer, tek ekranın formu değildir.

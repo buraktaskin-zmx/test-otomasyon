@@ -28,7 +28,8 @@ interface Props {
   app: string;
   product: string;
   flow: FlowTree;
-  screenshots: Record<string, boolean>;
+  /** nodeId -> how many pictures it has. */
+  screenshots: Record<string, number>;
   /** Bumped after a screenshot is replaced, to get past the browser cache. */
   imageVersion: number;
   selected: string | null;
@@ -37,11 +38,15 @@ interface Props {
   onChange: (flow: FlowTree) => void;
   onAddChild: (parentId: string, side: "right" | "down") => void;
   onDeleteNode: (nodeId: string) => void;
+  /** Open this node's pictures full size, starting at `index`. */
+  onPreview: (nodeId: string, index: number) => void;
+  /** The "+ görüntü" button: attach one more capture of this screen. */
+  onAddShot: (nodeId: string) => void;
 }
 
 export function FlowCanvas({
   app, product, flow, screenshots, imageVersion, selected, busy,
-  onSelect, onChange, onAddChild, onDeleteNode,
+  onSelect, onChange, onAddChild, onDeleteNode, onPreview, onAddShot,
 }: Props) {
   const surface = useRef<HTMLDivElement>(null);
   const [editingEdge, setEditingEdge] = useState<string | null>(null);
@@ -197,7 +202,9 @@ export function FlowCanvas({
                 type="button"
                 className="fc-node-main unstyled-button"
                 aria-pressed={isSelected}
-                aria-label={node.title + (screenshots[node.id] ? ", görüntü eklendi" : ", görüntü yok")}
+                aria-label={node.title + ", "
+                  + ((screenshots[node.id] ?? 0) === 0
+                    ? "görüntü yok" : (screenshots[node.id] ?? 0) + " görüntü")}
                 onClick={() => onSelect(node.id)}
                 onKeyDown={(event) => {
                   if (event.key.startsWith("Arrow")) {
@@ -207,15 +214,36 @@ export function FlowCanvas({
                 }}
               >
                 <span className="fc-node-title">{node.title}</span>
-                {screenshots[node.id] ? (
-                  <img className="fc-node-shot" alt=""
-                       src={screenshotHref(app, product, node.id, imageVersion)} />
-                ) : (
-                  <span className="fc-node-empty">görüntü yok</span>
-                )}
-                {node.note ? <span className="fc-node-note" title={node.note}>not</span> : null}
               </button>
 
+              {/* The thumbnail is its OWN button, not part of the box's: a
+                  button cannot contain a button, and the analyst needs to
+                  read the screen they pasted — 210px of cover-cropped page is
+                  not readable. Selecting too, so Ctrl+V still lands here. */}
+              {(screenshots[node.id] ?? 0) > 0 ? (
+                <button type="button" className="fc-node-shot-btn unstyled-button"
+                        title="Görüntüyü büyüt"
+                        aria-label={node.title + " görüntülerini büyüt"}
+                        onClick={() => { onSelect(node.id); onPreview(node.id, 0); }}>
+                  <img className="fc-node-shot" alt=""
+                       src={screenshotHref(app, product, node.id, imageVersion, 0)} />
+                  {/* Only when there is more than one: a "1/1" badge on every
+                      box is a badge that says nothing about any box. */}
+                  {(screenshots[node.id] ?? 0) > 1 ? (
+                    <span className="fc-node-count">1/{screenshots[node.id]}</span>
+                  ) : null}
+                </button>
+              ) : (
+                <span className="fc-node-empty">görüntü yok</span>
+              )}
+              {node.note ? <span className="fc-node-note" title={node.note}>not</span> : null}
+
+              {/* Top right, beside the delete cross: one more capture of the
+                  SAME screen, because a long page needs two or three. */}
+              <button type="button" className="fc-node-shot-add unstyled-button" disabled={busy}
+                      title="Bu ekrana bir görüntü daha ekle"
+                      aria-label={node.title + " ekranına görüntü ekle"}
+                      onClick={() => { onSelect(node.id); onAddShot(node.id); }}>+</button>
               <button type="button" className="fc-node-x unstyled-button" disabled={busy}
                       title="Ekranı sil" aria-label={node.title + " ekranını sil"}
                       onClick={() => onDeleteNode(node.id)}>×</button>

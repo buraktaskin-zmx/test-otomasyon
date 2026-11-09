@@ -74,9 +74,6 @@ export function Kpi({
   );
 }
 
-export function percent(rate: number | null | undefined): string {
-  return rate == null ? "—" : "%" + Math.round(rate * 100);
-}
 
 /** "+9" / "-3" / "" — the change against the previous period. */
 export function delta(now: number, before: number): string {
@@ -86,41 +83,35 @@ export function delta(now: number, before: number): string {
 
 /** Library and period KPIs, as both pages show them. */
 export function KpiRow({ k, librarySub }: { k: DashboardKpis; librarySub: ReactNode }) {
-  const pointDelta = k.successRate != null && k.previous.successRate != null
-    ? Math.round((k.successRate - k.previous.successRate) * 100) : null;
   return (
     <div className="db-kpis">
       <div className="db-kpi-group" aria-label="Kütüphane — dönemden bağımsız">
         <Kpi label="Toplam senaryo" value={k.scenarios} sub={librarySub} />
-        <Kpi label="Koşulabilir" value={k.runnable} sub={k.notRunnable + " koşulamaz (yalnız doğal dil)"} />
+        <Kpi label="Koşulabilir" value={k.runnable} />
       </div>
+      {/* Per RUN, not per scenario: the same scenario run four times reads 4
+          here. The old cards counted each scenario once, by its LAST run, so
+          repeating a run changed nothing on screen and the dashboard looked
+          like it was not recording. Coverage ("how much of the library has
+          been touched") is a different question and lives in the screen
+          table, where it cannot be mistaken for a run count. */}
       <div className="db-kpi-group" aria-label="Seçili dönem">
         <Kpi
           label="Çalıştırılan"
           approx={k.approximate}
-          value={k.ran}
-          sub={"koşulabilirin " + percent(k.runnable ? k.ran / k.runnable : null)
-            + " · " + k.neverRun + " hiç koşmadı"}
+          value={<>{k.runs} <small>{delta(k.runs, k.previous.runs)}</small></>}
         />
         <Kpi
           label="Başarılı"
           approx={k.approximate}
           tone="ok"
-          value={<>{k.passed} <small>{delta(k.passed, k.previous.passed)}</small></>}
-          sub="son durumu geçen senaryo"
+          value={<>{k.runsPassed} <small>{delta(k.runsPassed, k.previous.passed)}</small></>}
         />
         <Kpi
           label="Başarısız"
           approx={k.approximate}
           tone="fail"
-          value={<>{k.failed} <small>{delta(k.failed, k.previous.failed)}</small></>}
-          sub={k.failedSteps + " farklı adımda"}
-        />
-        <Kpi
-          label="Başarı oranı"
-          approx={k.approximate}
-          value={<>{percent(k.successRate)} {pointDelta ? <small>{(pointDelta > 0 ? "+" : "") + pointDelta}p</small> : null}</>}
-          sub={"önceki dönem " + percent(k.previous.successRate)}
+          value={<>{k.runsFailed} <small>{delta(k.runsFailed, k.previous.failed)}</small></>}
         />
       </div>
     </div>
@@ -234,16 +225,12 @@ export function FailingList({ failing, pageSize = 5 }: { failing: DashboardFaili
           <li key={step.step}>
             <div className="db-failing-step">{step.step}</div>
             {step.lastError ? <div className="db-failing-why">{step.lastError}</div> : null}
-            <span className="db-failing-count">
-              {step.runs}× · {step.scenarios} senaryo
-            </span>
           </li>
         ))}
         {/* Always visible, on every page: it is a total, not a row of the list. */}
         {failing.loginFailures > 0 ? (
           <li className="is-login">
             <div className="db-failing-step">Giriş başarısız</div>
-            <span className="db-failing-count">{failing.loginFailures} koşu</span>
           </li>
         ) : null}
       </ul>

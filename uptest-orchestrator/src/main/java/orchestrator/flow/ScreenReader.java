@@ -85,7 +85,7 @@ public class ScreenReader {
      */
     public List<Read> readAll(String app, String product, Flow flow, boolean onlyMissing) {
         List<Node> withImage = flow.nodes().stream()
-                .filter(node -> store.screenshot(app, product, node.id()).isPresent())
+                .filter(node -> store.screenshotCount(app, product, node.id()) > 0)
                 .filter(node -> !onlyMissing || store.read(app, product, node.id()).isEmpty())
                 .toList();
         if (withImage.isEmpty()) {
@@ -129,11 +129,12 @@ public class ScreenReader {
     }
 
     private Read readOne(String app, String product, Flow flow, Node node) {
-        byte[] png = store.screenshot(app, product, node.id()).orElse(null);
-        if (png == null) {
+        List<byte[]> images = store.screenshots(app, product, node.id());
+        if (images.isEmpty()) {
             return new Read(node.id(), node.title(), null, "Bu ekranın görüntüsü yok", List.of());
         }
-        String answer = LlmOutputCleaner.clean(vision.ask(SYSTEM, user(app, flow, node), png));
+        String answer = LlmOutputCleaner.clean(
+                vision.ask(SYSTEM, user(app, flow, node, images.size()), images));
         JsonNode json = parse(answer);
         if (json == null) {
             return new Read(node.id(), node.title(), null,
@@ -195,13 +196,38 @@ public class ScreenReader {
      * on this screen, so a button it half-sees is confirmed rather than
      * guessed at.
      */
-    private static String user(String app, Flow flow, Node node) {
+    /**
+     * @param images how many pictures are attached. Said out loud because the
+     *               model cannot otherwise tell several captures of ONE long
+     *               page from several different screens -- and reading them
+     *               as alternatives would produce a catalog listing the same
+     *               field twice, or only the half that was in the first one.
+     */
+    private static String user(String app, Flow flow, Node node, int images) {
         StringBuilder sb = new StringBuilder();
         sb.append("Uygulama: ").append(app.toUpperCase(Locale.ROOT)).append('\n');
         sb.append("Bu ekranın adı (analist verdi): ").append(node.title()).append('\n');
+        if (images > 1) {
+            sb.append("DİKKAT: ").append(images).append(" görüntü ekli ve hepsi AYNI ekranın")
+                    .append(" parçaları — sayfa tek ekran görüntüsüne sığmadığı için analist")
+                    .append(" kaydırarak çekti. Sırayla yukarıdan aşağıya okunurlar. Hepsini")
+                    .append(" TEK bir ekran gibi birleştir: alanları tek listede topla, iki")
+                    .append(" görüntüde de görünen alanı bir kez yaz, ve bunları birbirinin")
+                    .append(" alternatifi ya da ayrı ekranlar sanma.\n");
+        }
         if (node.note() != null && !node.note().isBlank()) {
             sb.append("Analistin notu — görüntüde görünmeyen, bilmen gereken şey:\n")
                     .append(node.note()).append('\n');
+        }
+        List<Edge> in = flow.edges().stream().filter(e -> e.to().equals(node.id())).toList();
+        if (in.isEmpty()) {
+            sb.append("Bu ekrana çizimde hiç ok girmiyor: kullanıcı onu MENÜDEN açıyor,")
+                    .append(" yani üstteki ana menü ve alt menü adını okuman önemli.\n");
+        } else {
+            sb.append("Bu ekrana başka bir ekrandan geliniyor — analist şu kontrole")
+                    .append(" basıldığını söyledi: \"").append(in.get(0).label()).append("\".")
+                    .append(" Menüden açılmıyor, bu yüzden ana/alt menü okunamıyorsa boş bırak,")
+                    .append(" uydurma.\n");
         }
         List<Edge> out = flow.edges().stream().filter(e -> e.from().equals(node.id())).toList();
         if (!out.isEmpty()) {

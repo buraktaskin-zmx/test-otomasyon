@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { formatDuration } from "../lib/format";
 import type { DashboardScenarioRow, DashboardScreenDetail } from "../api/types";
-import { Approx, Card, FailingList, KpiRow, StackBar, StatusWord, relativeTime, usePaged } from "./parts";
+import { Approx, Card, FailingList, KpiRow, StatusWord, relativeTime, usePaged } from "./parts";
 
 /** Rows per page, as the overview's run table uses. */
 const PER_PAGE = 12;
@@ -40,9 +40,7 @@ export function ScreenDetail({
 
   return (
     <div className="db-page">
-      <p className="db-screen-meta">
-        {data.productName} · {data.catalog ? <code>{data.catalog}</code> : "katalog yok"} · {data.ruleCount} kural
-      </p>
+      <p className="db-screen-meta">{data.productName}</p>
 
       <KpiRow k={data.kpis} librarySub="bu ekranda" />
 
@@ -54,18 +52,15 @@ export function ScreenDetail({
                 <li key={h.name}>
                   <div className="db-screen">
                     <span className="db-screen-name">{h.name}</span>
-                    <span className="db-screen-total">{h.total}</span>
+                    <span className="db-screen-total">toplam senaryo {h.total}</span>
                   </div>
-                  <StackBar total={h.total} parts={[
-                    ["passed", h.passed], ["failed", h.failed], ["never", h.neverRun], ["notRunnable", h.notRunnable],
-                  ]} />
                 </li>
               ))}
             </ul></div>
           )}
         </Card>
 
-        <Card title="Bu ekranda takılan adımlar" note="Sayılar koşu sayısıdır.">
+        <Card title="Bu ekranda takılan adımlar">
           <FailingList failing={data.failing} />
         </Card>
       </div>

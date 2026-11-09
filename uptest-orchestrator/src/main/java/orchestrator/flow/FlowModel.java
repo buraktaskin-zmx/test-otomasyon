@@ -150,7 +150,19 @@ public final class FlowModel {
     public record Screenshot(String nodeId, String dataUrl) {
     }
 
-    /** For the prompt: the drawing as indented text the model can follow. */
+    /**
+     * For the prompt: the drawing as indented text the model can follow.
+     *
+     * <p>Each screen says HOW IT IS REACHED, because that is the one thing
+     * the pictures cannot show and the arrows exist to record. A screen with
+     * an arrow into it is reached by pressing the control that arrow is
+     * named after — nothing else gets you there. A screen with NO arrow into
+     * it was opened by the analyst from the menu, so a scenario starting
+     * there starts with {@code navigate to}. Left unsaid, the model guesses,
+     * and both guesses are wrong in a browser: a menu step for a screen that
+     * only a button opens, or a click for a screen nothing on the page leads
+     * to.
+     */
     public static String describe(Flow flow, Map<String, String> readScreens) {
         StringBuilder sb = new StringBuilder("EKRANLAR:\n");
         for (Node node : flow.nodes()) {
@@ -159,6 +171,21 @@ public final class FlowModel {
                 sb.append("  (katalog: ").append(node.flow()).append(")");
             }
             sb.append('\n');
+            List<Edge> incoming = flow.edges().stream()
+                    .filter(e -> e.to().equals(node.id())).toList();
+            if (incoming.isEmpty()) {
+                sb.append("    NASIL AÇILIR: bu ekrana hiç ok girmiyor — kullanıcı onu")
+                        .append(" MENÜDEN açar. Senaryo buradan başlıyorsa ilk adım")
+                        .append(" `navigate to \"<ana menü>\" \"<alt menü>\"` olmalı.\n");
+            } else {
+                sb.append("    NASIL AÇILIR: başka bir ekrandan, yalnızca şu kontrole")
+                        .append(" basılarak — menüden DEĞİL:\n");
+                for (Edge edge : incoming) {
+                    Node from = flow.node(edge.from());
+                    sb.append("      ").append(from == null ? edge.from() : from.title())
+                            .append(" ekranında `click \"").append(edge.label()).append("\"`\n");
+                }
+            }
             if (node.note() != null && !node.note().isBlank()) {
                 sb.append("    analistin notu: ").append(node.note().replace("\n", " ")).append('\n');
             }

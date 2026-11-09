@@ -112,7 +112,7 @@ export function Overview({
 
       <Card
         title="En çok takılan adımlar"
-        note="Sayılar koşu sayısıdır. Açıklamalar executor'ın kendi hata mesajının ilk satırıdır."
+        note="Açıklamalar executor'ın kendi hata mesajının ilk satırıdır."
       >
         <FailingList failing={data.failing} pageSize={6} />
       </Card>
@@ -130,7 +130,6 @@ export function Overview({
                   <th>Koşu</th>
                   <th>Başarılı</th>
                   <th>Başarısız</th>
-                  <th>Girişte düşen</th>
                   <th>Son koşu</th>
                 </tr>
               </thead>
@@ -144,7 +143,6 @@ export function Overview({
                     <td className="h-mono">{row.runs}</td>
                     <td className="h-mono db-count is-passed">{row.passed}</td>
                     <td className="h-mono db-count is-failed">{row.failed}</td>
-                    <td className="h-mono">{row.loginFailures}</td>
                     <td className="h-mono">{relativeTime(row.lastRunAt)}</td>
                   </tr>
                 ))}

@@ -1995,7 +1995,7 @@ body {
     --fail-bg: #FEF3F2;
     --warn:    #B54708;
     --warn-bg: #FFFAEB;
-    --warn-mark: #F79009;  /* eksik/başarısız as a BAR or DOT, never as text */
+    --warn-mark: #F79009;  /* eksik as a BAR or DOT, never as text */
     --skip:    #667085;
     --skip-bg: #F2F4F7;
     --ok:      #067647;   /* başarılı as TEXT */
@@ -2256,7 +2256,7 @@ body {
 /* Status segments */
 .db-seg { display: block; min-width: 2px; border-radius: 2px; }
 .db-seg.is-passed { background: var(--primary); }
-.db-seg.is-failed { background: var(--warn-mark); }
+.db-seg.is-failed { background: var(--fail); }
 .db-seg.is-canceled, .db-seg.is-running { background: var(--skip); }
 .db-seg.is-unknown { background: var(--skip-bg); outline: 1px dashed var(--skip); outline-offset: -1px; }
 .db-seg.is-never { background: var(--chip-bg); outline: 1px solid var(--border); outline-offset: -1px; }
@@ -2274,7 +2274,7 @@ body {
 .db-legend { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-bottom: var(--space-2); font-size: var(--text-sm); color: var(--muted); }
 .db-legend-item::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: var(--space-1); border-radius: 2px; vertical-align: -1px; }
 .db-legend-item.is-passed::before { background: var(--primary); }
-.db-legend-item.is-failed::before { background: var(--warn-mark); }
+.db-legend-item.is-failed::before { background: var(--fail); }
 .db-legend-item.is-canceled::before { background: var(--skip); }
 .db-legend-item.is-unknown::before { background: var(--skip-bg); outline: 1px dashed var(--skip); }
 
@@ -2378,8 +2378,17 @@ button.db-screen:hover .db-screen-name { color: var(--link); text-decoration: un
 .fc-edges { position: absolute; inset: 0; pointer-events: none; }
 .fc-edge { fill: none; stroke: var(--primary); stroke-width: 2; }
 
+/* The box lays its own children out now that the thumbnail is a separate
+   button: a button cannot contain a button. Its padding is also the only
+   part of the box that is not a button, so it is what the node is dragged
+   by — the drag handler skips anything inside a control. */
 .fc-node {
     position: absolute;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    padding: var(--space-2);
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
@@ -2389,18 +2398,11 @@ button.db-screen:hover .db-screen-name { color: var(--link); text-decoration: un
 }
 .fc-node:active { cursor: grabbing; }
 .fc-node.is-selected { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-tint); }
-.fc-node-main {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    gap: var(--space-1);
-    width: 100%;
-    height: 100%;
-    padding: var(--space-2);
-    text-align: left;
-}
-.fc-node-title { font-weight: 600; font-size: var(--text-base); color: var(--ink-title); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fc-node-shot { flex: 1 1 auto; width: 100%; min-height: 0; object-fit: cover; object-position: top left; border-radius: var(--radius-badge); border: 1px solid var(--border-soft); }
+.fc-node-main { flex: none; width: 100%; text-align: left; }
+.fc-node-title { font-weight: 600; font-size: var(--text-base); color: var(--ink-title); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+.fc-node-shot-btn { position: relative; flex: 1 1 auto; min-height: 0; width: 100%; display: block; cursor: zoom-in; border-radius: var(--radius-badge); }
+.fc-node-shot-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.fc-node-shot { width: 100%; height: 100%; display: block; object-fit: cover; object-position: top left; border-radius: var(--radius-badge); border: 1px solid var(--border-soft); }
 .fc-node-empty { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; font-size: var(--text-sm); color: var(--empty); border: 1px dashed var(--border); border-radius: var(--radius-badge); }
 .fc-node-note { position: absolute; left: var(--space-2); bottom: var(--space-2); font-size: var(--text-sm); color: var(--link); background: var(--chip-bg); border-radius: var(--radius-badge); padding: 0 var(--space-1); }
 
@@ -2413,13 +2415,21 @@ button.db-screen:hover .db-screen-name { color: var(--link); text-decoration: un
     line-height: 1;
 }
 .fc-node-x { top: 2px; right: 2px; width: 20px; height: 20px; color: var(--soft); opacity: 0; transition: opacity 120ms ease; }
+/* Beside the delete cross, and revealed the same way: one more capture of
+   the SAME screen. A long banking page takes three or four. */
+.fc-node-shot-add { top: 2px; right: 24px; width: 20px; height: 20px; font-size: 15px; color: var(--soft); opacity: 0; transition: opacity 120ms ease; }
+.fc-node:hover .fc-node-shot-add, .fc-node-shot-add:focus-visible { opacity: 1; }
+.fc-node-shot-add:hover:not(:disabled), .fc-node-shot-add:focus-visible { color: var(--link); background: var(--primary-tint); }
+/* Only drawn when a screen has more than one picture: a badge on every box
+   says nothing about any box. */
+.fc-node-count { position: absolute; right: var(--space-2); bottom: var(--space-2); font-size: var(--text-xs); color: var(--on-brand); background: color-mix(in srgb, var(--ink-title) 70%, transparent); border-radius: var(--radius-badge); padding: 0 var(--space-1); }
 .fc-node:hover .fc-node-x, .fc-node-x:focus-visible { opacity: 1; }
 .fc-node-x:hover, .fc-node-x:focus-visible { color: var(--fail); background: var(--fail-bg); }
 .fc-plus { width: 22px; height: 22px; font-size: 16px; color: var(--on-brand); background: var(--primary); box-shadow: var(--shadow); }
 .fc-plus:hover:not(:disabled) { filter: brightness(1.08); }
 .fc-plus.is-right { right: -11px; top: calc(50% - 11px); }
 .fc-plus.is-down { bottom: -11px; left: calc(50% - 11px); }
-@media (prefers-reduced-motion: reduce) { .fc-node-x { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .fc-node-x, .fc-node-shot-add { transition: none; } }
 
 .fc-label { position: absolute; transform: translate(-50%, -50%); }
 .fc-label-button {
@@ -2462,4 +2472,35 @@ button.db-screen:hover .db-screen-name { color: var(--link); text-decoration: un
 @media (max-width: 900px) {
     .users-field:has(.fc-source-hint) { flex-wrap: wrap; }
     .fc-source-hint { flex-basis: 100%; }
+}
+
+/* Senaryo Üret: one screenshot, full size. The node thumbnails are 210px and
+   cover-cropped — a map of the flow, not something anyone can read. */
+.fc-preview { cursor: zoom-out; }
+.fc-preview-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    width: min(1200px, 95vw);
+    max-height: 92vh;
+    padding: var(--space-3);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    cursor: default;
+}
+.fc-preview-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
+.fc-preview-nav { display: flex; align-items: center; gap: var(--space-2); margin-inline-start: auto; }
+.fc-preview-actions { display: flex; align-items: center; gap: var(--space-2); }
+/* Scrolls rather than shrinking to fit: a tall banking page scaled into 92vh
+   is exactly as unreadable as the thumbnail this exists to replace. */
+.fc-preview-img {
+    min-height: 0;
+    max-width: 100%;
+    object-fit: contain;
+    overflow: auto;
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-sm);
+    background: var(--surface-2);
 }

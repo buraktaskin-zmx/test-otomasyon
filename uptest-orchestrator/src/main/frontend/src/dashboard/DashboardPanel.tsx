@@ -33,7 +33,12 @@ export interface RerunRequest {
   paths: string[];
 }
 
-const PERIODS: Array<[DashboardPeriod, string]> = [["24h", "24 saat"], ["7d", "7 gün"], ["30d", "30 gün"]];
+/* "tümü" is last and it is not decoration: nothing deletes a run, so every
+   number the shorter windows hide is still in TEST_RUN waiting to be asked
+   for. Without it the dashboard looked like it reset itself. */
+const PERIODS: Array<[DashboardPeriod, string]> = [
+  ["24h", "24 saat"], ["7d", "7 gün"], ["30d", "30 gün"], ["all", "tümü"],
+];
 
 /*
   Dashboard: Genel Bakış → a screen's detail → a scenario's history.

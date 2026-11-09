@@ -417,16 +417,36 @@ export const saveFlow = (app: string, product: string, flow: FlowTree) =>
   api<{ saved: boolean }>("PUT", flowBase(app, product), flow);
 
 /** `dataUrl`: data:image/png;base64,… — the only way an image can travel here. */
-export const putScreenshot = (app: string, product: string, nodeId: string, dataUrl: string) =>
-  api<{ saved: boolean }>("PUT", flowBase(app, product) + "/screens/" + encodeURIComponent(nodeId),
-    { dataUrl });
+/** Adds a picture to a screen, or replaces the one at `index`.
+ *
+ *  Appending by default is the whole point: a banking page does not fit in
+ *  one capture, so the analyst scrolls and pastes again and those pictures
+ *  are parts of ONE screen, handed to the vision model together. Answers with
+ *  the node's new picture count. */
+export const putScreenshot = (app: string, product: string, nodeId: string, dataUrl: string,
+                              index?: number) =>
+  api<{ saved: boolean; count: number }>(
+    "PUT",
+    flowBase(app, product) + "/screens/" + encodeURIComponent(nodeId)
+      + (index == null ? "" : "?index=" + index),
+    { dataUrl },
+  );
 
-export const deleteScreenshot = (app: string, product: string, nodeId: string) =>
-  api<{ deleted: boolean }>("DELETE", flowBase(app, product) + "/screens/" + encodeURIComponent(nodeId));
+/** One picture when `index` is given, every picture of the node when it is
+ *  not. The server closes the gap an index leaves, so the indexes a caller
+ *  walks stay 0..count-1 with no holes. */
+export const deleteScreenshot = (app: string, product: string, nodeId: string, index?: number) =>
+  api<{ deleted: boolean; count: number }>(
+    "DELETE",
+    flowBase(app, product) + "/screens/" + encodeURIComponent(nodeId)
+      + (index == null ? "" : "?index=" + index),
+  );
 
 /** For `<img src>`; `v` busts the browser cache after a replace. */
-export const screenshotHref = (app: string, product: string, nodeId: string, v: number) =>
-  flowBase(app, product) + "/screens/" + encodeURIComponent(nodeId) + "?v=" + v;
+export const screenshotHref = (app: string, product: string, nodeId: string, v: number,
+                               index = 0) =>
+  flowBase(app, product) + "/screens/" + encodeURIComponent(nodeId)
+    + "?index=" + index + "&v=" + v;
 
 /**
  * Stage 1, on demand: read ONE screen again, whether or not it has been read.
