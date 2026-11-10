@@ -1013,11 +1013,19 @@ export interface FlowTree {
 export interface FlowIntent {
   id: string;
   title: string;
+  /** The one-line summary; the prose below is the scenario itself. */
   intent: string;
   /** Node ids this scenario walks, in order. */
   path: string[];
   ruleIds: string[];
   negative: boolean;
+  /** FlowModel.Intent's three prose fields -- ScenarioFields' names, because
+   *  that is the shape the library stores a scenario's natural-language half
+   *  in. `preconditions` is never verified: a failed precondition means the
+   *  test could not run, not that the application is wrong. */
+  preconditions: string[];
+  steps: string[];
+  expected: string[];
 }
 
 export interface FlowPlan {

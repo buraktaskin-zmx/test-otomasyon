@@ -478,8 +478,8 @@ options, so it must say "emin değilim" rather than invent them.
 memory is the DISK.** Each stage writes a file a person can read and fix; the
 next stage reads that file, never a transcript. One call per screen (a
 screenshot is 1-3k tokens and a misread must not poison the others), then one
-cheap planning call that produces a LIST of scenario intents for the analyst to
-edit, then one call per planned scenario. Nothing survives a call except what
+cheap planning call that writes the scenarios IN TURKISH PROSE for the analyst
+to edit, then one call per scenario to turn each into Gherkin. Nothing survives a call except what
 was written down, so a restart loses nothing and any stage can be re-run. This
 is the agent lesson applied before the fact: a forty-turn walk that dies leaves
 nothing, and `note_field` exists because what is seen early must not have to
@@ -487,6 +487,30 @@ survive forty turns.
 Files: `products/<app>/<product>/flow/flow.json`, `screens/<id>.png`,
 `screens/<id>.read.yaml` (the model's FIRST read, kept so "how wrong was it"
 stays answerable), `plan.json`.
+
+**The planning stage writes scenarios, not notes about scenarios (2026-11-10).**
+It used to return a title and a one-sentence intent per row — enough to decide
+WHICH scenarios to write, which was the point, but not enough to review one.
+An analyst asked which rule a row tests, or what had to be true in the
+environment before it could run, had to go and look somewhere else. So
+`FlowModel.Intent` now carries `preconditions`, `steps` and `expected`
+alongside the one-line `intent`, and the names are `ScenarioFields`' names
+deliberately: that is the shape the database already stores a scenario's
+natural-language half in, so what comes back is a scenario document rather than
+a sketch to be translated later. The stage is still one cheap call before N
+expensive ones, and `PLAN_SYSTEM` now forbids Gherkin, Given/When/Then and
+YAML outright — those belong to the writing call, which is handed the edited
+prose as its task.
+
+Two things that are load-bearing rather than decoration. The prompt states the
+ÖN KOŞUL / BEKLENEN split in the planning turn as well as the writing one,
+because mixing them is the expensive mistake: an expectation written as a
+precondition is never checked, and a precondition written as an expectation
+fails red over missing test data as though the application were broken. And
+every list on `Intent` is normalised to empty in a compact constructor — a
+`plan.json` saved before these fields existed hands Jackson null for all
+three, and the screen that is meant to survive a restart would then crash on
+its own saved file.
 `FlowProvenance` is `Provenance` for a drawing: a quoted label must appear in a
 screen read, an edge label, the catalog, the rules or the test data — and it
 compares with whitespace stripped, because a `<br>` label reads run-together on

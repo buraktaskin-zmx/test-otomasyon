@@ -124,18 +124,60 @@ public final class FlowModel {
     }
 
     /**
-     * One planned scenario, before anyone writes it — stage 3 of the pipeline.
+     * One scenario in Turkish prose, before any Gherkin is written — stage 3.
      *
-     * <p>A line, not a scenario: cheap to produce, cheap to read, and the
-     * analyst deletes or adds lines before thirty expensive generation calls
-     * are spent on the wrong things.
+     * <p>It used to be a LINE: a title and a one-sentence intent, a note about
+     * a scenario rather than the scenario. That was the cheap checkpoint and it
+     * still is — one text call for twenty-five of them, edited before any
+     * expensive generation is spent — but a line is not enough to review. An
+     * analyst asked which rule a line tests, or what has to be true in the
+     * environment before it can run, had to open something else to find out.
      *
-     * @param path    node ids this scenario walks, in order; one id for a
-     *                single-screen scenario
-     * @param ruleIds the rules it is meant to exercise
+     * <p>So the fields are the ones the library already keeps, and the names are
+     * {@code ScenarioFields}' names on purpose: {@code preconditions},
+     * {@code steps}, {@code expected}. That is the shape the database stores a
+     * scenario's natural-language half in, which means this is already a
+     * scenario document and not a sketch of one — it can be read, corrected and
+     * saved without a translation step in between.
+     *
+     * <p>{@code intent} survives as the one-line summary, because the writing
+     * stage and {@code FlowProvenance} both take it as "what was asked for".
+     *
+     * @param path          node ids this scenario walks, in order; one id for a
+     *                      single-screen scenario
+     * @param ruleIds       the rules it is meant to exercise
+     * @param preconditions what must already be true in the environment. NEVER
+     *                      verified: if one fails the test could not run and
+     *                      the application is not at fault, which is the
+     *                      distinction {@link Flow}'s own javadoc turns on
+     * @param steps         what the tester does, in order, in plain Turkish
+     * @param expected      what the application must then do — this is the half
+     *                      that becomes a {@code verify}
      */
     public record Intent(String id, String title, String intent, List<String> path,
-                         List<String> ruleIds, boolean negative) {
+                         List<String> ruleIds, boolean negative,
+                         List<String> preconditions, List<String> steps,
+                         List<String> expected) {
+
+        /**
+         * Every list is empty rather than null, and that is not tidiness.
+         *
+         * <p>A {@code plan.json} written before these three fields existed has
+         * no key for them, so Jackson hands the canonical constructor null --
+         * and the plan screen calls {@code .join()} on each one. The stage that
+         * is meant to survive a restart would crash on its own saved file. The
+         * model can leave a key out of its answer for the same effect.
+         *
+         * <p>Normalised HERE because this is the one place every route in goes
+         * through: the parser, the PUT from the browser, and the file read.
+         */
+        public Intent {
+            path = path == null ? List.of() : List.copyOf(path);
+            ruleIds = ruleIds == null ? List.of() : List.copyOf(ruleIds);
+            preconditions = preconditions == null ? List.of() : List.copyOf(preconditions);
+            steps = steps == null ? List.of() : List.copyOf(steps);
+            expected = expected == null ? List.of() : List.copyOf(expected);
+        }
     }
 
     /** What stage 3 wrote, as it is stored and handed back for editing. */

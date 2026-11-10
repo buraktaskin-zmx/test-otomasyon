@@ -35,14 +35,32 @@ final class FlowPrompts {
             ekranları, aralarındaki geçişler, her ekranda okunan alanlar ve
             ürünün kuralları veriliyor.
 
-            Görevin senaryoları YAZMAK DEĞİL, hangi senaryoların yazılacağına
-            karar vermek. Her biri tek satırlık bir niyet. Bu liste bir insana
-            gösterilecek; o silecek, ekleyecek, sonra senaryolar yazılacak.
+            Görevin senaryoları DOĞAL TÜRKÇE ile yazmak. Gherkin YAZMA,
+            Given/When/Then yazma, adım sözlüğü kullanma, YAML yazma — bunlar
+            sonraki aşamanın işi. Senin yazdığın, bir analistin okuyup
+            düzeltebileceği düz Türkçe.
+
+            Her senaryoda şunlar ayrı ayrı bulunur:
+            - başlık: ne test edildiğini söyleyen kısa bir cümle
+            - ön koşul: KOŞMADAN ÖNCE ortamda doğru olması gerekenler (firma
+              var, fatura ödenmemiş, kullanıcının yetkisi var). Bunlar
+              DOĞRULANMAZ: biri tutmazsa test koşamamıştır, uygulama hatalı
+              değildir. Bir beklentiyi buraya yazma.
+            - adımlar: testi yapan kişinin sırayla yaptıkları
+            - beklenen: uygulamanın bunun üzerine YAPMAK ZORUNDA olduğu şey.
+              Tutmazsa defect vardır. Bir ön koşulu buraya yazma.
+            - kurallar: bu senaryonun sınadığı kural kimlikleri
+
+            ÖN KOŞUL ile BEKLENENİ karıştırmamak en önemli iş: ikisi karışırsa
+            eksik test verisi, uygulama hatası gibi kırmızı yanar.
 
             YALNIZCA şu JSON'u döndür, başka hiçbir şey yazma:
             {"scenarios":[
               {"title":"kısa Türkçe başlık",
-               "intent":"bir cümle: ne yapılıyor ve ne bekleniyor",
+               "intent":"tek cümlelik özet: ne yapılıyor ve ne bekleniyor",
+               "preconditions":["ortamda önceden doğru olması gereken şey"],
+               "steps":["sırayla yapılan iş","..."],
+               "expected":["uygulamanın yapması gereken şey","..."],
                "path":["ekran kimliği","..."],
                "ruleIds":["R-..."],
                "negative":false}
@@ -84,15 +102,19 @@ final class FlowPrompts {
         sb.append("""
 
                 KURALLAR:
-                - Tam olarak %d niyet yaz. Daha fazla değil.
-                - Her çizilen yol için en az bir "mutlu yol" niyeti; path alanına
-                  o yolun ekran kimliklerini sırayla yaz.
-                - Her kural için onu sınayan bir niyet. REDDETME kuralları (bir
+                - Tam olarak %d senaryo yaz. Daha fazla değil.
+                - Her senaryonun adımları ve beklenenleri DOLU olsun; boş bir
+                  liste okunamayan bir senaryodur.
+                - Beklenen, uygulamanın yapması gereken şeydir. "Fatura
+                  listede görünmeli" bir ön koşuldur, beklenen değildir.
+                - Her çizilen yol için en az bir "mutlu yol" senaryosu; path
+                  alanına o yolun ekran kimliklerini sırayla yaz.
+                - Her kural için onu sınayan bir senaryo. REDDETME kuralları (bir
                   şeyin olMAması gerektiğini söyleyenler) en değerlileridir;
                   onları negative=true ile işaretle.
-                - Tek ekranda kalan bir niyetin path'i tek elemanlıdır.
-                - KAPSAM DIŞI listesindeki hiçbir şeye niyet yazma.
-                - Var olduğu söylenmemiş veriye dayanan niyet yazma. Ortamda
+                - Tek ekranda kalan bir senaryonun path'i tek elemanlıdır.
+                - KAPSAM DIŞI listesindeki hiçbir şeye senaryo yazma.
+                - Var olduğu söylenmemiş veriye dayanan senaryo yazma. Ortamda
                   hangi firmanın, faturanın, bayinin bulunduğunu bilmiyorsan o
                   senaryoyu isteme.
                 - Aynı şeyi iki kez isteme.
@@ -175,6 +197,13 @@ final class FlowPrompts {
         sb.append("\nYAZILACAK SENARYO:\n");
         sb.append("Başlık: ").append(intent.title()).append('\n');
         sb.append("Niyet: ").append(intent.intent()).append('\n');
+        // The prose the planning stage wrote, which the analyst has since read
+        // and corrected. Given to the writer as the task rather than left on
+        // the plan screen: the steps are what to turn into Gherkin, and the
+        // preconditions are the one part that must NOT become a verify.
+        appendList(sb, "Ön koşul (DOĞRULAMA YAZMA, yalnız bilgi)", intent.preconditions());
+        appendList(sb, "Adımlar", intent.steps());
+        appendList(sb, "Beklenen (her biri için bir verify)", intent.expected());
         if (intent.negative()) {
             sb.append("Bu bir REDDETME senaryosu: uygulamanın bir şeyi YAPMAMASI"
                     + " bekleniyor. Beklenen, reddin kendisidir.\n");
@@ -305,5 +334,14 @@ final class FlowPrompts {
 
     private static boolean notBlank(String text) {
         return text != null && !text.isBlank();
+    }
+
+    /** A planned scenario's own prose, one item per line, or nothing at all. */
+    private static void appendList(StringBuilder sb, String heading, List<String> items) {
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        sb.append(heading).append(":\n");
+        items.forEach(item -> sb.append("  - ").append(item).append('\n'));
     }
 }

@@ -178,7 +178,10 @@ public class FlowPlanner {
             List<String> rules = strings(entry.get("ruleIds")).stream()
                     .filter(ruleIds::contains).toList();
             out.add(new Intent("s" + (out.size() + 1), title, intent, path, rules,
-                    entry.path("negative").asBoolean(false)));
+                    entry.path("negative").asBoolean(false),
+                    strings(entry.get("preconditions")),
+                    strings(entry.get("steps")),
+                    strings(entry.get("expected"))));
         }
         return out;
     }
