@@ -253,18 +253,6 @@ Elsewhere:
   means `AgentPrompts.SYSTEM`. The walk-to-Gherkin renderer is `TapeRenderer`
   with `PlaywrightLine` (the echoed line, parsed), `TapeScope` (the snapshots a
   reference resolves in) and `ExpectedVerifies` (the THEN from BEKLENEN).
-- Scenario chat (orchestrator): `orchestrator/chat/` — writing a scenario by
-  talking about it. **No browser**: it is the generator with the repair turn
-  pointed at a PERSON. `SuggestService.suggestOnce` generates once, and
-  `ChatQuestions` turns the validator's first finding into a QUESTION whose
-  buttons are the routes that finding's own message already names — for an
-  unearned assertion, "give me the expected value" and "drop the check".
-  Three kinds get a tailored question; everything else shows the validator's
-  own words and asks for free text, because inventing options for a finding
-  this class does not understand is the guessing it exists to stop. Sessions
-  are in memory only (`ChatSessionStore`, swept on access, no `@Scheduled`) —
-  a transcript is free text and free text is an uncontrolled channel, the
-  hazard `TestRunEntity` already documents.
 - Discovery dispatch (orchestrator): `orchestrator/catalog/CatalogDiscoveryService`
   builds the synthetic feature and sends it through `ExecutorPool` like any other
   run; `orchestrator/api/DiscoveryController` is its endpoint.
@@ -556,18 +544,36 @@ model **verbatim**, so everything unenforced steers the generator without the
 validator having an opinion. A wrong `entry_tab` surfaces as a 30-second timeout
 in a browser, not as a validation error.
 
-**One catalog, many scenarios — and the variation is computed, not requested.**
-`POST /api/v1/scenarios/suggest-many` (UI: "Çoklu Üret") produces N drafts for
-one screen. `VariationPlanner` decides in Java what makes each one different —
-`options[i % k]` for every dropdown, a boundary ladder for amounts and dates, a
-length ladder for text bounded by `max_length` — and the prompt carries those
-values literally. Asking the model to "vary the values" cannot work here:
-`temperature` is 0.3 precisely so the same request gives the same scenario, and
-raising it buys diversity by also buying invented labels. The planner also
-resolves `shown_when` correctly (a revealed field is filled ONLY in the
-variations that chose its trigger) and reports its own ceiling — the DBS form has
-three single-option dropdowns, so past the second scenario only data differs, and
-that is said out loud rather than padded over.
+**Removed 2026-11-10: the batch generator and the scenario chat.** Three
+panels left the rail — "Chat", "AI ile Senaryo Üret" and the "Çoklu üret" tick
+inside it — and with them `orchestrator/chat/`, `VariationPlanner`,
+`OutlineFlattener`, `PromptBuilder.user`, `SuggestService.suggest` /
+`suggestOnce` / `suggestMany`, and `POST /api/v1/scenarios/suggest` and
+`/suggest-many`. The rail is now Dashboard · Senaryo Üret · Kayıtlı Senaryolar ·
+Ekran Keşfi · Çalıştır · Test Kullanıcıları.
+
+Three consequences worth knowing before reading the lessons below, which still
+describe all of it in the present tense because they are the record of what was
+learned and not a map of what exists:
+
+- **Nothing computes variations in Java any more.** `VariationPlanner` was the
+  only thing that turned `max_length` / `min` / `max` into a boundary ladder, so
+  those catalog keys are now parsed by `CatalogModel` and read by NOBODY. A
+  sentence below says they exist "for VariationPlanner"; that is history.
+  Boundary-value coverage is whatever the model writes from the prompt, which is
+  exactly the weakness the planner existed to fix — see "You cannot ask a
+  deterministic model for variety".
+- **The batch review UI stayed**, and it is NOT Çoklu Üret's. `workspace/multi/`
+  (`MultiList`, `MultiBar`, `DraftCard`, `VariationChips`, `draft.ts`) is where
+  Senaryo Üret puts the N scenarios it generates, through
+  `FlowPanel.onBatch` → `WorkspaceView.handleBatchGenerated`. Deleting it
+  because the name says "multi" breaks Senaryo Üret; that mistake was made and
+  undone during the removal itself. Only `MultiPanel` and `DepthChoiceGroup`
+  went, and they were already unreferenced.
+- **`SuggestService` kept exactly three entry points**: `ask` (the planning
+  turn), `suggestFromDrawing` (Senaryo Üret) and `suggestFromWalk` (Ekran
+  Keşfi). `settle` no longer takes a variation, so the rewriter chain is
+  LoginStep → DateVerb → EntryRow → ReadOnlyAssertion.
 
 **N separate documents, not one file with N scenarios.** `collectFromFeature`
 gathers every scenario's steps into ONE list and `checkAssertionsAreEarned` walks

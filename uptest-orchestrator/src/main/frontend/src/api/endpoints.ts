@@ -3,9 +3,6 @@ import type { ApiResult } from "./client";
 import type {
   Artifact,
   CatalogsResponse,
-  ChatReplyRequest,
-  ChatStartRequest,
-  ChatTurn,
   DiscoverRequest,
   DiscoverStarted,
   DiscoverStatus,
@@ -30,10 +27,6 @@ import type {
   RunStarted,
   SaveCatalogResponse,
   StopAccepted,
-  SuggestManyRequest,
-  SuggestManyResponse,
-  SuggestRequest,
-  SuggestResponse,
   TapeGherkinRequest,
   TapeGherkinResponse,
   ValidationResult,
@@ -294,38 +287,6 @@ export const getProductScenarios = (app: string, product: string) =>
     "/api/v1/products/" + encodeURIComponent(app) + "/"
       + encodeURIComponent(product) + "/scenarios",
   );
-
-/* ----------------------------- generation ------------------------------ */
-
-export const suggestScenario = (request: SuggestRequest) =>
-  api<SuggestResponse>("POST", "/api/v1/scenarios/suggest", request);
-
-/** Slow by nature -- sequential, each scenario its own generate-validate-
- *  repair round, so 5 scenarios realistically take 1-3 minutes. Kept
- *  synchronous server-side; the caller must disable its button for the
- *  duration, not assume this resolves quickly. */
-export const suggestMany = (request: SuggestManyRequest) =>
-  api<SuggestManyResponse>("POST", "/api/v1/scenarios/suggest-many", request);
-
-/* --------------------------------- chat ---------------------------------
-
-   One model call per turn, so seconds -- the same cost as a single
-   /suggest, because it IS /suggest with the repair turn pointed at the
-   analyst instead of at the model. Nothing here drives a browser. */
-
-export const startChat = (request: ChatStartRequest) =>
-  api<ChatTurn>("POST", "/api/v1/chat", request);
-
-export const replyToChat = (sessionId: string, request: ChatReplyRequest) =>
-  api<ChatTurn>("POST", `/api/v1/chat/${encodeURIComponent(sessionId)}/reply`, request);
-
-export const getChat = (sessionId: string) =>
-  api<ChatTurn>("GET", `/api/v1/chat/${encodeURIComponent(sessionId)}`);
-
-/** Sessions also expire on their own (uptest.chat.idle-timeout); this is the
- *  explicit "I am done" so an abandoned transcript does not wait for it. */
-export const endChat = (sessionId: string) =>
-  api<{ closed: string }>("DELETE", `/api/v1/chat/${encodeURIComponent(sessionId)}`);
 
 /* -------------------------------- agent --------------------------------- */
 

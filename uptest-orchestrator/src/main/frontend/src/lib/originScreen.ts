@@ -19,7 +19,7 @@ import type { Origin } from "../api/types";
   skipping the pinned value -- without deleting the first parameter.
 
   pinOrigin (see hooks/useOrigin.ts) is called from exactly one place:
-  SuggestPanel, on a successful /suggest or /suggest-many response. Do NOT
+  Senaryo Üret, on a successful generation. Do NOT
   call it from a catalog <select>'s onChange -- that reflex is the bug.
 */
 export function resolveOrigin(pinned: Origin | null, fallback: Origin): Origin {

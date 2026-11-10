@@ -163,7 +163,7 @@ export function EditorPane({
                 <>
                   <p className="run-empty-title">Senaryolar burada görünecek</p>
                   <p className="run-empty-text">
-                    Soldan <b>AI ile Senaryo Üret</b> ile üretin ya da bir senaryoyu buraya
+                    Soldan <b>Senaryo Üret</b> ile üretin ya da bir senaryoyu buraya
                     yazın veya yapıştırın.
                   </p>
                 </>

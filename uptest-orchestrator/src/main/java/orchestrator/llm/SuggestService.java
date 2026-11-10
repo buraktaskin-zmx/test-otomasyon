@@ -44,31 +44,18 @@ public class SuggestService {
      */
     private final int maxRepairs;
 
-    /** Upper bound on one batch, so a typed "500" cannot occupy the model for an hour. */
-    private final int maxScenarios;
-
-    /** How many scenarios of one batch are generated at the same time. */
-    private final int batchConcurrency;
-
     private final LlmClient llm;
     private final PromptBuilder prompts;
     private final ScenarioValidator validator;
-    private final VariationPlanner planner;
 
     public SuggestService(LlmClient llm,
                           PromptBuilder prompts,
                           ScenarioValidator validator,
-                          VariationPlanner planner,
-                          @Value("${llm.max-repairs:1}") int maxRepairs,
-                          @Value("${llm.max-scenarios:10}") int maxScenarios,
-                          @Value("${llm.batch-concurrency:4}") int batchConcurrency) {
+                          @Value("${llm.max-repairs:1}") int maxRepairs) {
         this.llm = llm;
         this.prompts = prompts;
         this.validator = validator;
-        this.planner = planner;
         this.maxRepairs = maxRepairs;
-        this.maxScenarios = maxScenarios;
-        this.batchConcurrency = Math.max(1, batchConcurrency);
     }
 
     /**
@@ -102,52 +89,6 @@ public class SuggestService {
         public static final ProductContext NONE = new ProductContext(null, List.of());
     }
 
-    /**
-     * @param loginStep the login line to force into the draft, or null to let
-     *                  the model write its own. Applied after every generation,
-     *                  including repairs, because the prompt asking for it is a
-     *                  request and this is the guarantee.
-     * @param product   the chosen product and its ticked rules, or
-     *                  {@link ProductContext#NONE}
-     */
-    public Suggestion suggest(String catalogYaml, String intent, Vocabulary vocabulary, String loginStep,
-                              ProductContext product) {
-        // Parsed once, then used by every validation pass including repairs.
-        // Empty when the catalog will not parse — the checks simply do not run,
-        // which is how this worked before they existed.
-        CatalogModel catalog = CatalogModel.parse(catalogYaml).orElse(null);
-
-        // No variation: this is the single-scenario path, where the analyst's
-        // intent really may ask for several input rows and a Scenario Outline
-        // is the right answer. OutlineFlattener reads that null and stands
-        // aside.
-        return one(prompts.system(vocabulary),
-                prompts.user(catalogYaml, intent, loginStep, null, product.rules()),
-                catalog, product.product(), vocabulary, loginStep, intent, null, maxRepairs);
-    }
-
-    /**
-     * One generation, and whatever the validator makes of it — no repair turn.
-     *
-     * For the chat, where a finding is not an error to be fixed behind the
-     * analyst's back but a QUESTION to put to them. The repair turn is the
-     * wrong instinct there, and this session proved how wrong: asked to verify
-     * a read-only field, the model first invented a value and then, shown the
-     * complaint, deleted the assertion — two guesses, both wrong, neither one
-     * the analyst would have made. The honest move is to stop at the first
-     * finding and ask.
-     *
-     * Deliberately the same pipeline otherwise: same prompt, same rewriters in
-     * {@link #settle}, same validator. The chat must not quietly produce a
-     * different class of scenario from the one the generator panel produces.
-     */
-    public Suggestion suggestOnce(String catalogYaml, String intent, Vocabulary vocabulary,
-                                  String loginStep, ProductContext product) {
-        CatalogModel catalog = CatalogModel.parse(catalogYaml).orElse(null);
-        return one(prompts.system(vocabulary),
-                prompts.user(catalogYaml, intent, loginStep, null, product.rules()),
-                catalog, product.product(), vocabulary, loginStep, intent, null, 0);
-    }
 
     /**
      * One scenario, from the prompt that asks for it to a verdict on what came
@@ -160,8 +101,8 @@ public class SuggestService {
      */
     private Suggestion one(String system, String userMessage, CatalogModel catalog,
                            ProductModel product, Vocabulary vocabulary, String loginStep,
-                           String intent, VariationPlanner.Variation variation, int repairs) {
-        return one(system, userMessage, catalog, product, vocabulary, loginStep, intent, variation,
+                           String intent, int repairs) {
+        return one(system, userMessage, catalog, product, vocabulary, loginStep, intent,
                 repairs, draft -> List.of());
     }
 
@@ -173,12 +114,12 @@ public class SuggestService {
      */
     private Suggestion one(String system, String userMessage, CatalogModel catalog,
                            ProductModel product, Vocabulary vocabulary, String loginStep,
-                           String intent, VariationPlanner.Variation variation, int repairs,
+                           String intent, int repairs,
                            Function<String, List<ValidationError>> extra) {
         List<String> log = new ArrayList<>();
 
         String draft = settle(llm.ask(system, userMessage), loginStep, catalog, vocabulary,
-                variation, intent);
+                intent);
         ValidationResult result = check(draft, vocabulary, catalog, intent, product, extra);
         int attempts = 1;
         log.add(describe(attempts, result));
@@ -188,7 +129,7 @@ public class SuggestService {
             // original task: the model already knows what it was asked for and
             // repeating it invites a fresh scenario instead of a fix.
             draft = settle(llm.ask(system, prompts.repair(draft, result)), loginStep, catalog,
-                    vocabulary, variation, intent);
+                    vocabulary, intent);
             result = check(draft, vocabulary, catalog, intent, product, extra);
             attempts++;
             log.add(describe(attempts, result));
@@ -233,7 +174,7 @@ public class SuggestService {
                                       ProductContext product,
                                       Function<String, List<ValidationError>> provenance) {
         return one(prompts.system(vocabulary), userMessage, null, product.product(), vocabulary,
-                null, intent, null, maxRepairs, provenance);
+                null, intent, maxRepairs, provenance);
     }
 
     /**
@@ -256,7 +197,7 @@ public class SuggestService {
                                          String loginStep,
                                          Function<String, List<ValidationError>> provenance) {
         return one(prompts.system(vocabulary), userMessage, catalog, product.product(), vocabulary,
-                loginStep, intent, null, maxRepairs, provenance);
+                loginStep, intent, maxRepairs, provenance);
     }
 
     /** A plain model call for the planning turn, which produces no Gherkin. */
@@ -282,187 +223,27 @@ public class SuggestService {
      * because it runs before the validation, never between its passes.
      *
      * ReadOnlyAssertion goes LAST because it is the only one that APPENDS: it
-     * has to find the final step of the finished draft, and OutlineFlattener
-     * can still be rewriting lines above it. It is also the only one that reads
-     * the analyst's intent, which is what tells it which field to assert about.
+     * has to find the final step of the finished draft, and the rewriters above
+     * it can still be changing lines. It is also the only one that reads the
+     * analyst's intent, which is what tells it which field to assert about.
+     *
+     * OutlineFlattener used to sit between the two. It resolved a Scenario
+     * Outline's placeholders FROM THE BATCH PLAN, so it only ever did anything
+     * when a variation was passed -- on every other path it read the null and
+     * stood aside. With the batch path gone there is no plan to resolve against
+     * and nothing it could do, so it went with it.
      */
     private static String settle(String answer, String loginStep, CatalogModel catalog,
-                                 Vocabulary vocabulary, VariationPlanner.Variation variation,
-                                 String intent) {
+                                 Vocabulary vocabulary, String intent) {
         return ReadOnlyAssertion.apply(
-                OutlineFlattener.apply(
-                        EntryRow.apply(
-                                DateVerb.apply(
-                                        LoginStep.apply(LlmOutputCleaner.clean(answer), loginStep),
-                                        catalog, vocabulary),
+                EntryRow.apply(
+                        DateVerb.apply(
+                                LoginStep.apply(LlmOutputCleaner.clean(answer), loginStep),
                                 catalog, vocabulary),
-                        variation),
+                        catalog, vocabulary),
                 catalog, vocabulary, intent);
     }
 
-    /* =========================== batch generation ========================== */
-
-    /**
-     * One scenario plus the data combination it was built to exercise.
-     *
-     * The variation travels back to the UI because it is what makes the list of
-     * drafts readable: "E-Fatura + hash kodu" tells an analyst what this one is
-     * for, where "Senaryo 3" tells them nothing. It comes from the planner, not
-     * from the model's own Scenario title, which is unverified text.
-     */
-    public record Scenario(int index, String label, Map<String, String> values,
-                           List<String> ticked, List<String> excluded, Suggestion suggestion) {
-    }
-
-    /**
-     * @param notes  what the analyst should know about the plan's limits, possibly empty
-     * @param tokens what the whole batch spent, or 0 when the server reported
-     *               nothing. Shown rather than hidden because it is the only
-     *               number that makes the cost of a batch comparable with the
-     *               cost of an agent walk — and until this existed, both were
-     *               guesses from prompt sizes.
-     */
-    public record Batch(List<Scenario> scenarios, List<String> notes, long tokens) {
-    }
-
-    /**
-     * N scenarios for one screen, each exercising a different combination of the
-     * values that screen offers.
-     *
-     * N SEPARATE documents, not one file holding N scenarios, and the reason is
-     * in the validator: {@code collectFromFeature} gathers every scenario's
-     * steps into ONE list and {@code checkAssertionsAreEarned} walks it with ONE
-     * set of written labels. In a five-scenario file the fifth scenario's
-     * `verify` is therefore "earned" by the first scenario's `enter` — the same
-     * hole that let an invented "Bayi Ünvanı" reach a browser run. Separate
-     * documents keep each check as strict as it is for a single scenario, give
-     * each draft its own repair turn so one bad generation cannot poison the
-     * rest, and leave each scenario independently runnable.
-     *
-     * CONCURRENT, up to {@code llm.batch-concurrency}. It was sequential, on the
-     * reasoning that one vLLM deployment means five requests share one GPU and
-     * finish no sooner — and that reasoning was wrong about the one server it
-     * was about. Continuous batching is what vLLM exists for: concurrent
-     * requests are folded into the same forward pass. The model makes it
-     * starker still — Qwen3.6-35B-A3B is a mixture of experts with 3B active
-     * parameters, so a single request is memory-bandwidth bound and leaves the
-     * GPU idle. Five at once finishes closer to the time of one than of five.
-     *
-     * Bounded rather than unbounded because this server is shared: firing a
-     * batch of ten in one go pushes every other team's request behind it.
-     */
-    public Batch suggestMany(String catalogYaml, String intent, Vocabulary vocabulary,
-                             String loginStep, int count, ProductContext product) {
-        int wanted = Math.max(1, Math.min(count, maxScenarios));
-        String system = prompts.system(vocabulary);
-        CatalogModel catalog = CatalogModel.parse(catalogYaml).orElse(null);
-
-        List<Scenario> scenarios = new ArrayList<>();
-        List<String> notes = new ArrayList<>();
-        if (count > maxScenarios) {
-            notes.add("En fazla " + maxScenarios + " senaryo üretilebilir; " + count
-                    + " istendi, " + wanted + " üretildi.");
-        }
-
-        // No parsed catalog means no variation plan: the planner reads fields,
-        // types and option lists, and there are none. The batch still runs —
-        // N drafts of the same request, which is what the analyst asked for —
-        // and says why they will look alike. Same choice as everywhere else
-        // here: an unparseable catalog switches checks OFF, it does not fail.
-        VariationPlanner.Plan plan = (catalog == null)
-                ? null
-                : planner.plan(catalog, wanted);
-        if (plan == null) {
-            // The reason, not just the fact. "Check the fields block" named neither
-            // the line nor the cause, and the causes are not guessable from the
-            // outside — a tab in the indent, a colon inside an unquoted Turkish
-            // sentence, a field written as a string. CatalogModel.diagnose re-reads
-            // the YAML only on this path, so a healthy catalog pays nothing.
-            notes.add("Katalog ayrıştırılamadı, bu yüzden veri kombinasyonu planlanamadı: "
-                    + wanted + " senaryo da aynı istekten üretildi ve birbirine çok "
-                    + "benzeyecek. SEBEP: " + CatalogModel.diagnose(catalogYaml));
-        } else {
-            notes.addAll(plan.notes());
-        }
-
-        // Read before the calls and subtracted after: see LlmClient.spent() for
-        // why a counter rather than a per-call return value.
-        long before = LlmClient.spent();
-
-        // Indexed, not appended: the tasks finish in whatever order the model
-        // answers them, and the analyst's list must still read 1..N.
-        Scenario[] done = new Scenario[wanted];
-        ExecutorService pool = Executors.newFixedThreadPool(Math.min(batchConcurrency, wanted));
-        try {
-            List<Future<?>> running = new ArrayList<>();
-            for (int i = 0; i < wanted; i++) {
-                final int index = i;
-                final VariationPlanner.Variation variation =
-                        (plan == null) ? null : plan.variations().get(i);
-                running.add(pool.submit(() -> {
-                    Suggestion suggestion = one(
-                            system,
-                            prompts.user(catalogYaml, intent, loginStep, variation, product.rules()),
-                            catalog, product.product(), vocabulary, loginStep, intent,
-                            variation, maxRepairs);
-                    done[index] = variation == null
-                            ? new Scenario(index, "Senaryo " + (index + 1),
-                                    Map.of(), List.of(), List.of(), suggestion)
-                            : new Scenario(index, variation.label(), variation.values(),
-                                    variation.ticked(), variation.excluded(), suggestion);
-                }));
-            }
-            for (int i = 0; i < running.size(); i++) {
-                awaitOne(running.get(i), i, done, plan, notes);
-            }
-        } finally {
-            // Per request, never a field: a long-lived pool would hold threads
-            // for a batch nobody is waiting on any more, and would still be
-            // running them while Spring tries to shut down.
-            pool.shutdownNow();
-        }
-
-        for (Scenario scenario : done) {
-            if (scenario != null) {
-                scenarios.add(scenario);
-            }
-        }
-
-        long tokens = LlmClient.spent() - before;
-        System.out.println("[uptest] suggest-many: " + scenarios.size() + "/" + wanted
-                + " senaryo, " + tokens + " token");
-        return new Batch(scenarios, notes, tokens);
-    }
-
-    /**
-     * Waits for one scenario and keeps a failure from taking the batch with it.
-     *
-     * Four drafts an analyst can read beat an error page that mentions none of
-     * them, and a batch is exactly the shape where one bad answer should not
-     * cost the other four — they are independent model calls with nothing
-     * shared between them. The failure is reported as a note naming WHICH
-     * scenario died, because a silently shorter list looks like the planner
-     * decided to produce fewer.
-     */
-    private static void awaitOne(Future<?> task, int index, Scenario[] done,
-                                 VariationPlanner.Plan plan, List<String> notes) {
-        try {
-            task.get();
-        } catch (InterruptedException interrupted) {
-            Thread.currentThread().interrupt();
-            notes.add((index + 1) + ". senaryo üretimi yarıda kesildi.");
-        } catch (ExecutionException failed) {
-            Throwable cause = failed.getCause() == null ? failed : failed.getCause();
-            String label = (plan == null)
-                    ? "Senaryo " + (index + 1)
-                    : plan.variations().get(index).label();
-            notes.add((index + 1) + ". senaryo üretilemedi (" + label + "): "
-                    + cause.getClass().getSimpleName() + ": " + cause.getMessage()
-                    + ". Diğer senaryolar etkilenmedi.");
-            System.out.println("[uptest] suggest-many: " + (index + 1) + ". senaryo basarisiz — "
-                    + cause);
-        }
-    }
 
     private static String describe(int attempt, ValidationResult result) {
         return "attempt " + attempt + ": "

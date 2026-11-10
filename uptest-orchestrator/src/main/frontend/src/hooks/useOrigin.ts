@@ -7,7 +7,7 @@ import type { Origin } from "../api/types";
   the invariant itself; this is just React state wrapped around it.
 
   pinOrigin must be called from exactly one place in the whole app:
-  SuggestPanel (and MultiPanel) on a successful generation. Never from a
+  Senaryo Üret on a successful generation. Never from a
   catalog <select>'s onChange.
 */
 export function useOrigin() {

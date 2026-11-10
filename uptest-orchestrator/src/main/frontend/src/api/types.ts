@@ -131,72 +131,6 @@ export interface ValidationResult {
 }
 
 /* ========================================================================
-   Chat -- POST /api/v1/chat, POST /{id}/reply, GET /{id}, DELETE /{id}
-
-   Writing a scenario by talking about it: the generator with its repair turn
-   pointed at a person. A validation finding arrives as a QUESTION with the
-   legal answers as buttons, instead of going back to the model to guess at.
-   ======================================================================== */
-
-/** ChatQuestions.ChatOption record. `valuePrompt` is null unless
- *  `needsValue`, in which case it is the label for the input to show. */
-export interface ChatOption {
-  id: string;
-  label: string;
-  needsValue: boolean;
-  valuePrompt: string | null;
-}
-
-/** ChatQuestions.ChatQuestion record. `options` is never null, but IS empty
- *  for findings whose legal answers are not known -- there `allowsFreeText`
- *  carries the whole interaction. */
-export interface ChatQuestion {
-  text: string;
-  options: ChatOption[];
-  allowsFreeText: boolean;
-}
-
-/** ChatSession.Message record. */
-export interface ChatMessage {
-  role: "ai" | "you";
-  text: string;
-}
-
-/** ChatController.ChatTurn record. `feature` and `validation` are null until
- *  the first generation; `complete` means valid with nothing pending, i.e.
- *  ready to run or to hand to the editor. */
-export interface ChatTurn {
-  sessionId: string;
-  messages: ChatMessage[];
-  question: ChatQuestion | null;
-  /** The opening text plus every answer. Use this as the Origin's `intent`
-   *  when handing the draft to the editor: re-validation looks for expected
-   *  values in the intent, and a value supplied mid-conversation lives here
-   *  and nowhere else. */
-  request: string;
-  /** The product this conversation is held under, or null. Put it in the
-   *  Origin alongside `request` when handing the draft over, for the same
-   *  reason: the editor re-validates, and the accepted message set comes
-   *  from here. */
-  product: string | null;
-  feature: string | null;
-  validation: ValidationResult | null;
-  complete: boolean;
-}
-
-/** ChatController.StartRequest. `userid` is required for NGC, refused
- *  server-side when a cif is given without it -- same rule as /suggest. */
-export interface ChatStartRequest {
-  app: string;
-  flow: string;
-  cif: string;
-  userid: string;
-  text: string;
-  product?: string;
-  ruleIds?: string[];
-}
-
-/* ========================================================================
    Products -- GET /api/v1/products, GET /api/v1/products/{app}/{product}
 
    What the application must DO, as opposed to what a screen HAS. A catalog
@@ -488,13 +422,6 @@ export interface ProductDetail extends ProductSummary {
   openQuestions: string;
 }
 
-/** ChatController.ReplyRequest. Either a button (`optionId`, plus `value`
- *  when that button asked for one) or something typed (`text`). */
-export interface ChatReplyRequest {
-  optionId?: string;
-  value?: string;
-  text?: string;
-}
 
 /* ========================================================================
    Runs -- POST/GET /api/v1/runs, GET /api/v1/runs/{id}, .../artifacts, /stop
@@ -651,66 +578,6 @@ export interface SaveCatalogRequest {
 
 export interface SaveCatalogResponse {
   catalog: string;
-}
-
-/** ScenarioController.SuggestRequest -- note the lowercase `userid`
- *  (contrast ExploreRequest.userId below, which has a capital I; the two
- *  endpoints really do disagree and it is not a typo to "fix"). */
-export interface SuggestRequest extends Origin {
-  cif: string;
-  userid: string;
-  /** The rule ids the analyst ticked. Shapes the PROMPT only -- the validator
-   *  sees the product's whole message set regardless, which is why this is
-   *  NOT part of Origin. */
-  ruleIds?: string[];
-}
-
-/** SuggestService.Suggestion record -- FIVE fields. `validation` (the nested
- *  ValidationResult, carrying the per-line errors when valid is false) is
- *  the one most easily dropped; it is not redundant with `valid`. */
-export interface SuggestResponse {
-  feature: string;
-  valid: boolean;
-  validation: ValidationResult;
-  attempts: number;
-  log: string[];
-}
-
-/** ScenarioController.SuggestManyRequest. `count` is boxed server-side so a
- *  missing value defaults to 5 rather than becoming a batch of zero; the
- *  client may omit it the same way. */
-export interface SuggestManyRequest extends Origin {
-  cif: string;
-  userid: string;
-  count?: number;
-  ruleIds?: string[];
-}
-
-/**
- * One row of a batch response -- deliberately FLATTENED (not nested as
- * {..., suggestion: {...}}) so a draft card reads the same `feature`/
- * `valid`/`validation`/`attempts`/`log` fields a single /suggest response
- * has, plus the variation that tells this draft apart from its siblings.
- * Ten keys, this order, from ScenarioController.suggestMany().
- */
-export interface DraftScenario {
-  index: number;
-  label: string;
-  values: Record<string, string>;
-  ticked: string[];
-  excluded: string[];
-  feature: string;
-  valid: boolean;
-  validation: ValidationResult;
-  attempts: number;
-  log: string[];
-}
-
-export interface SuggestManyResponse {
-  count: number;
-  tokens: number;
-  notes: string[];
-  scenarios: DraftScenario[];
 }
 
 /* ========================================================================

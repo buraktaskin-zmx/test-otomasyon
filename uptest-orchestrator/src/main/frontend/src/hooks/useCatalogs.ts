@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { getCatalogs } from "../api/endpoints";
 
 /*
-  Shared by SuggestPanel and MultiPanel -- both generator dropdowns are
+  Shared by the panels that offer a screen dropdown -- the generator
   filled from this ONE response (app.js:559-567: "A second fetch for the
   second panel would be the same answer twice and could disagree with
   itself"). `reload` is called after a successful catalog save, so a newly

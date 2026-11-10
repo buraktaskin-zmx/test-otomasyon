@@ -7,10 +7,8 @@ import type { Draft } from "./multi/draft";
 import { AgentPanel } from "./side/AgentPanel";
 import { ProductPanel } from "./side/ProductPanel";
 import { UsersPanel } from "./side/UsersPanel";
-import { ChatView } from "../chat/ChatView";
 import { SideRail } from "./side/SidePane";
 import type { SideTab } from "./side/SidePane";
-import { SuggestPanel } from "./side/SuggestPanel";
 import { TimelinePanel } from "./side/TimelinePanel";
 import type { RunTab } from "./side/TimelinePanel";
 import { Badge } from "../ui/Badge";
@@ -43,6 +41,11 @@ import type { useVocabulary } from "../hooks/useVocabulary";
   else (an ordinary single scenario, OR a draft opened from the list, which
   looks the same as a single scenario plus the multiBar strip).
 */
+/* The empty origin, for when nothing has been pinned. A module constant
+   rather than state: the panel that used to report a live fallback is gone,
+   so this never changes and a useState would re-render for nothing. */
+const NO_FALLBACK: Origin = { app: "", flow: "", intent: "", product: "" };
+
 export function WorkspaceView({
   active,
   vocabulary,
@@ -88,15 +91,11 @@ export function WorkspaceView({
   const runPoll = useRunPoll();
   const artifacts = useRunArtifacts(runPoll.run?.runId ?? null, runPoll.run?.status ?? null);
 
-  /* The live fallback screen/intent AI Üret or Çoklu Üret currently shows --
-     read only when nothing has been pinned yet. See lib/originScreen.ts. */
-  const [fallbackOrigin, setFallbackOrigin] = useState<Origin>({
-    app: "",
-    flow: "",
-    intent: "",
-    product: "",
-  });
-  const resolvedOrigin = origin.resolve(fallbackOrigin);
+  /* Nothing reports a live fallback screen any more: the panel that did (AI
+     ile Senaryo Üret) is gone, and Senaryo Üret pins the origin itself with
+     every draft it hands over. Kept as the empty shape rather than removed,
+     so origin.resolve's contract is unchanged. See lib/originScreen.ts. */
+  const resolvedOrigin = origin.resolve(NO_FALLBACK);
 
   /* ------------------------------ Çoklu Üret ------------------------------ */
 
@@ -203,10 +202,11 @@ export function WorkspaceView({
 
   /* --------------------------- catalog save sync --------------------------- */
 
-  const [lastSavedCatalog, setLastSavedCatalog] = useState<string | null>(null);
+  /* The saved catalog's NAME used to be kept so the two generator panels
+     could preselect it; both are gone and nothing reads it, so the save now
+     only refreshes the list. */
   const handleCatalogSaved = useCallback(
-    (name: string) => {
-      setLastSavedCatalog(name);
+    () => {
       void catalogs.reload();
     },
     [catalogs],
@@ -385,25 +385,13 @@ export function WorkspaceView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sideTab]);
 
-  /* Chat's Çalıştır: the draft goes into the editor FIRST, then runs. The
-     editor is where a scenario lives once it exists -- validated, with the
-     gutter and the error panel around it -- and a run whose scenario is not
-     the one on screen is the stale-panel bug all over again. */
-  const runDraft = useCallback(
-    (text: string, where: Origin) => {
-      handleGenerated(text, where);
-      void runWith(text, where);
-    },
-    [handleGenerated, runWith],
-  );
-
   /* Three panels need the whole workspace rather than the 40% column: a
      conversation beside a growing draft, a three-level tree beside a
      five-column table, and a login pool beside the form that edits it.
      Each of the three is READ far more than the editor is while it is
      open, which is the test -- not how much markup it happens to have. */
   const wideMode = panelOpen
-    && (sideTab === "chat" || sideTab === "product" || sideTab === "users"
+    && (sideTab === "product" || sideTab === "users"
       || sideTab === "agent" || sideTab === "dashboard" || sideTab === "flow");
 
   const liveRun = runPoll.run?.status === "RUNNING";
@@ -482,15 +470,6 @@ export function WorkspaceView({
           "pane pane-side" + (panelOpen ? "" : " is-closed") + (wideMode ? " is-wide" : "")
         }
       >
-        <ChatView
-          active={sideTab === "chat"}
-          catalogs={catalogs.catalogs}
-          products={products}
-          users={users}
-          preselect={lastSavedCatalog}
-          onHandOff={handleGenerated}
-          onRunDraft={runDraft}
-        />
         <DashboardPanel
           active={sideTab === "dashboard"}
           users={users}
@@ -544,16 +523,6 @@ export function WorkspaceView({
           vocabularyLoaded={vocabulary.loaded}
           vocabularyFailed={vocabulary.failed}
           onInsert={insertAtCursor}
-        />
-        <SuggestPanel
-          active={sideTab === "suggest"}
-          catalogs={catalogs.catalogs}
-          products={products}
-          users={users}
-          preselect={lastSavedCatalog}
-          onGenerated={handleGenerated}
-          onBatchGenerated={handleBatchGenerated}
-          onFallbackChange={setFallbackOrigin}
         />
         {agentVisible ? (
           <AgentPanel
