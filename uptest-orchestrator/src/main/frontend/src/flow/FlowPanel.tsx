@@ -4,14 +4,13 @@ import {
   readScreen, saveCatalog, saveFlow, savePlan, screenshotHref, suggestFromFlow,
 } from "../api/endpoints";
 import type {
-  FlowDraft, FlowNode, FlowPlan, FlowTree, ProductSummary, ScreenRead, TestUser,
+  FlowDraft, FlowNode, FlowTree, ProductSummary, ScreenRead, TestUser,
 } from "../api/types";
 import { PanelHead } from "../workspace/side/PanelHead";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { useToast } from "../ui/Toast";
 import { useAsyncAction } from "../hooks/useAsyncAction";
 import { FlowCanvas, newEdge, nextNodeId, placeChild } from "./FlowCanvas";
-import { FlowPlanList } from "./FlowPlanList";
 import { FlowRulesCard } from "./FlowRulesCard";
 import { ScreenPreview } from "./ScreenPreview";
 
@@ -76,7 +75,6 @@ export function FlowPanel({
   const [results, setResults] = useState<ScreenRead[] | null>(null);
   const [dirty, setDirty] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const [plan, setPlan] = useState<FlowPlan>({ scenarios: [], notes: [] });
   const [count, setCount] = useState(25);
   const [loginId, setLoginId] = useState("");
   const [drafts, setDrafts] = useState<FlowDraft[] | null>(null);
@@ -106,7 +104,6 @@ export function FlowPanel({
       setScreenshots(result.body.screenshots ?? {});
       setReads(result.body.reads ?? {});
       setVisionReady(result.body.visionReady);
-      setPlan(result.body.plan ?? { scenarios: [], notes: [] });
       setResults(null);
       setDrafts(null);
       setSelected(null);
@@ -259,28 +256,51 @@ export function FlowPanel({
 
   /* ------------------------- plan and generate ------------------------- */
 
-  const makePlan = useAsyncAction(async () => {
+  /* One button, both stages.
+
+     The server side is unchanged and still two calls: one cheap planning call
+     that writes the scenarios in Turkish, then one generation call per
+     scenario. What is gone is the STOP in between -- the editable list of N
+     scenarios that used to be shown for review before any generation was
+     spent. It was the analyst's own request to remove it: twenty-five blocks
+     of three textareas each is a screen nobody reads.
+
+     The cost is real and worth stating once, where whoever reverses this will
+     find it: nothing now checks WHICH scenarios were chosen before the
+     expensive calls fire. A wrong plan is discovered as twenty-five wrong
+     scenarios instead of as one wrong list. The plan is still written to
+     plan.json, so it can be read after the fact.
+
+     `planned` is used rather than the state that was just set: setPlan does
+     not take effect until the next render, so savePlan would otherwise post
+     the PREVIOUS plan -- or an empty one on the first run. */
+  const produce = useAsyncAction(async () => {
+    if (!chosenUser) { toast("Önce bir test kullanıcısı seçin.", true); return; }
     if (dirty) {
       const saved = await saveFlow(app, product, flow);
       if (!saved.ok) { toast("Önce akış kaydedilemedi: " + saved.error, true); return; }
       setDirty(false);
     }
-    const result = await planFlow(app, product, count, []);
-    if (!result.ok) { toast("Plan üretilemedi: " + result.error, true); return; }
-    setPlan(result.body);
-    setDrafts(null);
-    absorb(result.body.screens ?? []);
-    toast(result.body.scenarios.length + " senaryo planlandı — üretmeden önce gözden geçirin");
-  });
 
-  const generate = useAsyncAction(async () => {
-    if (!chosenUser) { toast("Önce bir test kullanıcısı seçin.", true); return; }
-    const saved = await savePlan(app, product, plan);
+    const planResult = await planFlow(app, product, count, []);
+    if (!planResult.ok) { toast("Senaryolar planlanamadı: " + planResult.error, true); return; }
+    const planned = planResult.body;
+    setDrafts(null);
+    absorb(planned.screens ?? []);
+    if (planned.scenarios.length === 0) {
+      planned.notes.forEach((note) => toast(note, true));
+      toast("Model hiç senaryo döndürmedi; üretim yapılmadı.", true);
+      return;
+    }
+
+    const saved = await savePlan(app, product, planned);
     if (!saved.ok) { toast("Plan kaydedilemedi: " + saved.error, true); return; }
+
     const result = await suggestFromFlow(app, product,
       { cif: chosenUser.cif, userid: chosenUser.userid, id: chosenUser.id }, []);
     if (!result.ok) { toast("Senaryolar üretilemedi: " + result.error, true); return; }
     setDrafts(result.body.scenarios);
+    planned.notes.forEach((note) => toast(note, true));
     result.body.notes.forEach((note) => toast(note, true));
     const invalid = result.body.scenarios.filter((d) => !d.valid).length;
     toast(result.body.scenarios.length + " senaryo üretildi"
@@ -339,7 +359,7 @@ export function FlowPanel({
   const previewNode = preview
     ? flow.nodes.find((n) => n.id === preview.nodeId) ?? null
     : null;
-  const busy = save.busy || reread.busy || makePlan.busy || generate.busy || saveAll.busy;
+  const busy = save.busy || reread.busy || produce.busy || saveAll.busy;
 
   return (
     <div id="side-flow" className={"side-panel flow-panel" + (active ? " is-active" : "")} ref={panel}>
@@ -369,18 +389,35 @@ export function FlowPanel({
         <label className="fc-product">
           <span>Senaryo</span>
           <input className="search fc-count" type="number" min={1} max={40} value={count}
-                 disabled={busy} aria-label="Kaç senaryo planlansın"
+                 disabled={busy} aria-label="Kaç senaryo üretilsin"
                  onChange={(event) => setCount(Number(event.target.value) || 1)} />
         </label>
+        {/* The login is chosen BEFORE the button now, not after the plan:
+            there is no plan screen left to put it on, and the run grafts this
+            user's login line into every scenario it writes. */}
+        <label className="fc-product">
+          <span>Test kullanıcısı</span>
+          <select className="search" value={loginId} disabled={busy}
+                  onChange={(event) => setLoginId(event.target.value)}>
+            {users.length === 0 ? <option value="">(kayıtlı kullanıcı yok)</option> : null}
+            {users.map((user) => (
+              <option key={user.id} value={user.id}>
+                {user.cif}{user.name ? " — " + user.name : ""}
+              </option>
+            ))}
+          </select>
+        </label>
         <button type="button" className="btn btn-primary"
-                disabled={busy || flow.nodes.length === 0}
-                title={unread > 0
-                  ? unread + " ekran henüz okunmadı; planlama önce onları okuyacak (yavaş)"
-                  : undefined}
-                onClick={() => void makePlan.run()}>
-          {makePlan.busy
-            ? (unread > 0 ? "Ekranlar okunuyor…" : "Planlanıyor…")
-            : "Senaryoları Planla"}
+                disabled={busy || flow.nodes.length === 0 || !chosenUser}
+                title={!chosenUser
+                  ? "Önce bir test kullanıcısı seçin"
+                  : unread > 0
+                    ? unread + " ekran henüz okunmadı; üretim önce onları okuyacak (yavaş)"
+                    : undefined}
+                onClick={() => void produce.run()}>
+          {produce.busy
+            ? (unread > 0 ? "Ekranlar okunuyor…" : "Üretiliyor…")
+            : "Senaryo Üret"}
         </button>
       </PanelHead>
 
@@ -399,7 +436,7 @@ export function FlowPanel({
           Kutular ekran, oklar geçiş. Bir okun etiketi, o geçişi yapan kontrolün
           ÜSTÜNDEKİ yazıdır ("Fatura Oluştur") — senaryo onu <code>click</code> olarak
           kullanır. Bir kutuyu seçip <strong>Ctrl+V</strong> ile ekran görüntüsü yapıştırın.
-          Ekranları ayrıca okutmanız gerekmez: <strong>Senaryoları Planla</strong> taslağı
+          Ekranları ayrıca okutmanız gerekmez: <strong>Senaryo Üret</strong> taslağı
           olmayanları kendisi okur.
         </p>
 
@@ -505,30 +542,10 @@ export function FlowPanel({
 
         <FlowRulesCard flow={flow} busy={busy} onChange={change} />
 
-        {plan.scenarios.length > 0 || makePlan.busy ? (
+        {drafts || produce.busy ? (
           <>
-            <FlowPlanList plan={plan} flow={flow} busy={busy}
-                          onChange={(next) => { setPlan(next); setDrafts(null); }} />
             <section className="fc-editor">
               <div className="fc-editor-actions">
-                <label className="fc-product">
-                  <span>Test kullanıcısı</span>
-                  <select className="search" value={loginId} disabled={busy}
-                          onChange={(event) => setLoginId(event.target.value)}>
-                    {users.length === 0 ? <option value="">(kayıtlı kullanıcı yok)</option> : null}
-                    {users.map((user) => (
-                      <option key={user.id} value={user.id}>
-                        {user.cif}{user.name ? " — " + user.name : ""}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button type="button" className="btn btn-primary"
-                        disabled={busy || plan.scenarios.length === 0 || !chosenUser}
-                        title={!chosenUser ? "Önce bir test kullanıcısı seçin" : undefined}
-                        onClick={() => void generate.run()}>
-                  {generate.busy ? "Üretiliyor…" : plan.scenarios.length + " senaryo üret"}
-                </button>
                 {drafts ? (
                   <button type="button" className="btn btn-ghost" disabled={busy}
                           onClick={() => void saveAll.run()}>
@@ -542,10 +559,10 @@ export function FlowPanel({
                   </button>
                 ) : null}
               </div>
-              {generate.busy ? (
+              {produce.busy ? (
                 <p className="db-note">
                   Her senaryo ayrı bir model çağrısı, dörder dörder paralel.
-                  {" " + plan.scenarios.length} senaryo birkaç dakika sürebilir.
+                  {" " + count} senaryo birkaç dakika sürebilir.
                 </p>
               ) : null}
               {drafts ? (
