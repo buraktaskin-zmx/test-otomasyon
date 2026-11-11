@@ -70,7 +70,7 @@ public final class TapeRenderer {
     private static final List<String> SILENT = List.of(
             "browser_snapshot", "browser_find", "browser_wait_for", "browser_navigate",
             "browser_console_messages", "browser_network_requests", "browser_take_screenshot",
-            RunVerdict.TOOL);
+            RunVerdict.TOOL, AiRunPrelude.LOGIN_TOOL);
 
     /** A failed look at the page is a retry, not a failed action. */
     private static final List<String> SILENT_FAILURES = List.of("browser_snapshot", "browser_find");
@@ -110,6 +110,20 @@ public final class TapeRenderer {
             // its snapshots but produces no steps: it is either the login or
             // an attempt that failed and was started over.
             if (i < entry) {
+                continue;
+            }
+
+            // "AI ile çalıştır" opens the screen in code (AiRunPrelude) and
+            // writes one entry for it, with the menu and the screen as
+            // arguments. That is the navigate step itself; there is no click
+            // on the main menu to find. Should the agent go back to the main
+            // menu later, `entry` lies beyond this and the usual rule applies.
+            if (AiRunPrelude.MENU_TOOL.equals(call.tool())) {
+                if ("OK".equals(call.outcome()) && !started) {
+                    started = true;
+                    steps.add("navigate to \"" + argOf(call, "mainMenu") + "\" \""
+                            + argOf(call, "screen") + "\"");
+                }
                 continue;
             }
 

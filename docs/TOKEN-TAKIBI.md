@@ -120,3 +120,31 @@ GET /api/v1/ai-traces/{id}/content/{sha}      → text/plain, maskelenmiş
 
 `POST /api/v1/explore`, `/explore/catalog` ve `/explore/gherkin` cevaplarına
 `traceId` eklendi (isteğe bağlı alan; eski istemciler etkilenmez).
+
+## 8. "AI ile çalıştır" neden pahalıydı, ne yapıldı
+
+**Ölçüm (11.11.2026, `firma-fatura-islemleri/10-...salt-okunur`):** 52 tur,
+1.478.146 girdi token'ı, 5.176 çıktı. Hiçbir tek tur 131.072'lik pencereye
+yaklaşmadı (en büyüğü 52.667) — maliyet, ajanın **her turda bütün konuşmayı
+yeniden göndermesinden**: tool sonuçları %66 (her biri küçük, ama sonraki her
+turda tekrar gidiyor), tool tanımları %15, system prompt %7. Turların yarısı
+bekleme (11), arama (10) ve ağ trafiği (4) — ve bunları prompt'un kendisi
+istiyordu ("SEARCH, DO NOT SNAPSHOT", "wait a few seconds … READ THE PAGE AGAIN").
+
+**Yapılanlar — yalnız "AI ile çalıştır"; Ekran Keşfi aynen:**
+
+| | Ne | Nerede |
+|---|---|---|
+| 1 | Her turda yalnızca **son** tool sonucu tam gider; eskiler çalıştırılan Playwright satırına iner. Giriş sonrası ilk ekran da ikinci turda kısalır. Bant tam sonuçları tutmaya devam eder | `CompactingChatModel` |
+| 2 | Giriş ve menü **koddan**, executor'ın seçicileriyle; başarısızlıkta ajana düşer. Şifre ve SMS kodu artık modele gitmez | `AiRunPrelude` |
+| 3 | Araçlar daraltıldı: bekleme, arama, ağ, konsol, ekran görüntüsü yok | `ExploreController.AI_RUN_TOOLS` |
+| 4 | Her eylemden sonra sayfa kodla okunur ve sonuca eklenir (`uptest.explore.settle-ms`) | `AiRunPolicy` |
+| 5 | Kısa system prompt (~1/3) | `AgentPrompts.RUN_SYSTEM` |
+| 6 | Hedef 100.000 token: %80'de ajana "bitir" notu; aşılırsa **durdurulmaz**, AI Özet'e uyarı | `uptest.explore.ai-run.token-budget` |
+
+Gherkin oluştur etkilenmez: bant, koddan yapılan menüyü tek bir `prelude_menu`
+kaydı olarak tutar ve renderer bundan `navigate to` satırını üretir.
+
+**Beklenen** (tahmin, VDI'da ölçülecek): ~6–8 tur, tur başına 5–7 bin, toplam
+35–55 bin. Token Takibi'nde oturumun "Bütçe" kartı ve listede "bütçe aşıldı"
+işareti hedefe göre durumu gösterir.

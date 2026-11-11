@@ -3,6 +3,7 @@ package orchestrator.aitrace;
 import orchestrator.persistence.AiSessionEntity;
 import orchestrator.persistence.AiToolCallEntity;
 import orchestrator.persistence.AiTurnEntity;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -40,9 +41,14 @@ public class AiTraceService {
     private final AiTraceStore store;
     private final AiTraceRecorder recorder;
 
-    public AiTraceService(AiTraceStore store, AiTraceRecorder recorder) {
+    /** "AI ile çalıştır"'s token target (uptest.explore.ai-run.token-budget); 0 = none. */
+    private final long aiRunBudget;
+
+    public AiTraceService(AiTraceStore store, AiTraceRecorder recorder,
+                          @Value("${uptest.explore.ai-run.token-budget:100000}") long aiRunBudget) {
         this.store = store;
         this.recorder = recorder;
+        this.aiRunBudget = Math.max(0, aiRunBudget);
     }
 
     /* ----------------------------- overview ----------------------------- */
@@ -95,7 +101,7 @@ public class AiTraceService {
         List<SessionRow> rows = all.stream().limit(LIST_LIMIT).map(AiTraceService::row).toList();
         boolean running = all.stream().anyMatch(session -> "RUNNING".equals(session.getStatus()));
         return new Overview(name, kind == null ? "" : kind, kpis, daily(all, since, "all".equals(name)), kindRows, rows,
-                running, all.size() > LIST_LIMIT);
+                running, all.size() > LIST_LIMIT, aiRunBudget);
     }
 
     /**
@@ -147,7 +153,8 @@ public class AiTraceService {
                 : store.session(session.getParentId()).map(AiTraceService::row).orElse(null);
         List<SessionRow> children = store.children(id).stream().map(AiTraceService::row).toList();
         return Optional.of(new Detail(row(session), parent, turns, tools, toolStats(calls),
-                totals(turns), children));
+                totals(turns), children,
+                "ai-run".equals(session.getKind()) && aiRunBudget > 0 ? aiRunBudget : null));
     }
 
     /** Per tool: how often, how it went, what its results cost. */
@@ -343,8 +350,9 @@ public class AiTraceService {
     public record KindRow(String kind, int sessions, long tokens) {
     }
 
+    /** {@code aiRunBudget}: "AI ile çalıştır"'s token target; 0 when none is set. */
     public record Overview(String period, String kind, Kpis kpis, List<Day> daily, List<KindRow> byKind,
-                           List<SessionRow> sessions, boolean running, boolean truncated) {
+                           List<SessionRow> sessions, boolean running, boolean truncated, long aiRunBudget) {
     }
 
     /** {@code missingTurns}: turns not yet (or never) split — counted in no part. */
@@ -369,8 +377,10 @@ public class AiTraceService {
                            Long resultTokens, long durationMs) {
     }
 
+    /** {@code budget}: the token target this session was run against; null for other kinds. */
     public record Detail(SessionRow session, SessionRow parent, List<TurnRow> turns, List<ToolRow> toolCalls,
-                         List<ToolStat> toolStats, BreakdownRow totals, List<SessionRow> children) {
+                         List<ToolStat> toolStats, BreakdownRow totals, List<SessionRow> children,
+                         Long budget) {
     }
 
     public record MessageRow(int index, String role, String name, String toolCallId, String sha, int chars,

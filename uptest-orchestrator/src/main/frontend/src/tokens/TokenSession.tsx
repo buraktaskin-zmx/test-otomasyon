@@ -64,6 +64,15 @@ export function TokenSession({ data, onOpenSession }: {
              sub={s.toolCalls ? [refused ? refused + " reddedildi" : "", failed ? failed + " hata" : "",
                "araçta " + formatDuration(toolMs)].filter(Boolean).join(" · ") : "tool kullanılmadı"} />
         <Kpi label="Süre" value={formatDuration(s.durationMs)} sub={formatTime(s.startedAt)} />
+        {data.budget ? (
+          <Kpi
+            label="Bütçe"
+            tone={s.totalTokens > data.budget ? "fail" : "ok"}
+            value={percent(s.totalTokens, data.budget)}
+            sub={tokens(s.totalTokens) + " / " + tokens(data.budget)
+              + (s.totalTokens > data.budget ? " · aşıldı" : "")}
+          />
+        ) : null}
       </div>
 
       <div className="db-grid">

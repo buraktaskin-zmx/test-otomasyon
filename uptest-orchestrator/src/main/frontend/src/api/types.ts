@@ -674,6 +674,9 @@ export interface ExploreRequest {
   product?: string;
   flow?: string;
   scenarioPath?: string;
+  /** The screen's name as its menu prints it: where the code navigates
+   *  before the agent starts ("AI ile çalıştır" only). */
+  screen?: string;
 }
 
 /** POST /api/v1/explore 200 body.
@@ -1179,6 +1182,8 @@ export interface AiTraceOverview {
   running: boolean;
   /** More sessions than the list shows; the totals still count them all. */
   truncated: boolean;
+  /** "AI ile çalıştır"'s token target; 0 when none is set. */
+  aiRunBudget: number;
 }
 
 /** A prompt split by source. Every part null until counted; `exact` false =
@@ -1257,6 +1262,8 @@ export interface AiTraceDetail {
   toolStats: AiToolStat[];
   totals: AiBreakdown | null;
   children: AiSession[];
+  /** The token target this session ran against ("AI ile çalıştır" only). */
+  budget: number | null;
 }
 
 export interface AiMessage {

@@ -261,7 +261,12 @@ Elsewhere:
   ile çalıştır" (`source: "ai-run"`) ends with `RunVerdict`'s `report_result`
   tool -- succeeded / failed / warnings, all REQUIRED, `returnDirect` -- and
   the verdict is settled in code (one failed step is "Geçmedi" whatever the
-  agent claimed); Serbest Gözlem keeps its prose `ANSWER_RULES`. The draft
+  agent claimed); Serbest Gözlem keeps its prose `ANSWER_RULES`. That run is
+  also the CHEAP walk (docs/TOKEN-TAKIBI.md §8): `AiRunPrelude` logs in and
+  opens the menu in code, `CompactingChatModel` sends only the latest tool
+  result whole, `AiRunPolicy` hands back the page after every action and
+  notes the token budget, `ExploreController.AI_RUN_TOOLS` narrows the
+  toolbox and `RUN_SYSTEM` replaces `SYSTEM`. The draft
   checks (`problems()`) are in
   `CatalogDraftChecks`; a lesson below that says `ExploreController.SYSTEM`
   means `AgentPrompts.SYSTEM`. The walk-to-Gherkin renderer is `TapeRenderer`
@@ -1156,6 +1161,17 @@ and leave each independently runnable.
   to save a catalog that did not exist. `app.css` now declares
   `[hidden] { display: none !important }` once, so `el.x.hidden = true` means
   what it says. Worth remembering before adding another panel that toggles.
+- **An agent's cost is turns × everything it has seen, not what it reads.**
+  The first measured "AI ile çalıştır" took 52 turns and 1.48 million input
+  tokens for a scenario whose results were small — a snapshot ~2,200 tokens,
+  a click ~160 — because the tool loop resends the whole conversation every
+  turn, so turn 3's page was paid for 49 more times. The per-turn context
+  limit (131,072) was never in danger; the bill was. Half the turns were the
+  prompt's own advice ("SEARCH, DO NOT SNAPSHOT", "wait … READ THE PAGE
+  AGAIN"), each a full round trip. The fixes are all the same move: take a
+  turn away from the model when code can do it (login, menu, waiting, reading
+  the page), and stop resending what is dead (old pages). A shorter prompt is
+  the smallest of them.
 - **Hooks must close everything even when tracing fails.** `Playwright.create()`
   starts a node driver process per scenario; a throwing `tracing().stop()` that
   skipped the closes leaked that driver and its browser for the lifetime of the

@@ -61,7 +61,7 @@ class RunVerdictTest {
         Object[] tools = BudgetedTool.wrap(
                 List.of(fake(RunVerdict.TOOL, reached), fake("browser_click", reached)),
                 0, null, List.of("Garantili Ödeme"), new LinkedHashSet<>(),
-                "TIKLAMA: Garantili Ödeme", new AtomicBoolean(), tape, verdict);
+                "TIKLAMA: Garantili Ödeme", new AtomicBoolean(), tape, verdict, null);
         ToolCallback report = (ToolCallback) tools[0];
         ToolCallback click = (ToolCallback) tools[1];
 

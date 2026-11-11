@@ -376,6 +376,7 @@ export function ProductPanel({
       product: selection.product,
       flow: selection.flow ?? undefined,
       scenarioPath: selection.path ?? undefined,
+      screen: screenName || undefined,
     });
     const traced = result.ok
       ? result.body.traceId

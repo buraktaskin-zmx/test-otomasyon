@@ -2746,3 +2746,6 @@ button.db-screen:hover .db-screen-name { color: var(--link); text-decoration: un
 .sd-verdict.is-pass { background: var(--ok-bg); color: var(--ok); }
 .sd-verdict.is-fail { background: var(--fail-bg); color: var(--fail); }
 .sd-verdict.is-none { background: var(--skip-bg); color: var(--muted); font-weight: 600; font-size: var(--text-sm); }
+
+/* "AI ile çalıştır" over its token target: a word, in the failure colour. */
+.tk-over { font-family: var(--sans); font-size: var(--text-sm); font-weight: 600; color: var(--fail); }

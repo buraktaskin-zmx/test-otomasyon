@@ -35,7 +35,8 @@ public final class TapeEvidence {
     /** Reads nothing, changes nothing — only their failures are worth a line. */
     private static final Set<String> LOOKING = Set.of(
             "browser_snapshot", "browser_find", "browser_wait_for", "browser_take_screenshot",
-            "browser_console_messages", "browser_network_requests", RunVerdict.TOOL);
+            "browser_console_messages", "browser_network_requests", RunVerdict.TOOL,
+            AiRunPrelude.LOGIN_TOOL);
 
     private static final Pattern CODE = Pattern.compile("await page[^\\\\\\n]*?;");
     private static final int LINE_CAP = 260;
@@ -205,7 +206,7 @@ public final class TapeEvidence {
         return match.group(2) != null ? match.group(2) : match.group(1);
     }
 
-    private static String code(String result) {
+    static String code(String result) {
         if (result == null) {
             return "";
         }

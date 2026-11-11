@@ -89,6 +89,11 @@ final class TraceSession {
         return row.getKind();
     }
 
+    /** Prompt plus completion tokens so far, as the server reported them. */
+    synchronized long totalTokens() {
+        return row.getTotalTokens();
+    }
+
     /** Records one model call; returns its sequence number in this session. */
     int turn(TurnRecord call) {
         List<Ref> refs = new ArrayList<>();

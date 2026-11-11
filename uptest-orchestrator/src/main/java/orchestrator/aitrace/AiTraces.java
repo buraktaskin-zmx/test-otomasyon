@@ -145,6 +145,15 @@ public final class AiTraces {
         }
     }
 
+    /**
+     * Tokens the session open on this thread has spent so far, or -1 when
+     * nothing is being recorded. Read by "AI ile çalıştır"'s budget note.
+     */
+    public static long currentTokens() {
+        TraceSession session = CURRENT.get();
+        return session == null ? -1 : session.totalTokens();
+    }
+
     /** The open session's id on this thread, or null. */
     public static String currentId() {
         TraceSession session = CURRENT.get();

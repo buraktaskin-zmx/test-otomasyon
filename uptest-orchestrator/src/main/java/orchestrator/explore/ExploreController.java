@@ -4,6 +4,7 @@ import orchestrator.aitrace.AiTraces;
 import orchestrator.catalog.CatalogService;
 import orchestrator.llm.LlmOutputCleaner;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.ai.tool.method.MethodToolCallbackProvider;
@@ -21,6 +22,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -117,14 +119,56 @@ public class ExploreController {
      */
     private final Path tapeDir;
 
-    public ExploreController(ChatClient.Builder builder, ToolCallbackProvider tools, CatalogService catalogs,
+    /**
+     * "AI ile çalıştır"'s own client: the same model, wrapped so that each turn
+     * sends only the latest tool result whole (CompactingChatModel). Ekran
+     * Keşfi keeps {@link #client} and its full history.
+     */
+    private final ChatClient runClient;
+
+    /** How long a page is given to settle after an action, before it is read. */
+    private final Duration settle;
+
+    /** "AI ile çalıştır": the token target (a note past 80%, never a stop) and its call ceiling. */
+    private final long runTokenBudget;
+    private final int runToolBudget;
+
+    public ExploreController(ChatClient.Builder builder, ChatModel chatModel, ToolCallbackProvider tools,
+                             CatalogService catalogs,
                              @Value("${uptest.explore.tool-budget:250}") int budget,
-                             @Value("${uptest.explore.tape-dir:./runs/mcp}") String tapeDir) {
+                             @Value("${uptest.explore.tape-dir:./runs/mcp}") String tapeDir,
+                             @Value("${uptest.explore.settle-ms:1500}") long settleMs,
+                             @Value("${uptest.explore.ai-run.token-budget:100000}") long runTokenBudget,
+                             @Value("${uptest.explore.ai-run.tool-budget:40}") int runToolBudget) {
         this.client = builder.build();
+        this.runClient = ChatClient.builder(new CompactingChatModel(chatModel)).build();
         this.tools = tools;
         this.catalogs = catalogs;
         this.budget = budget;
         this.tapeDir = Paths.get(tapeDir);
+        this.settle = Duration.ofMillis(Math.max(0, settleMs));
+        this.runTokenBudget = runTokenBudget;
+        this.runToolBudget = runToolBudget;
+    }
+
+    /**
+     * The only browser tools "AI ile çalıştır" is offered. Waiting, searching,
+     * network and console inspection and screenshots are left out: the measured
+     * walk spent 25 of its 52 turns on them, and the page now arrives with
+     * every action's result (AiRunPolicy). Navigating is added back only when
+     * the code could not log in and the agent has to.
+     */
+    static final Set<String> AI_RUN_TOOLS = Set.of(
+            "browser_snapshot", "browser_click", "browser_type", "browser_fill_form",
+            "browser_select_option", "browser_press_key", "browser_handle_dialog");
+
+    private ToolCallback raw(String name) {
+        for (ToolCallback callback : tools.getToolCallbacks()) {
+            if (name.equals(callback.getToolDefinition().name())) {
+                return callback;
+            }
+        }
+        return null;
     }
 
     /**
@@ -149,8 +193,21 @@ public class ExploreController {
      */
     private Object[] toolsFor(CatalogSink sink, String instruction, Set<String> pending,
                               AtomicBoolean aborted, ActionTape tape, RunVerdict verdict) {
+        return toolsFor(sink, instruction, pending, aborted, tape, verdict, null, null, budget);
+    }
+
+    /**
+     * @param policy  "AI ile çalıştır" only; with it the browser tools are
+     *                narrowed to {@code allowed}
+     * @param allowed the browser tools offered, or null for all but WITHHELD
+     * @param calls   the tool-call ceiling for this walk
+     */
+    private Object[] toolsFor(CatalogSink sink, String instruction, Set<String> pending,
+                              AtomicBoolean aborted, ActionTape tape, RunVerdict verdict,
+                              AiRunPolicy policy, Set<String> allowed, int calls) {
         List<ToolCallback> usable = new ArrayList<>(Arrays.stream(tools.getToolCallbacks())
                 .filter(callback -> !WITHHELD.contains(callback.getToolDefinition().name()))
+                .filter(callback -> allowed == null || allowed.contains(callback.getToolDefinition().name()))
                 .toList());
 
         // Bound to the RAW callbacks: set_date makes its four browser calls
@@ -183,8 +240,8 @@ public class ExploreController {
                     .toolObjects(ours.toArray()).build().getToolCallbacks()));
         }
 
-        return BudgetedTool.wrap(usable, budget, sink, forbidden(instruction), pending, instruction,
-                aborted, tape, verdict);
+        return BudgetedTool.wrap(usable, calls, sink, forbidden(instruction), pending, instruction,
+                aborted, tape, verdict, policy);
     }
 
     /**
@@ -317,16 +374,16 @@ public class ExploreController {
      * Every field except {@code text} may be null — the older UI sent only
      * that, and a flow that is already logged in needs none of them.
      *
-     * The last five only label the AI session the walk is recorded under
-     * (Token Takibi): {@code source = "ai-run"} for the "AI ile çalıştır"
-     * button of Kayıtlı Senaryolar, anything else for Ekran Keşfi; the rest
-     * name the scenario. Nothing about the walk itself reads them.
+     * The last six come from Kayıtlı Senaryolar' "AI ile çalıştır"
+     * ({@code source = "ai-run"}): they label the AI session (Token Takibi),
+     * and {@code screen} — the screen's name as its menu shows it — is where
+     * AiRunPrelude navigates before the agent starts. Ekran Keşfi sends none.
      */
     public record Instruction(String text, String url, String cif, String userId,
                               String password, String smsCode, String mainMenu,
                               List<String> expected,
                               String source, String app, String product, String flow,
-                              String scenarioPath) {
+                              String scenarioPath, String screen) {
     }
 
     /**
@@ -418,6 +475,48 @@ public class ExploreController {
         return value != null && !value.isBlank();
     }
 
+    /**
+     * "AI ile çalıştır": the login and the menu in code, then the agent with a
+     * short prompt, a narrow toolbox, the page after every action and only the
+     * latest page in its history. Measured before this: 52 turns, 1.48 million
+     * input tokens for one scenario; see docs/TOKEN-TAKIBI.md.
+     *
+     * Called inside explore()'s try, so the tape is finished and the browser
+     * closed on every path out of here, the prelude's included.
+     */
+    private String runScenario(Instruction body, String composed, AtomicBoolean aborted, ActionTape tape,
+                               RunVerdict verdict) {
+        AiRunPrelude.Outcome opened = new AiRunPrelude(tools.getToolCallbacks(), tape, settle).run(
+                new AiRunPrelude.Login(body.app(), body.url(), body.cif(), body.userId(),
+                        body.password(), body.smsCode()),
+                body.mainMenu(), body.screen());
+        String userTurn = AiRunPrelude.instruction(opened, body.text(), composed, body.mainMenu(),
+                body.screen(), BudgetedTool.LARGEST_RESULT);
+        Set<String> allowed = new java.util.HashSet<>(AI_RUN_TOOLS);
+        if (opened.reached() == AiRunPrelude.Reached.NOTHING) {
+            allowed.add("browser_navigate");
+        }
+        AiRunPolicy policy = new AiRunPolicy(raw("browser_snapshot"), settle, runTokenBudget);
+        String answer = runClient.prompt()
+                .system(RUN_SYSTEM + RESULT_RULES)
+                .user(userTurn)
+                .tools(toolsFor(null, userTurn, new LinkedHashSet<>(), aborted, tape, verdict,
+                        policy, allowed, runToolBudget))
+                .call()
+                .content();
+        long used = AiTraces.currentTokens();
+        if (opened.note() != null) {
+            verdict.warn(opened.reached() == AiRunPrelude.Reached.NOTHING
+                    ? "Giriş koddan yapılamadı, ajan kendisi yaptı (" + opened.note() + ")."
+                    : "Ekran koddan açılamadı, ajan kendisi açtı (" + opened.note() + ").");
+        }
+        if (runTokenBudget > 0 && used > runTokenBudget) {
+            verdict.warn("Token bütçesi aşıldı: " + String.format(java.util.Locale.forLanguageTag("tr-TR"),
+                    "%,d / %,d", used, runTokenBudget) + ".");
+        }
+        return answer;
+    }
+
     @PostMapping
     public ResponseEntity<?> explore(@RequestBody Instruction body) {
         if (body == null || body.text() == null || body.text().isBlank()) {
@@ -435,12 +534,17 @@ public class ExploreController {
         // Serbest Gözlem is an observation, not a test, and keeps its prose.
         RunVerdict verdict = aiRun ? new RunVerdict() : null;
         try {
-            String answer = client.prompt()
-                    .system(SYSTEM + (aiRun ? RESULT_RULES : ANSWER_RULES))
-                    .user(instruction)
-                    .tools(toolsFor(null, instruction, new LinkedHashSet<>(), aborted, tape, verdict))
-                    .call()
-                    .content();
+            String answer;
+            if (aiRun) {
+                answer = runScenario(body, instruction, aborted, tape, verdict);
+            } else {
+                answer = client.prompt()
+                        .system(SYSTEM + ANSWER_RULES)
+                        .user(instruction)
+                        .tools(toolsFor(null, instruction, new LinkedHashSet<>(), aborted, tape, verdict))
+                        .call()
+                        .content();
+            }
             // Belt and braces: should the framework ever turn BrowserClosed
             // into a tool result, the flag still says the walk was cut short.
             if (aborted.get()) {

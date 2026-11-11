@@ -222,9 +222,13 @@ final class BudgetedTool implements ToolCallback {
     /** "AI ile çalıştır"'s result; null on every other walk. */
     private final RunVerdict verdict;
 
+    /** "AI ile çalıştır"'s page-after-action and budget note; null on every other walk. */
+    private final AiRunPolicy policy;
+
     private BudgetedTool(ToolCallback delegate, AtomicInteger remaining, Set<String> visited,
                          CatalogSink sink, List<String> forbidden, AtomicBoolean aborted,
-                         Set<String> pending, String instruction, ActionTape tape, RunVerdict verdict) {
+                         Set<String> pending, String instruction, ActionTape tape, RunVerdict verdict,
+                         AiRunPolicy policy) {
         this.delegate = delegate;
         this.remaining = remaining;
         this.visited = visited;
@@ -235,6 +239,7 @@ final class BudgetedTool implements ToolCallback {
         this.instruction = instruction;
         this.tape = tape;
         this.verdict = verdict;
+        this.policy = policy;
     }
 
     /**
@@ -264,7 +269,8 @@ final class BudgetedTool implements ToolCallback {
      */
     static Object[] wrap(List<ToolCallback> callbacks, int budget, CatalogSink sink,
                          List<String> forbidden, Set<String> pending, String instruction,
-                         AtomicBoolean aborted, ActionTape tape, RunVerdict verdict) {
+                         AtomicBoolean aborted, ActionTape tape, RunVerdict verdict,
+                         AiRunPolicy policy) {
         AtomicInteger remaining = new AtomicInteger(budget);
         Set<String> visited = new HashSet<>();
         List<String> lowered = forbidden.stream().map(BudgetedTool::fold).toList();
@@ -272,7 +278,7 @@ final class BudgetedTool implements ToolCallback {
         return callbacks.stream()
                 .map(callback -> (Object) new BudgetedTool(
                         callback, remaining, visited, sink, lowered, aborted, pending, folded, tape,
-                        verdict))
+                        verdict, policy))
                 .toArray();
     }
 
@@ -397,7 +403,9 @@ final class BudgetedTool implements ToolCallback {
         // a directory that already holds Playwright traces.
         String answer = trim(result);
         record(input, ActionTape.Outcome.OK, result, answer, began);
-        return answer;
+        // After the record, so the tape keeps the action's own result and the
+        // page taken after it as two entries, in the order they happened.
+        return policy == null ? answer : policy.after(name(), answer, this::trim, tape);
     }
 
     /**
@@ -502,7 +510,7 @@ final class BudgetedTool implements ToolCallback {
      * schema and the model's own reasoning comfortable room, where twenty
      * uncapped ones did not fit at all.
      */
-    private static final int LARGEST_RESULT = 12_000;
+    static final int LARGEST_RESULT = 12_000;
 
     /**
      * What the model actually asked for, before anything happens to it.

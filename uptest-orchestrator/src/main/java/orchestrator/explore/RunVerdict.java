@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * How an "AI ile çalıştır" walk ends: a structured result, not a paragraph.
@@ -36,6 +37,13 @@ public final class RunVerdict {
     public static final String TOOL = "report_result";
 
     private volatile Result result;
+
+    /**
+     * Warnings the CODE adds — the budget was exceeded, the login fell back to
+     * the agent. Kept apart from the agent's own so that a model which never
+     * mentions them cannot leave them out.
+     */
+    private final List<String> added = new CopyOnWriteArrayList<>();
 
     /**
      * @param succeeded     steps carried out that behaved as they should
@@ -84,14 +92,27 @@ public final class RunVerdict {
         return result != null;
     }
 
-    /** The result, or null when the agent never reported one. */
+    /** The result with the code's warnings after the agent's, or null when the agent never reported one. */
     public Result result() {
-        return result;
+        Result r = result;
+        if (r == null || added.isEmpty()) {
+            return r;
+        }
+        List<String> warnings = new ArrayList<>(r.warnings());
+        warnings.addAll(added);
+        return new Result(r.succeeded(), r.failed(), warnings, r.claimedPassed());
+    }
+
+    /** A warning from the code, shown after the agent's own. */
+    public void warn(String warning) {
+        if (warning != null && !warning.isBlank()) {
+            added.add(warning.strip());
+        }
     }
 
     /** The answer's {@code summary} object, or null when there is no result. */
     public Map<String, Object> toJson() {
-        Result r = result;
+        Result r = result();
         if (r == null) {
             return null;
         }
@@ -108,7 +129,7 @@ public final class RunVerdict {
      * already reads — so nothing that shows the prose answer goes blank.
      */
     public String asText() {
-        Result r = result;
+        Result r = result();
         if (r == null) {
             return "";
         }

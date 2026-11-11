@@ -114,7 +114,12 @@ export function TokenOverview({ data, onOpen }: {
                       <td className="h-mono">{s.toolCalls || "—"}</td>
                       <td className="h-mono">{tokens(s.promptTokens)}</td>
                       <td className="h-mono">{tokens(s.completionTokens)}</td>
-                      <td className="h-mono tk-strong">{tokens(s.totalTokens)}</td>
+                      <td className="h-mono tk-strong">
+                        {tokens(s.totalTokens)}
+                        {s.kind === "ai-run" && data.aiRunBudget > 0 && s.totalTokens > data.aiRunBudget ? (
+                          <div className="tk-over" title={"Hedef " + tokens(data.aiRunBudget) + " token"}>bütçe aşıldı</div>
+                        ) : null}
+                      </td>
                       <td className="h-mono">{formatDuration(s.durationMs)}</td>
                       <td><SessionStatus status={s.status} /></td>
                       <td className="h-mono">{relativeTime(s.startedAt)}</td>
