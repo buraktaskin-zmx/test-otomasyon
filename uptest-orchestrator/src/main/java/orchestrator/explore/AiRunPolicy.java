@@ -120,6 +120,26 @@ final class AiRunPolicy {
         }
     }
 
+    /**
+     * The budget is spent and the walk must stop.
+     *
+     * It used to only ADD A NOTE past 80% and refuse nothing (decided
+     * 11.11.2026, "uyar ama durdurma"). One run then spent 800.000 tokens
+     * without ever logging in: nothing in the system could say no. A limit
+     * that is only advice is not a limit, so it stops now — and the one tool
+     * still allowed is report_result, so the run ends with a result instead of
+     * an exception.
+     */
+    boolean spentOut() {
+        long used = spent.getAsLong();
+        return budget > 0 && used >= 0 && used >= budget;
+    }
+
+    /** What is left of the budget, for the log and the refusal. */
+    long used() {
+        return Math.max(0, spent.getAsLong());
+    }
+
     String budgetNote() {
         if (budget <= 0) {
             return "";

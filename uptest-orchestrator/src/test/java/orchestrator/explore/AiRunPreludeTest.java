@@ -141,6 +141,18 @@ class AiRunPreludeTest {
     }
 
     @Test
+    @DisplayName("a network failure is named as one — it is not the login code's fault")
+    void networkFailuresAreNamed() {
+        assertThat(AiRunPrelude.diagnose("Error: browserBackend.callTool: net::ERR_NAME_NOT_RESOLVED at https://x"))
+                .contains("AĞ").contains("VPN").contains("Kodda yapılacak bir şey yok");
+        assertThat(AiRunPrelude.diagnose("net::ERR_CONNECTION_RESET at https://x"))
+                .contains("AĞ").contains("ERR_CONNECTION_RESET");
+        assertThat(AiRunPrelude.diagnose("\"#userCode\" does not match any elements."))
+                .contains("SAYFA").contains("#userCode");
+        assertThat(AiRunPrelude.diagnose("bilinmeyen bir şey")).contains("bilinmeyen bir şey");
+    }
+
+    @Test
     @DisplayName("NGI logs in with its own two boxes")
     void ngiFields() {
         assertThat(AiRunPrelude.fieldsOf(new AiRunPrelude.Login("NGI", "u", "123", null, "p", null)))

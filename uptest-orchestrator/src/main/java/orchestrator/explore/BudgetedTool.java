@@ -59,6 +59,16 @@ final class BudgetedTool implements ToolCallback {
             call any tool. Reply with one short line and stop.
             """;
 
+    /**
+     * The walk has spent its tokens. Only report_result is still allowed, so
+     * the analyst gets the steps that DID work rather than an exception.
+     */
+    private static final String SPENT = """
+            TOKEN BUDGET SPENT (%,d). This walk is over: you may not touch the
+            page again. Call report_result NOW — put the steps you did carry
+            out in succeeded, and every step you did not reach in failed.
+            """;
+
     private static final String FORBIDDEN = """
             The instruction explicitly said NOT to touch this control: %s.
             That was not an oversight — pressing it changes what the
@@ -622,6 +632,16 @@ final class BudgetedTool implements ToolCallback {
         // analyst needs.
         if (RunVerdict.TOOL.equals(getToolDefinition().name())) {
             return null;
+        }
+        // A limit that only warns is not a limit: one run spent 800.000 tokens
+        // and never logged in. Everything stops here — AFTER the exemption
+        // above, so the walk can still report what it managed to do. Putting
+        // this check first refused report_result too, and the run then ended
+        // with nothing at all; the test pins the order.
+        if (policy != null && policy.spentOut()) {
+            System.out.println("[uptest] explore: token butcesi doldu (" + policy.used() + "/"
+                    + policy.budget() + ") — " + name() + " reddedildi");
+            return SPENT.formatted(policy.used());
         }
         String banned = banned(input);
         if (banned != null) {

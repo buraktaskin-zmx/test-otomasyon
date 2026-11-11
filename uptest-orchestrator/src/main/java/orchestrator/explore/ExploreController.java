@@ -514,6 +514,17 @@ public class ExploreController {
                 new AiRunPrelude.Login(body.app(), body.url(), body.cif(), body.userId(),
                         body.password(), body.smsCode()),
                 body.mainMenu(), body.screen());
+        // A walk that is not logged in cannot do ANY of the scenario, and
+        // handing it to the agent is how one run spent 800.000 tokens without
+        // ever reaching the application. The login is deterministic — the same
+        // boxes, the same buttons, every time — so when code could not do it
+        // the environment is wrong (the host is unreachable, the page changed,
+        // the user is locked) and a model will not find its way round that. It
+        // stops here, with the reason, before a single token is spent.
+        if (opened.reached() == AiRunPrelude.Reached.NOTHING && present(body.cif())) {
+            throw new IllegalStateException("Giriş yapılamadı, ajan başlatılmadı: " + opened.note()
+                    + " — ekran açılamadığı için senaryo denenemezdi ve token harcanmadı.");
+        }
         String userTurn = AiRunPrelude.instruction(opened, body.text(), composed, body.mainMenu(),
                 body.screen(), BudgetedTool.LARGEST_RESULT);
         Set<String> allowed = new java.util.HashSet<>(AI_RUN_TOOLS);

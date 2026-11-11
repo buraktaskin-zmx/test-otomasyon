@@ -110,7 +110,7 @@ final class AiRunPrelude {
             }
         } catch (RuntimeException failed) {
             record(LOGIN_TOOL, loginArgs, false, failed.getMessage(), began);
-            return new Outcome(Reached.NOTHING, null, "giriş koddan yapılamadı: " + oneLine(failed.getMessage()));
+            return new Outcome(Reached.NOTHING, null, diagnose(failed.getMessage()));
         }
         record(LOGIN_TOOL, loginArgs, true, "Giriş yapıldı", began);
 
@@ -178,6 +178,43 @@ final class AiRunPrelude {
                     .append(capped).append('\n').append(CompactingAdvisor.SCREEN_CLOSE);
         }
         return out.toString();
+    }
+
+    /**
+     * The failure in words an analyst can act on.
+     *
+     * The raw MCP error is a wall of text with the real cause buried in it —
+     * one run reported a wrapped {@code net::ERR_NAME_NOT_RESOLVED} and read
+     * as "the login code is broken" when the machine simply could not resolve
+     * the bank's address. The three cases below need three different people
+     * to do three different things, so they are told apart here rather than
+     * left to whoever reads the log.
+     */
+    static String diagnose(String error) {
+        String raw = error == null ? "" : error;
+        if (raw.contains("ERR_NAME_NOT_RESOLVED") || raw.contains("ERR_INTERNET_DISCONNECTED")) {
+            return "giriş yapılamadı — AĞ: bu makine bankanın test adresini çözemiyor"
+                    + " (ERR_NAME_NOT_RESOLVED). Kurum ağına / VPN'e bağlı değilsiniz."
+                    + " Kodda yapılacak bir şey yok.";
+        }
+        if (raw.contains("ERR_CONNECTION") || raw.contains("ERR_TIMED_OUT")
+                || raw.contains("ERR_CERT") || raw.contains("ERR_PROXY")) {
+            return "giriş yapılamadı — AĞ: adres çözüldü ama bağlantı kurulamadı ("
+                    + marker(raw) + "). Kurum ağı, proxy ya da sertifika denetimi engelliyor.";
+        }
+        if (raw.contains("does not match any elements") || raw.contains("Timeout")) {
+            return "giriş yapılamadı — SAYFA: adres açıldı ama giriş kutusu gelmedi."
+                    + " Giriş sayfası değişmiş olabilir (seçiciler: NGC #userCode/#userId/#password,"
+                    + " NGI #cifNoLabel/#password) ya da sayfa beklenenden yavaş.";
+        }
+        return "giriş koddan yapılamadı: " + oneLine(raw);
+    }
+
+    /** The net::ERR_… token itself, which is the half worth quoting. */
+    private static String marker(String raw) {
+        java.util.regex.Matcher found =
+                java.util.regex.Pattern.compile("ERR_[A-Z_]+").matcher(raw);
+        return found.find() ? found.group() : "ağ hatası";
     }
 
     /** Selector, value pairs for the login form, or null for an app this does not know. */

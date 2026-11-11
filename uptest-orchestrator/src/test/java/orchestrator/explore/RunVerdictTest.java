@@ -127,6 +127,27 @@ class RunVerdictTest {
         assertThat(refused).contains("already been reported");
     }
 
+    @Test
+    @DisplayName("once the budget is spent every tool is refused, except the one that ends the walk")
+    void spentBudgetStopsEverythingButTheReport() {
+        RunVerdict verdict = new RunVerdict();
+        List<String> reached = new ArrayList<>();
+        ActionTape tape = ActionTape.open(dir, "explore", "x", "", "", List.of());
+        AiRunPolicy broke = new AiRunPolicy(null, java.time.Duration.ZERO, 100, 220, () -> 100_000L);
+        Object[] tools = BudgetedTool.wrap(
+                List.of(fake(RunVerdict.TOOL, reached), fake("browser_click", reached)),
+                999, null, List.of(), new LinkedHashSet<>(), "", new AtomicBoolean(), tape,
+                verdict, broke);
+
+        String refused = ((ToolCallback) tools[1]).call("{\"element\":\"Devam\"}");
+        assertThat(refused).contains("TOKEN BUDGET SPENT").contains("report_result");
+        assertThat(reached).isEmpty();
+
+        ((ToolCallback) tools[0]).call("{\"succeeded\":[\"Giriş yapıldı.\"],\"passed\":false}");
+        assertThat(verdict.isClosed()).isTrue();
+        assertThat(verdict.result().succeeded()).containsExactly("Giriş yapıldı.");
+    }
+
     private static ToolCallback fake(String name, List<String> reached) {
         return new ToolCallback() {
             @Override

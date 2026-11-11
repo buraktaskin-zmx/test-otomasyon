@@ -63,7 +63,7 @@ class AiRunPolicyTest {
     }
 
     @Test
-    @DisplayName("the budget note: nothing under 80%, a nudge past it, a firmer one past 100% — never a refusal")
+    @DisplayName("the budget note: nothing under 80%, a nudge past it, a firmer one past 100%")
     void budgetNote() {
         AiRunPolicy policy = policy(100_000);
         spent.set(79_999);
@@ -73,5 +73,18 @@ class AiRunPolicyTest {
         spent.set(120_000);
         assertThat(policy.budgetNote()).contains("AŞILDI");
         assertThat(policy(0).budgetNote()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("past the budget the walk is STOPPED, not nudged — one run burned 800k on advice alone")
+    void spentOutIsAStop() {
+        AiRunPolicy policy = policy(100_000);
+        spent.set(99_999);
+        assertThat(policy.spentOut()).isFalse();
+        spent.set(100_000);
+        assertThat(policy.spentOut()).isTrue();
+        // Budget 0 means "no budget", not "already spent".
+        spent.set(999_999);
+        assertThat(policy(0).spentOut()).isFalse();
     }
 }

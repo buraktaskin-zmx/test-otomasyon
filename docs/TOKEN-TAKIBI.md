@@ -140,7 +140,8 @@ istiyordu ("SEARCH, DO NOT SNAPSHOT", "wait a few seconds … READ THE PAGE AGAI
 | 3 | Araçlar daraltıldı: bekleme, arama, ağ, konsol, ekran görüntüsü yok | `ExploreController.AI_RUN_TOOLS` |
 | 4 | Her eylemden sonra sayfa kodla okunur ve sonuca eklenir (`uptest.explore.settle-ms`) | `AiRunPolicy` |
 | 5 | Kısa system prompt (~1/3) | `AgentPrompts.RUN_SYSTEM` |
-| 6 | Hedef 100.000 token: %80'de ajana "bitir" notu; aşılırsa **durdurulmaz**, AI Özet'e uyarı | `uptest.explore.ai-run.token-budget` |
+| 6 | **Tavan** 100.000 token: %80'de ajana "bitir" notu, aşılınca `report_result` dışındaki her araç reddedilir — koşu durur ve yapabildiğini raporlar | `uptest.explore.ai-run.token-budget` |
+| 7 | Giriş koddan yapılamazsa ajan **hiç başlatılmaz**; sebep (ağ / sayfa) adıyla söylenir | `AiRunPrelude.diagnose` |
 
 Gherkin oluştur etkilenmez: bant, koddan yapılan menüyü tek bir `prelude_menu`
 kaydı olarak tutar ve renderer bundan `navigate to` satırını üretir.
