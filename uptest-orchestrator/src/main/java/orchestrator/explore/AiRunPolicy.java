@@ -24,7 +24,7 @@ import java.util.function.UnaryOperator;
  *
  * <p><b>The budget is a target, not a wall</b> (decided 11.11.2026). Past 80%
  * every result carries a note to finish; nothing is refused and the run is never
- * cut off. Every result rather than once, because CompactingChatModel cuts old
+ * cut off. Every result rather than once, because CompactingAdvisor cuts old
  * results down: a note given once would be gone two turns later, while repeating
  * it costs a sentence on the one result that is still being sent.
  */

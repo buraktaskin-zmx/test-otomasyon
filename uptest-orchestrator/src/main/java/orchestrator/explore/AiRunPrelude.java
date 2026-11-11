@@ -148,7 +148,7 @@ final class AiRunPrelude {
      * Nothing done: the full composed instruction, login and all — today's
      * walk. Logged in: the scenario and where the main menu is. On the screen:
      * the scenario only. In both of the last two the page as it stands comes
-     * along between CompactingChatModel's markers, so the first turn needs no
+     * along between CompactingAdvisor's markers, so the first turn needs no
      * snapshot and every later turn stops paying for it.
      *
      * @param composed ExploreController.compose's text, used only when the login failed

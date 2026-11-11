@@ -159,7 +159,7 @@ All test-side code lives in `uptest-executor/src/main/java/` under the package
 - NGC page object: `PW/ngc/steps/util/NGC.java`
 - NGI steps: `PW/ngi/steps/NGISteps.java` — one step (`login to ngi`)
 - NGI page object: `PW/ngi/steps/util/NGI.java`
-- Common: `PW/common/` — CommonSteps (18 shared steps), CommonActions (the
+- Common: `PW/common/` — CommonSteps (21 shared steps), CommonActions (the
   Playwright logic's public face), Hooks, TestContext, RunContext.
   CommonActions keeps every public step and hands the work to package-private
   parts by purpose: `DatePicker` (calendar + masked typing), `ErrorDialogs`
@@ -224,8 +224,8 @@ Elsewhere:
   (`discover screen catalog`, `fill discovered fields:`) that `VocabularyExtractor`
   deliberately keeps OUT of the published vocabulary: they read a screen, they do
   not describe a test, and the generator must never emit them. That exclusion is
-  why a hand count of `@Given/@When/@Then` (25) disagrees with
-  `GET /api/v1/vocabulary` (23). Split by purpose: `ControlTraits` (what a
+  why a hand count of the step annotations (25 — they are `@And` and `@Then`
+  here, not `@Given/@When`) disagrees with `GET /api/v1/vocabulary` (23). Split by purpose: `ControlTraits` (what a
   container is, read off its DOM), `Discovered` (the field model),
   `CatalogYaml` (the output), `ScanDiagnostics` (`UPTEST_DISCOVERY_DEBUG`).
 - Run history (orchestrator): `orchestrator/persistence/` holds the entities and
@@ -263,7 +263,7 @@ Elsewhere:
   the verdict is settled in code (one failed step is "Geçmedi" whatever the
   agent claimed); Serbest Gözlem keeps its prose `ANSWER_RULES`. That run is
   also the CHEAP walk (docs/TOKEN-TAKIBI.md §8): `AiRunPrelude` logs in and
-  opens the menu in code, `CompactingChatModel` sends only the latest tool
+  opens the menu in code, `CompactingAdvisor` sends only the latest tool
   result whole, `AiRunPolicy` hands back the page after every action and
   notes the token budget, `ExploreController.AI_RUN_TOOLS` narrows the
   toolbox and `RUN_SYSTEM` replaces `SYSTEM`. The draft
@@ -399,6 +399,12 @@ Shared (CommonSteps, work on both apps):
   Tipi". Found by ROLE so the name is the one a person reads, then falls back to
   clicking the label when the input is custom-styled and hidden)
 - `verify the {string} field equals {string}` (text/date, EXACT match, NO normalize)
+- `verify the {string} has date {string}` (the mirror of `enter date`, and the
+  reason it exists: `field equals` compares EXACTLY and must, so a scenario that
+  wrote `"+3 gün"` and then verified `"+3 gün"` read a screen showing 11/10/2026
+  and failed every time on a field that was set correctly. Resolves the offset
+  through `RelativeDate` at the same moment `enter date` does, then runs the
+  ordinary exact comparison)
 - `verify the {string} has amount {string}` (amount, normalized)
 - `verify the {string} field is masked` (the application is still HIDING the
   value — `20****694`. The only verify taking no expected value, which is what
@@ -592,8 +598,9 @@ panels left the rail — "Chat", "AI ile Senaryo Üret" and the "Çoklu üret" t
 inside it — and with them `orchestrator/chat/`, `VariationPlanner`,
 `OutlineFlattener`, `PromptBuilder.user`, `SuggestService.suggest` /
 `suggestOnce` / `suggestMany`, and `POST /api/v1/scenarios/suggest` and
-`/suggest-many`. The rail is now Dashboard · Senaryo Üret · Kayıtlı Senaryolar ·
-Ekran Keşfi · Çalıştır · Test Kullanıcıları.
+`/suggest-many`. The rail is now Dashboard · Token Takibi · Senaryo Üret ·
+Kayıtlı Senaryolar · Ekran Keşfi · Çalıştır · Test Kullanıcıları (Token Takibi
+added 2026-11-11; Ekran Keşfi only when the agent is enabled).
 
 Three consequences worth knowing before reading the lessons below, which still
 describe all of it in the present tense because they are the record of what was
@@ -1320,7 +1327,7 @@ one answer to "which screen am I looking at".
 Goal: share what is genuinely application-independent; keep
 application-specific logic separate.
 
-- **Truly shared (in `common`, done):** the 18 generic steps listed above and
+- **Truly shared (in `common`, done):** the 21 generic steps listed above and
   their logic in `CommonActions`, including `findValueElement`,
   `normalizeAmount`, `assertAmountEquals` — confirmed to work on both apps.
   `navigateTo` is bound to the `#headerMenuUsername` / `.main-nav` header
