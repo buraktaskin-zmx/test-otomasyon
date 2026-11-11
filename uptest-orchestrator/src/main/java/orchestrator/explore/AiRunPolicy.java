@@ -42,25 +42,39 @@ final class AiRunPolicy {
     private final Duration settle;
     private final long budget;
     private final LongSupplier spent;
+    private final int describeCap;
 
     /**
      * @param snapshot the RAW snapshot tool — not a BudgetedTool, so taking the
      *                 page costs no budget and is not mistaken for the model's move
      * @param budget   tokens; 0 or less switches the note off
      */
-    AiRunPolicy(ToolCallback snapshot, Duration settle, long budget) {
-        this(snapshot, settle, budget, AiTraces::currentTokens);
+    AiRunPolicy(ToolCallback snapshot, Duration settle, long budget, int describeCap) {
+        this(snapshot, settle, budget, describeCap, AiTraces::currentTokens);
     }
 
-    AiRunPolicy(ToolCallback snapshot, Duration settle, long budget, LongSupplier spent) {
+    AiRunPolicy(ToolCallback snapshot, Duration settle, long budget, int describeCap, LongSupplier spent) {
         this.snapshot = snapshot;
         this.settle = settle;
         this.budget = budget;
+        this.describeCap = describeCap;
         this.spent = spent;
     }
 
     long budget() {
         return budget;
+    }
+
+    /**
+     * Characters kept of each tool's own description (LeanTools).
+     *
+     * Measured: the definitions were 2,249 tokens of every turn and 40% of a
+     * whole run, because the MCP tools arrive with paragraphs of prose. The
+     * agent needs the name, a line about what the tool does, and the argument
+     * names — this is where "a line" is set.
+     */
+    int describeCap() {
+        return describeCap;
     }
 
     /**

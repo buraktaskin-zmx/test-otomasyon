@@ -145,6 +145,19 @@ istiyordu ("SEARCH, DO NOT SNAPSHOT", "wait a few seconds … READ THE PAGE AGAI
 Gherkin oluştur etkilenmez: bant, koddan yapılan menüyü tek bir `prelude_menu`
 kaydı olarak tutar ve renderer bundan `navigate to` satırını üretir.
 
-**Beklenen** (tahmin, VDI'da ölçülecek): ~6–8 tur, tur başına 5–7 bin, toplam
-35–55 bin. Token Takibi'nde oturumun "Bütçe" kartı ve listede "bütçe aşıldı"
-işareti hedefe göre durumu gösterir.
+**İlk ölçüm (11.11.2026, 22 tur, 124.817 girdi):** kısaltma işe yaradı — tool
+sonuçları %66'dan **%26'ya** düştü (971.062 → 32.393). Geriye kalan en büyük
+kalem **tool tanımları: 49.478 token, %40**, tur başına ~2.250. Bunlar her
+turda yeniden gitmek zorunda (modele söylenmeyen aracı çağıramaz), o yüzden
+sıklık değil **uzunluk** kısaldı: `LeanTools` her aracın açıklamasını ilk
+cümlelerine indiriyor ve şemasından yalnızca düzyazıyı atıyor — tip, zorunlu
+alanlar, enum, argüman adları olduğu gibi kalıyor
+(`uptest.explore.ai-run.describe-cap`). Yalnız "AI ile çalıştır"; Ekran Keşfi
+her kelimeyi görmeye devam ediyor.
+
+Kalan kalemler aynı ölçümde: system prompt 13.786 (%11, tur başına ~620 —
+`RUN_SYSTEM` öncesi ~1.950'ydi), model geçmişi 12.675 (%10), şablon 10.081
+(%8), kullanıcı mesajı 6.484 (%5).
+
+Token Takibi'nde oturumun "Bütçe" kartı ve listede "bütçe aşıldı" işareti
+hedefe göre durumu gösterir.

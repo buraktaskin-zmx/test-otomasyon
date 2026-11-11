@@ -1,5 +1,7 @@
 package orchestrator.explore;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 
@@ -85,6 +87,73 @@ public final class RunVerdict {
                 + " (" + result.succeeded().size() + " dogru, " + result.failed().size() + " gecemedi, "
                 + result.warnings().size() + " uyari)");
         return "Sonuç kaydedildi. Görev bitti.";
+    }
+
+    private static final ObjectMapper JSON = new ObjectMapper();
+
+    /**
+     * The model's raw arguments, read leniently — BudgetedTool calls this
+     * instead of letting Spring bind them.
+     *
+     * <p>Spring AI turns the argument JSON into the method's parameter types by
+     * reflection, and a model that sends the right CONTENT in the wrong SHAPE
+     * kills the call before any of our code runs. Measured, 11.11.2026: the
+     * agent finished a walk and answered
+     * {@code {"succeeded": "[\"Firma Fatura İşlemleri ekranına gidildi.\", …]"}}
+     * — the array written out as a STRING. Reflection got a String for a
+     * {@code List} parameter and threw a bare IllegalArgumentException, so a
+     * walk that had done its work reported nothing at all.
+     *
+     * <p>No prompt rule fixes this: the schema already said array, and the
+     * model double-encoded it anyway. So the shapes are accepted instead —
+     * an array, an array written as a string, or a single sentence.
+     *
+     * @param arguments the tool call's raw JSON
+     */
+    public String acceptJson(String arguments) {
+        JsonNode root;
+        try {
+            root = JSON.readTree(arguments == null || arguments.isBlank() ? "{}" : arguments);
+        } catch (Exception notJson) {
+            root = JSON.createObjectNode();
+        }
+        return reportResult(items(root.get("succeeded")), items(root.get("failed")),
+                items(root.get("warnings")), truth(root.get("passed")));
+    }
+
+    /** An array, an array written as a string, or one sentence — all read as a list. */
+    static List<String> items(JsonNode node) {
+        List<String> out = new ArrayList<>();
+        if (node == null || node.isNull()) {
+            return out;
+        }
+        if (node.isArray()) {
+            node.forEach(item -> out.add(item.isTextual() ? item.asText() : item.toString()));
+            return out;
+        }
+        String text = node.isTextual() ? node.asText() : node.toString();
+        String trimmed = text.strip();
+        if (trimmed.startsWith("[")) {
+            try {
+                return items(JSON.readTree(trimmed));
+            } catch (Exception notAnArray) {
+                // Falls through: it only looked like one.
+            }
+        }
+        out.add(text);
+        return out;
+    }
+
+    /** true / "true" / "evet"; anything else is false, because a claim has to be made. */
+    static boolean truth(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return false;
+        }
+        if (node.isBoolean()) {
+            return node.asBoolean();
+        }
+        String text = node.asText("").strip().toLowerCase(java.util.Locale.ROOT);
+        return "true".equals(text) || "evet".equals(text);
     }
 
     /** True once the result is in; BudgetedTool refuses every call after it. */

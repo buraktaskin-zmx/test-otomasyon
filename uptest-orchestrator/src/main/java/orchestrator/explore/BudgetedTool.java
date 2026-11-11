@@ -287,10 +287,28 @@ final class BudgetedTool implements ToolCallback {
         return value.replaceAll("\\s+", " ").trim().toLowerCase(java.util.Locale.forLanguageTag("tr-TR"));
     }
 
+    /**
+     * The tool as the model is told about it — leaner on "AI ile çalıştır".
+     *
+     * Built once and kept: the definitions go out with EVERY turn, so this is
+     * asked for as many times as there are turns, and the answer never
+     * changes. See {@link LeanTools} for what is cut and why 40% of a measured
+     * run was sitting here.
+     */
     @Override
     public ToolDefinition getToolDefinition() {
-        return delegate.getToolDefinition();
+        if (policy == null) {
+            return delegate.getToolDefinition();
+        }
+        ToolDefinition made = lean;
+        if (made == null) {
+            made = LeanTools.lean(delegate.getToolDefinition(), policy.describeCap());
+            lean = made;
+        }
+        return made;
     }
+
+    private volatile ToolDefinition lean;
 
     @Override
     public ToolMetadata getToolMetadata() {
@@ -299,12 +317,31 @@ final class BudgetedTool implements ToolCallback {
 
     @Override
     public String call(String input) {
-        return guarded(input, () -> delegate.call(input));
+        return guarded(input, () -> invoke(input, null));
     }
 
     @Override
     public String call(String input, ToolContext context) {
-        return guarded(input, () -> delegate.call(input, context));
+        return guarded(input, () -> invoke(input, context));
+    }
+
+    /**
+     * The tool, except for {@code report_result}, whose arguments we read
+     * ourselves.
+     *
+     * Spring AI binds a tool's arguments to its method signature by
+     * reflection, and the agent answered one finished walk with its sentence
+     * arrays written out as STRINGS — right content, wrong shape. Reflection
+     * threw before any of our code ran and the whole walk reported nothing.
+     * The schema the model sees is unchanged (RunVerdict's annotations still
+     * generate it); only the binding is ours, so a shape we did not ask for
+     * costs nothing. See {@link RunVerdict#acceptJson}.
+     */
+    private String invoke(String input, ToolContext context) {
+        if (verdict != null && RunVerdict.TOOL.equals(name())) {
+            return verdict.acceptJson(input);
+        }
+        return context == null ? delegate.call(input) : delegate.call(input, context);
     }
 
     /**

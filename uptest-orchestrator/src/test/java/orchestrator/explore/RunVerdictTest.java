@@ -59,6 +59,39 @@ class RunVerdictTest {
     }
 
     @Test
+    @DisplayName("the arrays written out as a STRING — the shape that killed a finished walk")
+    void acceptsArraysEncodedAsAString() {
+        RunVerdict verdict = new RunVerdict();
+        verdict.acceptJson("{\"succeeded\": \"[\\\"Ekrana gidildi.\\\", \\\"Firma seçildi.\\\"]\","
+                + " \"failed\": [\"Fatura yok.\"], \"warnings\": [], \"passed\": false}");
+
+        assertThat(verdict.result().succeeded())
+                .containsExactly("Ekrana gidildi.", "Firma seçildi.");
+        assertThat(verdict.result().failed()).containsExactly("Fatura yok.");
+        assertThat(verdict.result().passed()).isFalse();
+    }
+
+    @Test
+    @DisplayName("one sentence instead of a list, and \"true\" instead of true, are both read")
+    void acceptsLooseShapes() {
+        RunVerdict verdict = new RunVerdict();
+        verdict.acceptJson("{\"succeeded\": \"Her şey yapıldı.\", \"passed\": \"true\"}");
+
+        assertThat(verdict.result().succeeded()).containsExactly("Her şey yapıldı.");
+        assertThat(verdict.result().failed()).isEmpty();
+        assertThat(verdict.result().passed()).isTrue();
+    }
+
+    @Test
+    @DisplayName("arguments that are not JSON at all still close the walk, as a failure")
+    void acceptsRubbish() {
+        RunVerdict verdict = new RunVerdict();
+        verdict.acceptJson("}{ bozuk");
+        assertThat(verdict.isClosed()).isTrue();
+        assertThat(verdict.result().passed()).isFalse();
+    }
+
+    @Test
     void noReportMeansNoSummary() {
         RunVerdict verdict = new RunVerdict();
         assertThat(verdict.isClosed()).isFalse();
@@ -79,12 +112,18 @@ class RunVerdictTest {
         ToolCallback report = (ToolCallback) tools[0];
         ToolCallback click = (ToolCallback) tools[1];
 
-        report.call("{\"warnings\":[\"Garantili Ödeme'ye dokunulmadı.\"]}");
-        assertThat(reached).containsExactly(RunVerdict.TOOL);
+        report.call("{\"succeeded\":[\"Yapıldı.\"],\"warnings\":[\"Garantili Ödeme'ye dokunulmadı.\"],"
+                + "\"passed\":true}");
 
-        verdict.reportResult(List.of("a"), List.of(), List.of(), true);
+        // It went to the verdict, not through Spring's binding: the call is
+        // read by RunVerdict.acceptJson, so the wrapped callback is never
+        // reached and a shape we did not ask for cannot kill a finished walk.
+        assertThat(reached).isEmpty();
+        assertThat(verdict.isClosed()).isTrue();
+        assertThat(verdict.result().warnings()).containsExactly("Garantili Ödeme'ye dokunulmadı.");
+
         String refused = click.call("{\"element\":\"Devam\"}");
-        assertThat(reached).containsExactly(RunVerdict.TOOL);
+        assertThat(reached).isEmpty();
         assertThat(refused).contains("already been reported");
     }
 
