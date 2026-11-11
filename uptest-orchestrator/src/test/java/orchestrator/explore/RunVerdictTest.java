@@ -133,7 +133,7 @@ class RunVerdictTest {
         RunVerdict verdict = new RunVerdict();
         List<String> reached = new ArrayList<>();
         ActionTape tape = ActionTape.open(dir, "explore", "x", "", "", List.of());
-        AiRunPolicy broke = new AiRunPolicy(null, java.time.Duration.ZERO, 100, 220, () -> 100_000L);
+        AiRunPolicy broke = new AiRunPolicy(null, java.time.Duration.ZERO, 100, 220, 6000, () -> 100_000L);
         Object[] tools = BudgetedTool.wrap(
                 List.of(fake(RunVerdict.TOOL, reached), fake("browser_click", reached)),
                 999, null, List.of(), new LinkedHashSet<>(), "", new AtomicBoolean(), tape,
@@ -146,6 +146,35 @@ class RunVerdictTest {
         ((ToolCallback) tools[0]).call("{\"succeeded\":[\"Giriş yapıldı.\"],\"passed\":false}");
         assertThat(verdict.isClosed()).isTrue();
         assertThat(verdict.result().succeeded()).containsExactly("Giriş yapıldı.");
+    }
+
+    @Test
+    @DisplayName("a confirmation the scenario never named is refused — the invoice that got cancelled")
+    void unaskedConfirmationIsRefused() {
+        // The real scenario: open the cancel screen, then go back WITHOUT confirming.
+        String scenario = fold("Fatura İptal Et'e tıkla. Geri butonuna tıkla.");
+        RunVerdict verdict = new RunVerdict();
+        List<String> reached = new ArrayList<>();
+        ActionTape tape = ActionTape.open(dir, "explore", scenario, "", "", List.of());
+        AiRunPolicy policy = new AiRunPolicy(null, java.time.Duration.ZERO, 0, 220, 6000, () -> 0L);
+        Object[] tools = BudgetedTool.wrap(List.of(fake("browser_click", reached)),
+                99, null, List.of(), new LinkedHashSet<>(), scenario, new AtomicBoolean(), tape,
+                verdict, policy);
+        ToolCallback click = (ToolCallback) tools[0];
+
+        String refused = click.call("{\"element\":\"Evet butonu\",\"ref\":\"e42\"}");
+        assertThat(refused).contains("REFUSED").contains("evet");
+        assertThat(reached).isEmpty();
+
+        // What the scenario DOES name goes through, confirm-ish or not.
+        click.call("{\"element\":\"Fatura İptal Et butonu\",\"ref\":\"e8\"}");
+        click.call("{\"element\":\"Geri butonu\",\"ref\":\"e9\"}");
+        assertThat(reached).containsExactly("browser_click", "browser_click");
+    }
+
+    /** BudgetedTool folds the instruction before storing it; the test must match. */
+    private static String fold(String text) {
+        return text.replaceAll("\s+", " ").trim().toLowerCase(java.util.Locale.forLanguageTag("tr-TR"));
     }
 
     private static ToolCallback fake(String name, List<String> reached) {

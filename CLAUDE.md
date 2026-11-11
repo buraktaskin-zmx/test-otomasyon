@@ -1186,6 +1186,18 @@ and leave each independently runnable.
   502 is an exception nobody can locate** — that block prints the root cause
   and the whole stack now, because the UI had said "ClassCastException" and
   the server log had said nothing at all.
+- **Shortening a prompt drops the rule you forgot was in it.** `RUN_SYSTEM`
+  was written to replace `SYSTEM` on "AI ile çalıştır" and cut it to a third,
+  and what went with the words was the paragraph beginning "This is a bank.
+  Anything that creates, approves or cancels a record is irreversible". The
+  next walk opened an invoice's cancel screen — which its scenario asked for —
+  and pressed the confirmation behind it, which its scenario did not. A real
+  record, cancelled, in a test environment where that cannot be undone. The
+  rule is back, but the fix is `BudgetedTool.unaskedCommit`: a click carrying
+  a committing word (Onayla, Evet, Gönder, Kaydet, Sil…) is refused unless the
+  SCENARIO names it. Note the shape of that test — not "is this word
+  dangerous" but "did the analyst ask for it" — which is what lets a scenario
+  that really does mean to confirm go through untouched.
 - **An agent's cost is turns × everything it has seen, not what it reads.**
   The first measured "AI ile çalıştır" took 52 turns and 1.48 million input
   tokens for a scenario whose results were small — a snapshot ~2,200 tokens,

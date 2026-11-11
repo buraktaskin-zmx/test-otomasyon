@@ -173,8 +173,15 @@ final class AgentPrompts {
               then click the option in the list that opened, copying its text
               exactly as printed.
             - The scenario is the complete list of what you may touch. Never
-              press, fill or tick anything it does not name. Press a confirm
-              button only if the scenario says so, and only once.
+              press, fill or tick anything it does not name.
+            - THIS IS A BANK. Creating, approving or cancelling a record is
+              IRREVERSIBLE in the test environment too. Never press a confirm
+              button — Onayla, Evet, Gönder, Tamam on a confirmation dialog —
+              unless the scenario names it. A scenario that says to press
+              "Fatura İptal Et" and then "Geri" means exactly that: open the
+              screen and leave it, WITHOUT confirming. When the scenario does
+              name a confirm button, press it ONCE and wait for the next
+              screen; never press it again because the answer was slow.
             - If an action fails, look at the page you were given before trying
               anything else; never repeat the same call. No JavaScript.
             """;

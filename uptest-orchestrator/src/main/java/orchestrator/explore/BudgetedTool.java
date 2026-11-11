@@ -538,6 +538,17 @@ final class BudgetedTool implements ToolCallback {
      * send it hunting for a field that was only cut off.
      */
     private String trim(String result) {
+        // "AI ile çalıştır" gets the page summarised as well as capped: tool
+        // results were still 26% of a measured walk and nearly all of it was
+        // layout scaffolding. See LeanResults; the tape keeps the full text.
+        if (policy != null) {
+            String lean = LeanResults.summarise(result, policy.pageCap());
+            if (result != null && lean.length() < result.length()) {
+                System.out.println("[uptest] explore: " + getToolDefinition().name() + " sonucu "
+                        + result.length() + " -> " + lean.length() + " karakter");
+            }
+            return lean;
+        }
         if (result == null || result.length() <= LARGEST_RESULT) {
             return result;
         }
@@ -648,6 +659,12 @@ final class BudgetedTool implements ToolCallback {
             System.out.println("[uptest] explore: yasakli kontrol '" + banned + "' — reddedildi");
             return FORBIDDEN.formatted(banned);
         }
+        String commit = unaskedCommit(input);
+        if (commit != null) {
+            System.out.println("[uptest] explore: senaryoda gecmeyen onay '" + commit
+                    + "' — reddedildi");
+            return UNASKED_COMMIT.formatted(commit);
+        }
         String stranger = unmentioned(input);
         if (stranger != null) {
             System.out.println("[uptest] explore: talimatta gecmeyen alan '" + stranger
@@ -669,6 +686,59 @@ final class BudgetedTool implements ToolCallback {
         }
         if (remaining.decrementAndGet() < 0) {
             return EXHAUSTED;
+        }
+        return null;
+    }
+
+    /**
+     * Words that COMMIT something, and the clicks that carry them.
+     *
+     * The scenario "İptal ekranından Geri ile listeye dönülür" says to press
+     * "Fatura İptal Et" and then "Geri" — open the screen and walk away. The
+     * agent pressed the confirmation behind it and cancelled a real invoice.
+     * The rule against that was in the prompt and the prompt was obeyed up to
+     * the moment it was not, which is this project's oldest lesson: a rule
+     * holds when it is code.
+     *
+     * The test is not "is this word dangerous" but "did the ANALYST ask for
+     * it". A scenario that says to press Onayla may press Onayla; one that
+     * never mentions it may not. So nothing legitimate is blocked, and the one
+     * thing that cannot be undone needs an instruction to happen.
+     */
+    private static final List<String> COMMITTING = List.of(
+            "onayla", "onay ver", "evet", "gönder", "kaydet", "sil", "tamam",
+            "approve", "confirm", "submit", "delete", "yes");
+
+    /** Clicking, or accepting the browser's own dialog, is how a commit happens. */
+    private static final List<String> COMMITTING_TOOLS =
+            List.of("browser_click", "browser_handle_dialog", "browser_press_key");
+
+    private static final String UNASKED_COMMIT = """
+            REFUSED: "%s" commits something and the scenario never asked for it.
+            This is a bank and creating, approving or cancelling a record cannot
+            be undone, not even in the test environment. If the scenario wanted
+            this it would name it. Go on with the step you were given, or call
+            report_result and say the scenario cannot be finished without it.
+            """;
+
+    /**
+     * The committing word this call is aiming at and the scenario never named,
+     * or null.
+     *
+     * "AI ile çalıştır" only: it is the walk that has a scenario to compare
+     * against. Ekran Keşfi is an exploration whose instruction is prose, and
+     * its own TIKLAMA: line is how an analyst fences it off.
+     */
+    private String unaskedCommit(String input) {
+        if (policy == null || input == null || instruction.isEmpty()
+                || !COMMITTING_TOOLS.contains(getToolDefinition().name())) {
+            return null;
+        }
+        String folded = fold(input);
+        for (String word : COMMITTING) {
+            if (folded.contains(word) && !instruction.contains(word)) {
+                return word;
+            }
         }
         return null;
     }

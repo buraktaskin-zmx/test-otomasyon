@@ -43,21 +43,24 @@ final class AiRunPolicy {
     private final long budget;
     private final LongSupplier spent;
     private final int describeCap;
+    private final int pageCap;
 
     /**
      * @param snapshot the RAW snapshot tool — not a BudgetedTool, so taking the
      *                 page costs no budget and is not mistaken for the model's move
      * @param budget   tokens; 0 or less switches the note off
      */
-    AiRunPolicy(ToolCallback snapshot, Duration settle, long budget, int describeCap) {
-        this(snapshot, settle, budget, describeCap, AiTraces::currentTokens);
+    AiRunPolicy(ToolCallback snapshot, Duration settle, long budget, int describeCap, int pageCap) {
+        this(snapshot, settle, budget, describeCap, pageCap, AiTraces::currentTokens);
     }
 
-    AiRunPolicy(ToolCallback snapshot, Duration settle, long budget, int describeCap, LongSupplier spent) {
+    AiRunPolicy(ToolCallback snapshot, Duration settle, long budget, int describeCap, int pageCap,
+                LongSupplier spent) {
         this.snapshot = snapshot;
         this.settle = settle;
         this.budget = budget;
         this.describeCap = describeCap;
+        this.pageCap = pageCap;
         this.spent = spent;
     }
 
@@ -75,6 +78,17 @@ final class AiRunPolicy {
      */
     int describeCap() {
         return describeCap;
+    }
+
+    /**
+     * Characters kept of a tool result once it has been summarised.
+     *
+     * Smaller than the ordinary cap on purpose: the page is already down to
+     * its named things (LeanResults), so what is left is dense, and this walk
+     * sends one of them on every single turn.
+     */
+    int pageCap() {
+        return pageCap;
     }
 
     /**

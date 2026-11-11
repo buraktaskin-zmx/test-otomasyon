@@ -128,6 +128,9 @@ public class ExploreController {
     /** Characters kept of each tool's description on "AI ile çalıştır" (LeanTools). */
     private final int describeCap;
 
+    /** Characters kept of a summarised tool result on "AI ile çalıştır" (LeanResults). */
+    private final int pageCap;
+
     public ExploreController(ChatClient.Builder builder, ToolCallbackProvider tools,
                              CatalogService catalogs,
                              @Value("${uptest.explore.tool-budget:250}") int budget,
@@ -135,7 +138,8 @@ public class ExploreController {
                              @Value("${uptest.explore.settle-ms:1500}") long settleMs,
                              @Value("${uptest.explore.ai-run.token-budget:100000}") long runTokenBudget,
                              @Value("${uptest.explore.ai-run.tool-budget:40}") int runToolBudget,
-                             @Value("${uptest.explore.ai-run.describe-cap:220}") int describeCap) {
+                             @Value("${uptest.explore.ai-run.describe-cap:220}") int describeCap,
+                             @Value("${uptest.explore.ai-run.page-cap:6000}") int pageCap) {
         this.client = builder.build();
         this.tools = tools;
         this.catalogs = catalogs;
@@ -145,6 +149,7 @@ public class ExploreController {
         this.runTokenBudget = runTokenBudget;
         this.runToolBudget = runToolBudget;
         this.describeCap = describeCap;
+        this.pageCap = pageCap;
     }
 
     /**
@@ -531,7 +536,7 @@ public class ExploreController {
         if (opened.reached() == AiRunPrelude.Reached.NOTHING) {
             allowed.add("browser_navigate");
         }
-        AiRunPolicy policy = new AiRunPolicy(raw("browser_snapshot"), settle, runTokenBudget, describeCap);
+        AiRunPolicy policy = new AiRunPolicy(raw("browser_snapshot"), settle, runTokenBudget, describeCap, pageCap);
         System.out.println("[uptest] ai-run: prelude=" + opened.reached()
                 + (opened.note() == null ? "" : " (" + opened.note() + ")")
                 + ", " + allowed.size() + " tarayici araci, talimat " + userTurn.length()

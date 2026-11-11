@@ -142,6 +142,8 @@ istiyordu ("SEARCH, DO NOT SNAPSHOT", "wait a few seconds … READ THE PAGE AGAI
 | 5 | Kısa system prompt (~1/3) | `AgentPrompts.RUN_SYSTEM` |
 | 6 | **Tavan** 100.000 token: %80'de ajana "bitir" notu, aşılınca `report_result` dışındaki her araç reddedilir — koşu durur ve yapabildiğini raporlar | `uptest.explore.ai-run.token-budget` |
 | 7 | Giriş koddan yapılamazsa ajan **hiç başlatılmaz**; sebep (ağ / sayfa) adıyla söylenir | `AiRunPrelude.diagnose` |
+| 8 | Sayfa modele **özetlenerek** verilir: adı olan ve tıklanabilen her şey kalır, adsız iskelet ve kod yankısı atılır | `LeanResults`, `uptest.explore.ai-run.page-cap` |
+| 9 | Senaryoda geçmeyen bir **onay** (Onayla/Evet/Gönder…) tıklanamaz — banka kaydı geri alınamaz | `BudgetedTool.unaskedCommit` |
 
 Gherkin oluştur etkilenmez: bant, koddan yapılan menüyü tek bir `prelude_menu`
 kaydı olarak tutar ve renderer bundan `navigate to` satırını üretir.

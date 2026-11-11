@@ -37,7 +37,7 @@ class AiRunPolicyTest {
     };
 
     private AiRunPolicy policy(long budget) {
-        return new AiRunPolicy(snapshot, Duration.ZERO, budget, 220, spent::get);
+        return new AiRunPolicy(snapshot, Duration.ZERO, budget, 220, 6000, spent::get);
     }
 
     private ActionTape tape() {
