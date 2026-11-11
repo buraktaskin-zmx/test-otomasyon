@@ -1161,6 +1161,24 @@ and leave each independently runnable.
   to save a catalog that did not exist. `app.css` now declares
   `[hidden] { display: none !important }` once, so `el.x.hidden = true` means
   what it says. Worth remembering before adding another panel that toggles.
+- **A second ChatClient is not the one Spring configured.** The cheap-walk
+  work wrapped the chat model to cut old pages out of each turn, and gave "AI
+  ile çalıştır" its own client: `ChatClient.builder(wrapper).build()`. Every
+  walk then died before the agent moved, with
+  `ClassCastException: DefaultChatOptions cannot be cast to OpenAiChatOptions`
+  at `OpenAiChatModel.createRequest` — a hand-built client does not carry the
+  model's own options type, and `.defaultOptions(...)` does not restore it
+  (measured: the request still arrived as `DefaultChatOptions`). Ekran Keşfi
+  never saw it because it uses the autoconfigured `ChatClient.Builder` bean.
+  The fix was to stop building a client at all: the compaction is a
+  `CallAdvisor` added per request to the SAME client (`CompactingAdvisor`,
+  order between `ToolCallingAdvisor.DEFAULT_ORDER` and the model's
+  `MAX_VALUE`, so it runs inside the tool loop and just before each call).
+  Two things worth keeping: the extension point Spring documents is the
+  advisor chain, and **an exception that reaches a `catch` which only builds a
+  502 is an exception nobody can locate** — that block prints the root cause
+  and the whole stack now, because the UI had said "ClassCastException" and
+  the server log had said nothing at all.
 - **An agent's cost is turns × everything it has seen, not what it reads.**
   The first measured "AI ile çalıştır" took 52 turns and 1.48 million input
   tokens for a scenario whose results were small — a snapshot ~2,200 tokens,

@@ -174,8 +174,8 @@ final class AiRunPrelude {
         String page = outcome.page();
         if (page != null && !page.isBlank()) {
             String capped = page.length() > pageCap ? page.substring(0, pageCap) + "\n[... kesildi]" : page;
-            out.append("\n\nŞu anki ekran:\n").append(CompactingChatModel.SCREEN_OPEN).append('\n')
-                    .append(capped).append('\n').append(CompactingChatModel.SCREEN_CLOSE);
+            out.append("\n\nŞu anki ekran:\n").append(CompactingAdvisor.SCREEN_OPEN).append('\n')
+                    .append(capped).append('\n').append(CompactingAdvisor.SCREEN_CLOSE);
         }
         return out.toString();
     }

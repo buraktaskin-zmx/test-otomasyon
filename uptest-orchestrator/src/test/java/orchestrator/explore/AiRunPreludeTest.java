@@ -154,7 +154,7 @@ class AiRunPreludeTest {
                 new AiRunPrelude.Outcome(AiRunPrelude.Reached.ON_SCREEN, "PAGE", null),
                 "Faturayı seç.", "Şifre = pw987654", "NAKİT YÖNETİMİ", "Firma Fatura İşlemleri", 100);
         assertThat(text).contains("ekranı açık").contains("Faturayı seç.")
-                .contains(CompactingChatModel.SCREEN_OPEN + "\nPAGE\n" + CompactingChatModel.SCREEN_CLOSE)
+                .contains(CompactingAdvisor.SCREEN_OPEN + "\nPAGE\n" + CompactingAdvisor.SCREEN_CLOSE)
                 .doesNotContain("pw987654");
     }
 

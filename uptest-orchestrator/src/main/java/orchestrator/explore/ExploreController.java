@@ -4,9 +4,6 @@ import orchestrator.aitrace.AiTraces;
 import orchestrator.catalog.CatalogService;
 import orchestrator.llm.LlmOutputCleaner;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.chat.prompt.ChatOptions;
-import org.springframework.ai.model.tool.ToolCallingChatOptions;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.ai.tool.method.MethodToolCallbackProvider;
@@ -121,13 +118,6 @@ public class ExploreController {
      */
     private final Path tapeDir;
 
-    /**
-     * "AI ile çalıştır"'s own client: the same model, wrapped so that each turn
-     * sends only the latest tool result whole (CompactingChatModel). Ekran
-     * Keşfi keeps {@link #client} and its full history.
-     */
-    private final ChatClient runClient;
-
     /** How long a page is given to settle after an action, before it is read. */
     private final Duration settle;
 
@@ -135,7 +125,7 @@ public class ExploreController {
     private final long runTokenBudget;
     private final int runToolBudget;
 
-    public ExploreController(ChatClient.Builder builder, ChatModel chatModel, ToolCallbackProvider tools,
+    public ExploreController(ChatClient.Builder builder, ToolCallbackProvider tools,
                              CatalogService catalogs,
                              @Value("${uptest.explore.tool-budget:250}") int budget,
                              @Value("${uptest.explore.tape-dir:./runs/mcp}") String tapeDir,
@@ -143,7 +133,6 @@ public class ExploreController {
                              @Value("${uptest.explore.ai-run.token-budget:100000}") long runTokenBudget,
                              @Value("${uptest.explore.ai-run.tool-budget:40}") int runToolBudget) {
         this.client = builder.build();
-        this.runClient = clientFor(new CompactingChatModel(chatModel), chatModel);
         this.tools = tools;
         this.catalogs = catalogs;
         this.budget = budget;
@@ -163,23 +152,6 @@ public class ExploreController {
     static final Set<String> AI_RUN_TOOLS = Set.of(
             "browser_snapshot", "browser_click", "browser_type", "browser_fill_form",
             "browser_select_option", "browser_press_key", "browser_handle_dialog");
-
-    /**
-     * A ChatClient over {@code wrapper}, carrying {@code configured}'s own
-     * default options — the model name and temperature from
-     * application.properties, which a bare builder would leave blank.
-     *
-     * @param wrapper    the model the client talks to (CompactingChatModel)
-     * @param configured the real model underneath, whose defaults are copied
-     */
-    static ChatClient clientFor(ChatModel wrapper, ChatModel configured) {
-        ChatOptions defaults = configured.getDefaultOptions();
-        System.out.println("[uptest] ai-run: istemci kuruldu, model secenekleri="
-                + (defaults == null ? "yok" : defaults.getClass().getSimpleName()));
-        return ChatClient.builder(wrapper)
-                .defaultOptions(defaults == null ? ToolCallingChatOptions.builder() : defaults.mutate())
-                .build();
-    }
 
     private ToolCallback raw(String name) {
         for (ToolCallback callback : tools.getToolCallbacks()) {
@@ -548,9 +520,12 @@ public class ExploreController {
                 + (opened.note() == null ? "" : " (" + opened.note() + ")")
                 + ", " + allowed.size() + " tarayici araci, talimat " + userTurn.length()
                 + " karakter, token butcesi " + runTokenBudget);
-        String answer = runClient.prompt()
+        // The SAME client Ekran Keşfi uses — Spring's, configured. The only
+        // difference is an advisor that cuts the old pages out of each turn.
+        String answer = client.prompt()
                 .system(RUN_SYSTEM + RESULT_RULES)
                 .user(userTurn)
+                .advisors(new CompactingAdvisor())
                 .tools(toolsFor(null, userTurn, new LinkedHashSet<>(), aborted, tape, verdict,
                         policy, allowed, runToolBudget))
                 .call()

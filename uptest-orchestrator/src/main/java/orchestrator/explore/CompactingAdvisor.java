@@ -1,13 +1,13 @@
 package orchestrator.explore;
 
+import org.springframework.ai.chat.client.ChatClientRequest;
+import org.springframework.ai.chat.client.ChatClientResponse;
+import org.springframework.ai.chat.client.advisor.api.CallAdvisor;
+import org.springframework.ai.chat.client.advisor.api.CallAdvisorChain;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.ToolResponseMessage;
 import org.springframework.ai.chat.messages.UserMessage;
-import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.chat.model.ChatResponse;
-import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
-import reactor.core.publisher.Flux;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -21,29 +21,60 @@ import java.util.regex.Pattern;
  * <p><b>Measured, 11.11.2026:</b> one "AI ile çalıştır" walk took 52 turns and
  * 1.48 million input tokens, and 66% of them were tool results — not because
  * the results were large (a snapshot is ~2,200 tokens, a click ~160) but
- * because Spring AI's tool loop resends the WHOLE conversation every turn, so
- * the snapshot of turn 3 was paid for again on turns 4 through 52.
+ * because the tool loop resends the WHOLE conversation every turn, so the
+ * snapshot of turn 3 was paid for again on turns 4 through 52.
  *
  * <p>An old snapshot is worth nothing to the model: its references die the
- * moment the page changes, and the page has changed. So on every call this
+ * moment the page changes, and the page has changed. So on every turn this
  * keeps the LAST tool response whole — the screen the agent is acting on — and
  * cuts every earlier one to the Playwright line that was run. The record of
  * what was DONE survives; the pages it was done on do not.
  *
- * <p>It sits between {@code ChatClient}'s tool loop and the real model:
- * {@code ToolCallingAdvisor} calls {@code chatModel.call} once per turn through
- * {@code ChatModelCallAdvisor}, so wrapping the model is enough to see every
- * turn, and the loop, its guards and {@code report_result}'s returnDirect are
- * left exactly as they are. What is cut is only what is SENT: the action tape
- * keeps every result whole (BudgetedTool records it before this ever runs),
- * and "Gherkin oluştur" reads the tape.
+ * <p><b>An advisor, not a ChatModel wrapper.</b> The first version wrapped the
+ * model and gave "AI ile çalıştır" its own hand-built ChatClient. That client
+ * is not the one Spring configures, and the options it produced were a plain
+ * {@code DefaultChatOptions}; {@code OpenAiChatModel.createRequest} casts them
+ * to {@code OpenAiChatOptions}, so every walk died with a ClassCastException
+ * before the agent moved. An advisor needs no second client: it is added to
+ * the same working one per request.
+ *
+ * <p><b>Why this runs on every turn.</b> {@code ToolCallingAdvisor} loops by
+ * calling the rest of the chain again ({@code DEFAULT_ORDER} =
+ * {@code MIN_VALUE + 300}), and the model sits at the end of it
+ * ({@code ChatModelCallAdvisor}, {@code MAX_VALUE}). An order between the two
+ * is therefore inside the loop and ahead of the model — every turn, just
+ * before it is sent.
+ *
+ * <p>What is cut is only what is SENT: the action tape keeps every result
+ * whole (BudgetedTool records it before this ever runs), and "Gherkin oluştur"
+ * reads the tape.
  *
  * <p>The first screen after the login is handed over in the user message,
  * between {@link #SCREEN_OPEN} and {@link #SCREEN_CLOSE}. The user message is
  * resent every turn and is not a tool response, so that block is cut the same
  * way once the agent has a newer page.
  */
-final class CompactingChatModel implements ChatModel {
+final class CompactingAdvisor implements CallAdvisor {
+
+    /** Between ToolCallingAdvisor (outermost) and the model (innermost). */
+    private static final int ORDER = 0;
+
+    @Override
+    public String getName() {
+        return "uptest-compacting";
+    }
+
+    @Override
+    public int getOrder() {
+        return ORDER;
+    }
+
+    @Override
+    public ChatClientResponse adviseCall(ChatClientRequest request, CallAdvisorChain chain) {
+        Prompt sent = compact(request.prompt());
+        report(request.prompt(), sent);
+        return chain.nextCall(request.mutate().prompt(sent).build());
+    }
 
     static final String SCREEN_OPEN = "<<EKRAN>>";
     static final String SCREEN_CLOSE = "<</EKRAN>>";
@@ -53,19 +84,6 @@ final class CompactingChatModel implements ChatModel {
 
     /** A result this short costs less than the note that would replace it. */
     static final int KEEP_UNDER = 300;
-
-    private final ChatModel delegate;
-
-    CompactingChatModel(ChatModel delegate) {
-        this.delegate = delegate;
-    }
-
-    @Override
-    public ChatResponse call(Prompt prompt) {
-        Prompt sent = compact(prompt);
-        report(prompt, sent);
-        return delegate.call(sent);
-    }
 
     /**
      * One line per turn: that this wrapper was reached at all, what the client
@@ -99,16 +117,6 @@ final class CompactingChatModel implements ChatModel {
         System.out.println("[uptest] compact: " + before.getInstructions().size() + " mesaj, "
                 + shortened + " eski sonuc kisaltildi (" + was + " -> " + now + " karakter), options="
                 + (before.getOptions() == null ? "yok" : before.getOptions().getClass().getSimpleName()));
-    }
-
-    @Override
-    public Flux<ChatResponse> stream(Prompt prompt) {
-        return delegate.stream(compact(prompt));
-    }
-
-    @Override
-    public ChatOptions getDefaultOptions() {
-        return delegate.getDefaultOptions();
     }
 
     /**
