@@ -85,6 +85,27 @@ class AiRunPreludeTest {
     }
 
     @Test
+    @DisplayName("the login box is not there yet: the code waits and retries instead of giving up")
+    void waitsForTheLoginBox() {
+        // Fails the first two attempts at #userCode, as a page still loading does.
+        int[] seen = {0};
+        AiRunPrelude.Outcome outcome = new AiRunPrelude(
+                mcp(line -> line.contains("#userCode") && ++seen[0] <= 2), tape(), Duration.ZERO)
+                .run(NGC, "NAKİT YÖNETİMİ", "Firma Fatura İşlemleri");
+
+        assertThat(outcome.reached()).isEqualTo(AiRunPrelude.Reached.ON_SCREEN);
+        assertThat(calls.stream().filter(line -> line.contains("#userCode")).count()).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("a login box that never appears still falls back to the agent")
+    void givesUpAfterTheRetries() {
+        AiRunPrelude.Outcome outcome = run(line -> line.contains("#userCode"), NGC, tape());
+        assertThat(outcome.reached()).isEqualTo(AiRunPrelude.Reached.NOTHING);
+        assertThat(calls.stream().filter(line -> line.contains("#userCode")).count()).isEqualTo(6);
+    }
+
+    @Test
     @DisplayName("no SMS screen: the code moves on without a second submit")
     void noSmsScreen() {
         AiRunPrelude.Outcome outcome = run(line -> line.contains("otpPassword"), NGC, tape());

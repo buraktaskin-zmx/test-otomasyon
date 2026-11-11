@@ -5,6 +5,8 @@ import orchestrator.catalog.CatalogService;
 import orchestrator.llm.LlmOutputCleaner;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.prompt.ChatOptions;
+import org.springframework.ai.model.tool.ToolCallingChatOptions;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.ai.tool.method.MethodToolCallbackProvider;
@@ -141,7 +143,7 @@ public class ExploreController {
                              @Value("${uptest.explore.ai-run.token-budget:100000}") long runTokenBudget,
                              @Value("${uptest.explore.ai-run.tool-budget:40}") int runToolBudget) {
         this.client = builder.build();
-        this.runClient = ChatClient.builder(new CompactingChatModel(chatModel)).build();
+        this.runClient = clientFor(new CompactingChatModel(chatModel), chatModel);
         this.tools = tools;
         this.catalogs = catalogs;
         this.budget = budget;
@@ -161,6 +163,23 @@ public class ExploreController {
     static final Set<String> AI_RUN_TOOLS = Set.of(
             "browser_snapshot", "browser_click", "browser_type", "browser_fill_form",
             "browser_select_option", "browser_press_key", "browser_handle_dialog");
+
+    /**
+     * A ChatClient over {@code wrapper}, carrying {@code configured}'s own
+     * default options — the model name and temperature from
+     * application.properties, which a bare builder would leave blank.
+     *
+     * @param wrapper    the model the client talks to (CompactingChatModel)
+     * @param configured the real model underneath, whose defaults are copied
+     */
+    static ChatClient clientFor(ChatModel wrapper, ChatModel configured) {
+        ChatOptions defaults = configured.getDefaultOptions();
+        System.out.println("[uptest] ai-run: istemci kuruldu, model secenekleri="
+                + (defaults == null ? "yok" : defaults.getClass().getSimpleName()));
+        return ChatClient.builder(wrapper)
+                .defaultOptions(defaults == null ? ToolCallingChatOptions.builder() : defaults.mutate())
+                .build();
+    }
 
     private ToolCallback raw(String name) {
         for (ToolCallback callback : tools.getToolCallbacks()) {
@@ -465,6 +484,34 @@ public class ExploreController {
                 "tapeId", tape.id()), trace.id()));
     }
 
+    /**
+     * The root cause, PRINTED.
+     *
+     * This block used to turn an exception straight into a 502 and nothing
+     * else, so a failed walk left the UI saying "ClassCastException" and the
+     * server log saying nothing at all — the one place the stack trace could
+     * have come from threw it away. A failure nobody can locate is paid for
+     * twice. The model, the MCP server and the browser are three separate
+     * processes and any of them can be the one that broke, so the trace is
+     * worth more here than anywhere.
+     */
+    private static Throwable failure(Exception thrown, String where) {
+        Throwable root = thrown;
+        while (root.getCause() != null && root.getCause() != root) {
+            root = root.getCause();
+        }
+        System.out.println("[uptest] explore(" + where + "): kosu basarisiz — " + named(root));
+        thrown.printStackTrace(System.out);
+        return root;
+    }
+
+    /** "ClassCastException: class X cannot be cast to Y" — what the UI shows. */
+    private static String named(Throwable root) {
+        return root.getMessage() == null
+                ? root.getClass().getSimpleName()
+                : root.getClass().getSimpleName() + ": " + root.getMessage();
+    }
+
     private static void append(StringBuilder out, String label, String value) {
         if (present(value)) {
             out.append("- ").append(label).append(" = ").append(value.trim()).append('\n');
@@ -497,6 +544,10 @@ public class ExploreController {
             allowed.add("browser_navigate");
         }
         AiRunPolicy policy = new AiRunPolicy(raw("browser_snapshot"), settle, runTokenBudget);
+        System.out.println("[uptest] ai-run: prelude=" + opened.reached()
+                + (opened.note() == null ? "" : " (" + opened.note() + ")")
+                + ", " + allowed.size() + " tarayici araci, talimat " + userTurn.length()
+                + " karakter, token butcesi " + runTokenBudget);
         String answer = runClient.prompt()
                 .system(RUN_SYSTEM + RESULT_RULES)
                 .user(userTurn)
@@ -505,6 +556,8 @@ public class ExploreController {
                 .call()
                 .content();
         long used = AiTraces.currentTokens();
+        System.out.println("[uptest] ai-run: bitti — " + used + " token, sonuc bildirildi="
+                + verdict.isClosed());
         if (opened.note() != null) {
             verdict.warn(opened.reached() == AiRunPrelude.Reached.NOTHING
                     ? "Giriş koddan yapılamadı, ajan kendisi yaptı (" + opened.note() + ")."
@@ -581,13 +634,10 @@ public class ExploreController {
             // The model, the MCP server and the browser are three separate
             // processes; any of them can be the one that failed. Report the
             // root cause rather than a 500 page that names none of them.
-            Throwable root = e;
-            while (root.getCause() != null && root.getCause() != root) {
-                root = root.getCause();
-            }
-            trace.fail(root.getClass().getSimpleName() + ": " + root.getMessage());
+            Throwable root = failure(e, "explore");
+            trace.fail(named(root));
             return ResponseEntity.status(502).body(traced(Map.of(
-                    "error", root.getClass().getSimpleName(),
+                    "error", named(root),
                     "detail", String.valueOf(root.getMessage()),
                     "tapeId", tape.id()), trace.id()));
         } finally {
@@ -692,13 +742,10 @@ public class ExploreController {
             return ResponseEntity.ok(traced(Map.of(
                     "catalog", catalog, "problems", problems, "tapeId", tape.id()), trace.id()));
         } catch (Exception e) {
-            Throwable root = e;
-            while (root.getCause() != null && root.getCause() != root) {
-                root = root.getCause();
-            }
-            trace.fail(root.getClass().getSimpleName() + ": " + root.getMessage());
+            Throwable root = failure(e, "catalog");
+            trace.fail(named(root));
             return ResponseEntity.status(502).body(traced(Map.of(
-                    "error", root.getClass().getSimpleName(),
+                    "error", named(root),
                     "detail", String.valueOf(root.getMessage()),
                     "tapeId", tape.id()), trace.id()));
         } finally {

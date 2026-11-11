@@ -45,6 +45,20 @@ class RunVerdictTest {
     }
 
     @Test
+    @DisplayName("a model that answers with objects instead of sentences does not lose the walk")
+    void survivesNonStringItems() {
+        RunVerdict verdict = new RunVerdict();
+        List<Object> odd = List.of(java.util.Map.of("adim", "Fatura seçildi"), 42);
+        @SuppressWarnings("unchecked")
+        List<String> asStrings = (List<String>) (List<?>) odd;
+        verdict.reportResult(asStrings, List.of(), List.of(), true);
+
+        assertThat(verdict.result().succeeded()).hasSize(2);
+        assertThat(verdict.result().succeeded().get(1)).isEqualTo("42");
+        assertThat(verdict.result().passed()).isTrue();
+    }
+
+    @Test
     void noReportMeansNoSummary() {
         RunVerdict verdict = new RunVerdict();
         assertThat(verdict.isClosed()).isFalse();

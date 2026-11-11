@@ -152,15 +152,26 @@ public final class RunVerdict {
         out.append('\n');
     }
 
-    /** Trimmed, blanks dropped, null as empty — "" is how a model says "none". */
-    static List<String> clean(List<String> items) {
+    /**
+     * Trimmed, blanks dropped, null as empty — "" is how a model says "none".
+     *
+     * Takes {@code List<?>} and not {@code List<String>} on purpose. The
+     * arguments are deserialised into the declared parameter type by erasure,
+     * so a model that answers with objects or numbers instead of sentences
+     * ({@code [{"adim": "..."}]}, {@code [1, 2]}) hands this method a list of
+     * maps that a {@code for (String ...)} loop would throw a
+     * ClassCastException on — losing a finished walk over the shape of its
+     * last answer. Whatever arrives is read as text instead.
+     */
+    static List<String> clean(List<?> items) {
         List<String> out = new ArrayList<>();
         if (items == null) {
             return out;
         }
-        for (String item : items) {
-            if (item != null && !item.isBlank()) {
-                out.add(item.strip());
+        for (Object item : items) {
+            String text = item == null ? "" : String.valueOf(item).strip();
+            if (!text.isBlank()) {
+                out.add(text);
             }
         }
         return out;

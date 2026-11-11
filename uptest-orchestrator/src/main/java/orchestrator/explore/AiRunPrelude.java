@@ -58,6 +58,19 @@ final class AiRunPrelude {
 
     private static final int MENU_ATTEMPTS = 3;
 
+    /**
+     * How many times the FIRST login box is tried before giving up.
+     *
+     * The page is not there the instant browser_navigate returns, and the MCP
+     * type tool does not wait: the first real run answered
+     * {@code "#userCode" does not match any elements} and the whole login fell
+     * back to the agent. The executor has always waited for this box
+     * (NGC.openLoginPage, up to LOGIN_BOX_MS) — the same wait, built out of
+     * retries because that is what these tools give us. Only the first field
+     * needs it; once the form is rendered the rest are there with it.
+     */
+    private static final int FIELD_ATTEMPTS = 6;
+
     private final Map<String, ToolCallback> tools;
     private final ActionTape tape;
     private final Duration settle;
@@ -87,7 +100,8 @@ final class AiRunPrelude {
         loginArgs.put("userId", login.userId());
         try {
             call("browser_navigate", "{\"url\":" + json(login.url()) + "}");
-            for (int i = 0; i < fields.size(); i += 2) {
+            typeWhenReady(fields.get(0), fields.get(1));
+            for (int i = 2; i < fields.size(); i += 2) {
                 type(fields.get(i), fields.get(i + 1));
             }
             call("browser_click", target("#btnSubmit"));
@@ -121,6 +135,7 @@ final class AiRunPrelude {
             } catch (RuntimeException notOpen) {
                 lastError = oneLine(notOpen.getMessage());
                 System.out.println("[uptest] prelude: menu " + attempt + ". denemede acilmadi — " + lastError);
+                pause();
             }
         }
         record(MENU_TOOL, menuArgs, false, lastError, menuBegan);
@@ -189,6 +204,28 @@ final class AiRunPrelude {
         return fields;
     }
 
+    /**
+     * The first field, waited for: the login page arrives a moment after the
+     * navigation returns. Each failure costs one settle pause, so the total
+     * wait is FIELD_ATTEMPTS × settle — about nine seconds by default, against
+     * the executor's five.
+     */
+    private void typeWhenReady(String selector, String text) {
+        RuntimeException last = null;
+        for (int attempt = 1; attempt <= FIELD_ATTEMPTS; attempt++) {
+            try {
+                type(selector, text);
+                return;
+            } catch (RuntimeException notYet) {
+                last = notYet;
+                System.out.println("[uptest] prelude: giris kutusu (" + selector + ") " + attempt
+                        + ". denemede yok, bekleniyor");
+                pause();
+            }
+        }
+        throw last;
+    }
+
     /** Real keystrokes, as NGC.login's pressSequentially: these boxes are masked. */
     private void type(String selector, String text) {
         call("browser_type", "{\"target\":" + json(selector) + ",\"text\":" + json(text) + ",\"slowly\":true}");
@@ -251,7 +288,8 @@ final class AiRunPrelude {
         ActionTape.Outcome outcome = ok ? ActionTape.Outcome.OK : ActionTape.Outcome.ERROR;
         tape.record(tool, json.toString(), outcome, result, ms);
         AiTraces.tool(tool, json.toString(), outcome.name(), result, result, ms);
-        System.out.println("[uptest] prelude: " + tool + " " + (ok ? "tamam" : "olmadi") + " (" + ms + " ms)");
+        System.out.println("[uptest] prelude: " + tool + " " + (ok ? "tamam" : "olmadi") + " (" + ms + " ms)"
+                + (ok ? "" : " — " + oneLine(result)));
     }
 
     private boolean has(String... names) {

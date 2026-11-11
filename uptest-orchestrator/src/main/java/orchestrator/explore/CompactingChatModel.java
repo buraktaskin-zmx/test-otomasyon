@@ -62,7 +62,43 @@ final class CompactingChatModel implements ChatModel {
 
     @Override
     public ChatResponse call(Prompt prompt) {
-        return delegate.call(compact(prompt));
+        Prompt sent = compact(prompt);
+        report(prompt, sent);
+        return delegate.call(sent);
+    }
+
+    /**
+     * One line per turn: that this wrapper was reached at all, what the client
+     * handed it, and what the compaction saved.
+     *
+     * The options class is on it deliberately. Spring builds the request's
+     * options somewhere between the ChatClient and here, and which concrete
+     * type arrives decides whether the model below can read the tools off it —
+     * a question that cost a whole debugging round to ask from the outside.
+     * Printing it makes the answer the first thing in the log.
+     */
+    private static void report(Prompt before, Prompt after) {
+        int shortened = 0;
+        long was = 0;
+        long now = 0;
+        for (int i = 0; i < before.getInstructions().size(); i++) {
+            if (!(before.getInstructions().get(i) instanceof ToolResponseMessage from)) {
+                continue;
+            }
+            ToolResponseMessage to = (ToolResponseMessage) after.getInstructions().get(i);
+            for (int r = 0; r < from.getResponses().size(); r++) {
+                String one = from.getResponses().get(r).responseData();
+                String two = to.getResponses().get(r).responseData();
+                if (one != null && two != null && two.length() < one.length()) {
+                    shortened++;
+                    was += one.length();
+                    now += two.length();
+                }
+            }
+        }
+        System.out.println("[uptest] compact: " + before.getInstructions().size() + " mesaj, "
+                + shortened + " eski sonuc kisaltildi (" + was + " -> " + now + " karakter), options="
+                + (before.getOptions() == null ? "yok" : before.getOptions().getClass().getSimpleName()));
     }
 
     @Override
