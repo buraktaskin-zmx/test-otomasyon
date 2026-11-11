@@ -1,5 +1,7 @@
 package orchestrator.llm;
 
+import orchestrator.aitrace.AiTraces;
+import orchestrator.aitrace.TurnRecord;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
@@ -9,6 +11,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
@@ -138,6 +141,8 @@ public class VisionClient {
                         Map.of("role", "user", "content", content)));
 
         String answer;
+        Instant began = Instant.now();
+        long nanos = System.nanoTime();
         try {
             answer = http.post()
                     .uri("/chat/completions")
@@ -146,10 +151,70 @@ public class VisionClient {
                     .retrieve()
                     .body(String.class);
         } catch (RuntimeException failed) {
+            trace(began, nanos, systemMessage, userMessage, images, null, failed.getMessage());
             throw new IllegalStateException("Görsel model çağrısı başarısız: " + failed.getMessage(), failed);
         }
+        trace(began, nanos, systemMessage, userMessage, images, answer, null);
 
         return content(answer);
+    }
+
+    /**
+     * Reports the call to the AI trace (Token Takibi).
+     *
+     * This client is plain HTTP, so Spring AI's observation — which records
+     * every other model call — never sees it. The images are NOT stored: they
+     * are already on disk beside the flow, and a base64 copy per call would be
+     * the largest thing in the trace. A line per image stands in for each.
+     *
+     * Never throws: a reading that cannot be traced is still a reading.
+     */
+    private void trace(Instant began, long nanos, String systemMessage, String userMessage,
+                       List<byte[]> images, String rawJson, String failure) {
+        try {
+            long ms = Duration.ofNanos(System.nanoTime() - nanos).toMillis();
+            StringBuilder user = new StringBuilder(userMessage == null ? "" : userMessage);
+            for (int i = 0; i < images.size(); i++) {
+                user.append("\n[görüntü ").append(i + 1).append('/').append(images.size()).append(": ")
+                        .append(images.get(i).length / 1024).append(" KB PNG — kayıtta saklanmaz]");
+            }
+            Integer prompt = null;
+            Integer completion = null;
+            Integer total = null;
+            String text = null;
+            String finish = null;
+            String error = failure;
+            String answeredModel = model;
+            if (rawJson != null && !rawJson.isBlank()) {
+                JsonNode root = mapper.readTree(rawJson);
+                JsonNode usage = root.get("usage");
+                if (usage != null && !usage.isNull()) {
+                    prompt = usage.path("prompt_tokens").asInt(0);
+                    completion = usage.path("completion_tokens").asInt(0);
+                    total = usage.path("total_tokens").asInt(0);
+                }
+                JsonNode choice = root.path("choices").path(0);
+                if (!choice.isMissingNode()) {
+                    JsonNode content = choice.path("message").path("content");
+                    text = content.isNull() || content.isMissingNode() ? null : content.asString("");
+                    JsonNode reason = choice.path("finish_reason");
+                    finish = reason.isNull() || reason.isMissingNode() ? null : reason.asString("");
+                }
+                JsonNode named = root.get("model");
+                if (named != null && !named.isNull()) {
+                    answeredModel = named.asString(model);
+                }
+                JsonNode refused = root.get("error");
+                if (refused != null && !refused.isNull()) {
+                    error = refused.toString();
+                }
+            }
+            AiTraces.turn(new TurnRecord(began, ms, answeredModel, prompt, completion, total, null, finish,
+                    List.of(TurnRecord.Msg.of("system", systemMessage), TurnRecord.Msg.of("user", user.toString())),
+                    null, 0, text, null, List.of(), true, error));
+        } catch (RuntimeException unreadable) {
+            System.out.println("[uptest] vision: AI kaydina yazilamadi (" + unreadable.getMessage() + ")");
+        }
     }
 
     /** The assistant's text, plus the usage figures into the shared counter. */

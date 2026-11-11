@@ -1,5 +1,6 @@
 package orchestrator.flow;
 
+import orchestrator.aitrace.AiTraces;
 import orchestrator.flow.FlowModel.Flow;
 import orchestrator.flow.FlowModel.Intent;
 import orchestrator.flow.FlowModel.Plan;
@@ -162,10 +163,18 @@ public class FlowController {
                     "detail", "uptest.vision.enabled=true ve uptest.vision.* ayarları gerekli."));
         }
         Flow flow = store.read(app, product);
-        return reader.readNode(app, product, flow, nodeId)
-                .<ResponseEntity<?>>map(read -> ResponseEntity.ok(Map.of("screens", List.of(read))))
-                .orElseGet(() -> ResponseEntity.badRequest().body(Map.of(
-                        "error", "Çizimde böyle bir ekran yok: " + nodeId)));
+        try (AiTraces.Scope trace = AiTraces.open("flow-read", new AiTraces.Meta()
+                .title("Ekran okuma · " + nodeId).app(app).product(product))) {
+            return reader.readNode(app, product, flow, nodeId)
+                    .<ResponseEntity<?>>map(read -> {
+                        if (read.error() != null) {
+                            trace.fail(read.error());
+                        }
+                        return ResponseEntity.ok(Map.of("screens", List.of(read)));
+                    })
+                    .orElseGet(() -> ResponseEntity.badRequest().body(Map.of(
+                            "error", "Çizimde böyle bir ekran yok: " + nodeId)));
+        }
     }
 
     /* ------------------------- plan and generate ------------------------- */
@@ -207,22 +216,28 @@ public class FlowController {
         List<Rule> rules = FlowSuggestService.rulesFor(model,
                 body == null ? List.of() : body.ruleIds());
 
-        ScreenReader reader = readers.getIfAvailable();
-        List<ScreenReader.Read> reads = reader == null
-                ? List.of()
-                : reader.readAll(app, product, flow, true);
+        // One AI session for the whole press of the button: the vision reads
+        // it triggers and the planning call (Token Takibi).
+        try (AiTraces.Scope trace = AiTraces.open("flow-plan", new AiTraces.Meta()
+                .title("Planlama · " + product + " · " + count + " senaryo").app(app).product(product))) {
+            ScreenReader reader = readers.getIfAvailable();
+            List<ScreenReader.Read> reads = reader == null
+                    ? List.of()
+                    : reader.readAll(app, product, flow, true);
 
-        try {
-            Plan plan = planner.plan(app, product, flow, model, rules, count);
-            List<String> notes = new ArrayList<>(plan.notes());
-            // A screen that would not read is named here rather than left to
-            // be noticed as a missing field thirty scenarios later.
-            reads.stream().filter(read -> read.error() != null).forEach(read ->
-                    notes.add("\"" + read.title() + "\" okunamadı: " + read.error()));
-            return ResponseEntity.ok(new PlanResponse(plan.scenarios(), notes, reads));
-        } catch (RuntimeException failed) {
-            return ResponseEntity.status(502).body(Map.of(
-                    "error", "Plan üretilemedi", "detail", String.valueOf(failed.getMessage())));
+            try {
+                Plan plan = planner.plan(app, product, flow, model, rules, count);
+                List<String> notes = new ArrayList<>(plan.notes());
+                // A screen that would not read is named here rather than left to
+                // be noticed as a missing field thirty scenarios later.
+                reads.stream().filter(read -> read.error() != null).forEach(read ->
+                        notes.add("\"" + read.title() + "\" okunamadı: " + read.error()));
+                return ResponseEntity.ok(new PlanResponse(plan.scenarios(), notes, reads));
+            } catch (RuntimeException failed) {
+                trace.fail(String.valueOf(failed.getMessage()));
+                return ResponseEntity.status(502).body(Map.of(
+                        "error", "Plan üretilemedi", "detail", String.valueOf(failed.getMessage())));
+            }
         }
     }
 
@@ -271,12 +286,19 @@ public class FlowController {
         List<Rule> rules = FlowSuggestService.rulesFor(model,
                 body == null ? List.of() : body.ruleIds());
         String testData = testData(model);
-        try {
-            return ResponseEntity.ok(suggester.write(app, product, flow, plan.scenarios(),
-                    vocabulary.get(), model, rules, loginStep, testData));
-        } catch (RuntimeException failed) {
-            return ResponseEntity.status(502).body(Map.of(
-                    "error", "Senaryolar üretilemedi", "detail", String.valueOf(failed.getMessage())));
+        // The N parallel generations write into this one session; the pool
+        // carries it to its workers (FlowSuggestService, AiTraces.wrap).
+        try (AiTraces.Scope trace = AiTraces.open("flow-suggest", new AiTraces.Meta()
+                .title("Üretim · " + product + " · " + plan.scenarios().size() + " senaryo")
+                .app(app).product(product).cif(body == null ? null : body.cif()))) {
+            try {
+                return ResponseEntity.ok(suggester.write(app, product, flow, plan.scenarios(),
+                        vocabulary.get(), model, rules, loginStep, testData));
+            } catch (RuntimeException failed) {
+                trace.fail(String.valueOf(failed.getMessage()));
+                return ResponseEntity.status(502).body(Map.of(
+                        "error", "Senaryolar üretilemedi", "detail", String.valueOf(failed.getMessage())));
+            }
         }
     }
 

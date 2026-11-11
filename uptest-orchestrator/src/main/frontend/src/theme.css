@@ -2519,3 +2519,230 @@ button.db-screen:hover .db-screen-name { color: var(--link); text-decoration: un
     border-radius: var(--radius-sm);
     background: var(--surface-2);
 }
+
+/* ===================== Token Takibi (docs/TOKEN-TAKIBI.md) =====================
+   Five categorical hues for the prompt's sources, in the order the dataviz
+   validator passed on THIS theme's surfaces (white, and the dark #151d27):
+   worst adjacent CVD ΔE 9.1 light / 8.4 dark, normal-vision 19.6 / 19.3.
+   Three light steps sit under 3:1 on white (aqua 2.82, yellow 2.17, magenta
+   2.69), so every chart that uses them prints each part's number in words --
+   DESIGN.md §2 records the pairs. The remainder ("şablon") is grey: it is
+   not a source. Blue here is a series colour, the same exception DESIGN.md
+   §2 makes for the dashboard's bars. */
+:root {
+    --tok-1: #2a78d6;   /* tool sonuçları — also "girdi" on the daily chart */
+    --tok-2: #eb6834;   /* system prompt  — also "çıktı" on the daily chart */
+    --tok-3: #1baf7a;   /* tool tanımları */
+    --tok-4: #eda100;   /* kullanıcı mesajı */
+    --tok-5: #e87ba4;   /* model geçmişi */
+}
+:root[data-theme="dark"] {
+    --tok-1: #3987e5;
+    --tok-2: #d95926;
+    --tok-3: #199e70;
+    --tok-4: #c98500;
+    --tok-5: #d55181;
+}
+
+.db-seg.tk-toolResults, .db-legend-item.tk-toolResults::before, .tk-key.tk-toolResults::before,
+.db-seg.tk-in, .db-legend-item.tk-in::before { background: var(--tok-1); }
+.db-seg.tk-system, .db-legend-item.tk-system::before, .tk-key.tk-system::before,
+.db-seg.tk-out, .db-legend-item.tk-out::before { background: var(--tok-2); }
+.db-seg.tk-toolDefs, .db-legend-item.tk-toolDefs::before, .tk-key.tk-toolDefs::before { background: var(--tok-3); }
+.db-seg.tk-user, .db-legend-item.tk-user::before, .tk-key.tk-user::before { background: var(--tok-4); }
+.db-seg.tk-assistant, .db-legend-item.tk-assistant::before, .tk-key.tk-assistant::before { background: var(--tok-5); }
+.db-seg.tk-overhead, .db-legend-item.tk-overhead::before, .tk-key.tk-overhead::before { background: var(--skip); }
+/* A turn whose input has not been split (yet, or never: a vision call). */
+.db-seg.tk-unsplit {
+    background: repeating-linear-gradient(45deg, var(--chip-bg) 0 4px, var(--border) 4px 6px);
+    outline: 1px solid var(--border);
+    outline-offset: -1px;
+}
+
+.tokens-panel .btn-sm { padding: 2px var(--space-2); font-size: var(--text-sm); }
+.tk-axis { width: 4.6em; white-space: nowrap; }
+.tk-turns { gap: 2px; }
+.tk-turns .db-day-col { width: 80%; }
+.tk-bar { height: 12px; margin-top: var(--space-1); }
+.tk-legend { gap: var(--space-1) var(--space-3); }
+.tk-legend-row { gap: var(--space-1) var(--space-3); font-family: var(--sans); color: var(--muted); }
+.tk-legend-row b { font-family: var(--mono); font-weight: 600; color: var(--ink); }
+.tk-key::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: var(--space-1); border-radius: 2px; vertical-align: -1px; }
+
+.tk-dim { color: var(--soft); font-weight: 400; }
+.tk-num { font-family: var(--mono); font-size: var(--text-sm); color: var(--ink); white-space: nowrap; }
+.tk-strong { font-weight: 600; color: var(--ink-title); }
+.tk-link { color: var(--link); text-align: left; }
+.tk-link:hover { text-decoration: underline; }
+.tk-live { color: var(--ok); font-weight: 600; }
+.tk-error { color: var(--fail); font-size: var(--text-sm); }
+.tk-new {
+    padding: 0 6px;
+    border-radius: var(--radius-badge);
+    background: var(--primary-tint);
+    color: var(--primary-ink);
+    font-size: var(--text-sm);
+    font-weight: 600;
+}
+.tk-chip {
+    padding: 0 6px;
+    border-radius: var(--radius-badge);
+    background: var(--chip-bg);
+    color: var(--link);
+    font-size: var(--text-sm);
+    white-space: nowrap;
+}
+
+/* Kinds, as share-of-total meters */
+.tk-kinds { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+.tk-kind-head { display: flex; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-1); }
+.tk-meter { height: 6px; border-radius: 3px; background: var(--chip-bg); overflow: hidden; }
+.tk-meter span { display: block; height: 100%; border-radius: 3px; background: var(--tok-1); }
+.tk-meter-inline { min-width: 60px; }
+.tk-sessions td:first-child, .tk-sessions th:first-child { width: 30%; }
+.tk-row-open { max-width: 100%; text-align: left; }
+.tk-tools-wrap { margin-top: var(--space-3); max-height: 300px; }
+.tk-tool-table { min-width: 460px; }
+.tk-tool-table td:first-child, .tk-tool-table th:first-child { width: 38%; }
+
+/* Session header */
+.tk-head { display: flex; flex-direction: column; gap: var(--space-1); }
+.tk-head-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.tk-kind { font-size: var(--text-md); font-weight: 600; color: var(--ink-title); }
+.tk-head-meta { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-4); font-size: var(--text-sm); color: var(--muted); }
+.tk-head-meta b { color: var(--ink); }
+.tk-head-error { margin: var(--space-1) 0 0; }
+
+/* Timeline: one row per model turn, its tool calls inside */
+.tk-timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.tk-turn { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); scroll-margin-top: var(--space-3); }
+.tk-turn.is-open { border-color: var(--primary-line); }
+.tk-turn.is-error { border-color: var(--fail); }
+.tk-turn-orphans { padding: var(--space-2) var(--space-3); font-size: var(--text-sm); color: var(--muted); }
+.tk-turn-head {
+    display: grid;
+    grid-template-columns: 3em 6.5em minmax(15em, auto) minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-sm);
+    text-align: left;
+    font-size: var(--text-base);
+}
+.tk-turn-head:hover { background: var(--surface-alt); }
+.tk-turn-seq { font-family: var(--mono); font-weight: 600; color: var(--ink-title); }
+.tk-turn-at, .tk-turn-ms { color: var(--soft); font-size: var(--text-sm); }
+.tk-turn-nums { display: flex; gap: var(--space-2); color: var(--ink); }
+.tk-turn-tools { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; overflow: hidden; }
+.tk-turn-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-3) var(--space-3);
+    border-top: 1px solid var(--border-soft);
+}
+.tk-turn-meta { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); font-size: var(--text-sm); color: var(--muted); }
+.tk-turn-meta b { color: var(--ink); font-weight: 600; }
+
+.tk-text-label { font-size: var(--text-sm); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--soft); }
+.tk-text-label .tk-dim { text-transform: none; letter-spacing: 0; }
+.tk-pre {
+    margin: var(--space-1) 0 0;
+    max-height: 340px;
+    overflow: auto;
+    padding: var(--space-2);
+    background: var(--surface-alt);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-badge);
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: var(--ink);
+}
+.tk-text-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); margin-top: var(--space-1); }
+
+.tk-calls { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.tk-call { border: 1px solid var(--border-soft); border-radius: var(--radius-badge); }
+.tk-call.is-error { border-color: var(--fail); }
+.tk-call-head {
+    display: grid;
+    grid-template-columns: 2.4em minmax(9em, auto) auto minmax(0, 1fr) auto auto auto;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+    padding: 4px var(--space-2);
+    text-align: left;
+    font-size: var(--text-sm);
+}
+.tk-call-head:hover { background: var(--surface-alt); }
+.tk-call-name { font-weight: 600; color: var(--ink); }
+.tk-call-args { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); min-width: 0; }
+.tk-call-body { display: flex; flex-direction: column; gap: var(--space-2); padding: 0 var(--space-2) var(--space-2); }
+
+.tk-messages { display: flex; flex-direction: column; gap: var(--space-2); }
+.tk-messages-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); }
+.tk-check { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; font-size: var(--text-sm); color: var(--muted); }
+.tk-message-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.tk-message { padding-top: var(--space-1); border-top: 1px solid var(--row-line); }
+.tk-message-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); font-size: var(--text-sm); }
+.tk-role { font-weight: 600; color: var(--ink); }
+
+.tk-children { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.tk-children li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+
+@media (max-width: 760px) {
+    .tk-turn-head { grid-template-columns: 3em minmax(0, 1fr) auto; }
+    .tk-turn-at, .tk-turn-tools { display: none; }
+    .tk-call-head { grid-template-columns: 2.4em minmax(0, 1fr) auto auto; }
+    .tk-call-args, .tk-call-head > .tk-dim { display: none; }
+}
+
+/* ============ Senaryo detayı: bölüm başına düzenleme, AI özet ============
+   Each part (Açıklama, Gherkin, Doğal dil) has its own pencil, shown only
+   while the pointer is in that part. Hidden with opacity, not display: the
+   button stays in the tab order, and :focus-within shows it to a keyboard
+   user who tabs into it. A touch screen has no hover, so there it always
+   shows. */
+.sd-edit-reveal { display: inline-flex; opacity: 0; transition: opacity .12s ease; }
+.sd-pane:hover .sd-edit-reveal,
+.sd-pane:focus-within .sd-edit-reveal { opacity: 1; }
+@media (hover: none) { .sd-edit-reveal { opacity: 1; } }
+.sd-edit-actions { display: inline-flex; gap: var(--space-1); }
+.sd-pane.is-editing { border-color: var(--primary-line); }
+
+/* AI ÖZET: three lists, each item marked with its own sign beside the word
+   in the heading -- the colour is never the only cue. */
+.sd-ai { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-3); }
+.sd-ai-block { display: flex; flex-direction: column; gap: var(--space-1); }
+.sd-ai-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.sd-ai-list li {
+    position: relative;
+    padding-left: 1.4em;
+    font-size: var(--text-base);
+    line-height: 1.45;
+    color: var(--ink);
+}
+.sd-ai-list li::before { position: absolute; left: 0; top: 0; font-weight: 700; }
+.sd-ai-block.is-ok li::before { content: "✓"; color: var(--ok); }
+.sd-ai-block.is-fail li::before { content: "✗"; color: var(--fail); }
+.sd-ai-block.is-warn li::before { content: "!"; color: var(--warn); }
+
+/* The one answer. Bold and ≥ 12px, which DESIGN.md §2 requires of red text
+   on its pale ground (4.44:1). */
+.sd-verdict {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    margin: var(--space-1) 0 0;
+    padding: var(--space-1) var(--space-3);
+    border-radius: var(--radius-pill);
+    font-size: var(--text-md);
+    font-weight: 700;
+}
+.sd-verdict.is-pass { background: var(--ok-bg); color: var(--ok); }
+.sd-verdict.is-fail { background: var(--fail-bg); color: var(--fail); }
+.sd-verdict.is-none { background: var(--skip-bg); color: var(--muted); font-weight: 600; font-size: var(--text-sm); }

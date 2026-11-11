@@ -246,9 +246,23 @@ Elsewhere:
   `/screens/{app}/{product}/{flow}`, `/scenarios/{app}/{product}?path=`) and
   `frontend/src/dashboard/`. What every number means is `docs/DASHBOARD.md`;
   runs without a `scenario_id` are matched by title and marked "≈".
+- Token Takibi (orchestrator): `orchestrator/aitrace/` and `frontend/src/tokens/`;
+  what every number means is `docs/TOKEN-TAKIBI.md`. Every model call — each
+  turn of the MCP agent's own tool loop included — is caught by an
+  `ObservationRegistry` that carries only `AiTraceObservationHandler`
+  (`AiTraceConfig`); tool calls come from `BudgetedTool.guarded`; `VisionClient`
+  reports its own, being plain HTTP. The session rides on the thread
+  (`AiTraces.open` / `wrap`). Numbers in `AI_SESSION` / `AI_TURN` /
+  `AI_TOOL_CALL`, full texts once each under `runs/llm/<id>/`. `SecretMask`
+  holds the tape's two masking rules, moved out of `ActionTape`.
 - MCP exploration agent (orchestrator): `orchestrator/explore/` + `.mcp.json`.
-  The agent's prompts (`SYSTEM`, `ANSWER_RULES`, `CATALOG_RULES`, `CLOSING`)
-  live in `AgentPrompts`, the draft checks (`problems()`) in
+  The agent's prompts (`SYSTEM`, `ANSWER_RULES`, `RESULT_RULES`,
+  `CATALOG_RULES`, `CLOSING`) live in `AgentPrompts`. A saved scenario's "AI
+  ile çalıştır" (`source: "ai-run"`) ends with `RunVerdict`'s `report_result`
+  tool -- succeeded / failed / warnings, all REQUIRED, `returnDirect` -- and
+  the verdict is settled in code (one failed step is "Geçmedi" whatever the
+  agent claimed); Serbest Gözlem keeps its prose `ANSWER_RULES`. The draft
+  checks (`problems()`) are in
   `CatalogDraftChecks`; a lesson below that says `ExploreController.SYSTEM`
   means `AgentPrompts.SYSTEM`. The walk-to-Gherkin renderer is `TapeRenderer`
   with `PlaywrightLine` (the echoed line, parsed), `TapeScope` (the snapshots a
@@ -1149,6 +1163,30 @@ and leave each independently runnable.
 
 ## Open issues
 
+- **Senaryo Üret her çağrıya ürünün BÜTÜN kural kitabını koyuyor.** Ölçüldü
+  2026-11-10: nakit-yonetimi'nin `rules.yaml`'ı 48 kural, prompta işlenmiş
+  hâli ~19.000 karakter (~5.000 token). `FlowPanel` planlama ve üretim
+  çağrılarını `ruleIds: []` ile atıyor, `FlowSuggestService.rulesFor` ise boş
+  liste gelince `model.rules()`'un tamamını döndürüyor — yani 25 senaryoluk
+  bir koşuda bir planlama + 25 üretim çağrısının HER BİRİ o beş bin token'ı
+  taşıyor, kabaca 130.000 token, ve tipik bir senaryo tek bir kuralı sınıyor.
+  Bu, bu dosyanın kendi ilkesiyle çelişiyor: *"Only the rules an analyst
+  selected reach the model... a rule far from where it applies is a rule the
+  model does not read."* Planlama çağrısının hepsini görmesi doğru — seçimi o
+  yapıyor. Senaryo çağrısının görmesi gereken ise `Intent.ruleIds`'in
+  söylediği kurallar, ve o alan zaten orada: `FlowSuggestService.one` tam
+  listeyi alıp `FlowPrompts.scenario`'ya veriyor, oysa `intent.ruleIds()`
+  elinin altında. Daraltmanın doğrulamayı bozma riski yok, çünkü
+  `ScenarioValidator` ürünün bütün mesaj kümesini kurallardan bağımsız
+  görüyor. Tek dikkat: hiç kural adı vermeyen bir senaryo daraltılırsa
+  kuralsız kalır, o yüzden boş `ruleIds` hâlâ "hepsini gönder" demeli.
+- **Üretilen senaryolar hiçbir kurala bağlanmıyor olabilir.** Bir koşuda 25
+  senaryonun hepsi "hiçbir kurala bağlı değil" dedi. `FlowPlanner.parse`
+  modelin döndürdüğü kimlikleri `model.rules()`'un kimliklerine karşı
+  süzüyor; `model` null ise (o ürünün `rules.yaml`'ı yoksa) küme boş kalır ve
+  HER kimlik sessizce atılır. Modelin hiç kimlik döndürmemesi de aynı sonucu
+  verir, ve ikisi çıktıda birbirinden ayırt edilemiyor. Hangisi olduğunu
+  söyleyen bir not gerekiyor.
 - **The "Seçiniz" placeholder still reaches drafts.** `selectableOptions`
   drops an option with no value, disabled or hidden; this app gives its
   placeholder a real value, so `Döviz Cinsi` came back as

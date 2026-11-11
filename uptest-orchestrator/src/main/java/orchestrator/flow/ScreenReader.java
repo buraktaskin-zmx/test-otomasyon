@@ -1,5 +1,6 @@
 package orchestrator.flow;
 
+import orchestrator.aitrace.AiTraces;
 import orchestrator.flow.FlowModel.Edge;
 import orchestrator.flow.FlowModel.Flow;
 import orchestrator.flow.FlowModel.Node;
@@ -96,7 +97,7 @@ public class ScreenReader {
             List<Future<Read>> futures = new ArrayList<>();
             for (Node node : withImage) {
                 Callable<Read> job = () -> readOne(app, product, flow, node);
-                futures.add(pool.submit(job));
+                futures.add(pool.submit(AiTraces.wrap(job)));
             }
             List<Read> out = new ArrayList<>();
             for (int i = 0; i < futures.size(); i++) {

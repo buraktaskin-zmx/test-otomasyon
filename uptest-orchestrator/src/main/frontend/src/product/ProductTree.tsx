@@ -146,7 +146,7 @@ export function ProductTree({
                 menü has exactly one. */}
             {catOpen && group.products[0] ? (
               <AddRow
-                label="Ekran ekle"
+                label="Menü ekle"
                 placeholder="Örn: Ödeme Oluştur"
                 nested
                 onSubmit={(name) => onAddScreen(

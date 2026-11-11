@@ -1,5 +1,6 @@
 package orchestrator.flow;
 
+import orchestrator.aitrace.AiTraces;
 import orchestrator.catalog.CatalogService;
 import orchestrator.flow.FlowModel.Flow;
 import orchestrator.flow.FlowModel.Intent;
@@ -92,8 +93,8 @@ public class FlowSuggestService {
             for (int i = 0; i < plan.size(); i++) {
                 int index = i;
                 Intent intent = plan.get(i);
-                futures.add(pool.submit(() -> one(index, app, product, flow, reads, intent,
-                        vocabulary, context, rules, loginStep, testData)));
+                futures.add(pool.submit(AiTraces.wrap(() -> one(index, app, product, flow, reads, intent,
+                        vocabulary, context, rules, loginStep, testData))));
             }
             for (int i = 0; i < futures.size(); i++) {
                 try {

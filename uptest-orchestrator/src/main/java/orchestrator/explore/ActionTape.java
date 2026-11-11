@@ -1,6 +1,7 @@
 package orchestrator.explore;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import orchestrator.aitrace.SecretMask;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -68,22 +69,11 @@ public final class ActionTape {
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
-    private static final String MASK = "***";
-
-    /**
-     * Shorter than this and masking does more harm than good.
-     *
-     * A three-character secret appears inside ordinary page text constantly,
-     * so replacing it would quietly rewrite the very arguments this file
-     * exists to preserve.
-     */
-    private static final int SHORTEST_SECRET = 4;
-
     private final String id;
     private final Instant startedAt = Instant.now();
     private final Map<String, Object> header = new LinkedHashMap<>();
     private final List<Map<String, Object>> entries = new ArrayList<>();
-    private final List<String> secrets;
+    private final SecretMask mask;
 
     /** Null when the directory could not be created; the tape then records but never writes. */
     private final Path file;
@@ -101,10 +91,10 @@ public final class ActionTape {
         ERROR
     }
 
-    private ActionTape(String id, Path file, List<String> secrets) {
+    private ActionTape(String id, Path file, SecretMask mask) {
         this.id = id;
         this.file = file;
-        this.secrets = secrets;
+        this.mask = mask;
     }
 
     /**
@@ -122,17 +112,13 @@ public final class ActionTape {
      */
     public static ActionTape open(Path dir, String kind, String instruction,
                                   String url, String mainMenu, List<String> secrets) {
-        List<String> usable = secrets == null ? List.of() : secrets.stream()
-                .filter(secret -> secret != null && secret.trim().length() >= SHORTEST_SECRET)
-                .map(String::trim)
-                .toList();
 
         // The id names the directory, so a tapeId handed to the UI is enough
         // to find the file. Minting a second UUID for the directory made them
         // disagree, and the id in the answer then located nothing.
         String id = UUID.randomUUID().toString();
 
-        ActionTape tape = new ActionTape(id, resolve(dir, id), usable);
+        ActionTape tape = new ActionTape(id, resolve(dir, id), SecretMask.of(secrets));
         tape.header.put("tapeId", tape.id);
         tape.header.put("kind", kind);
         tape.header.put("recordedAt", tape.startedAt.toString());
@@ -193,6 +179,19 @@ public final class ActionTape {
      *                exactly what the model saw and no more
      */
     public synchronized void record(String tool, String input, Outcome outcome, String result) {
+        record(tool, input, outcome, result, null);
+    }
+
+    /**
+     * The same, with how long the call took.
+     *
+     * {@code atMs} is when the entry was written — the END of the call — so on
+     * its own it cannot tell a slow tool from a slow model turn before it.
+     *
+     * @param durationMs wall time of the tool itself, or null when not measured
+     */
+    public synchronized void record(String tool, String input, Outcome outcome, String result,
+                                    Long durationMs) {
         Map<String, Object> entry = new LinkedHashMap<>();
         entry.put("seq", entries.size() + 1);
         entry.put("atMs", Duration.between(startedAt, Instant.now()).toMillis());
@@ -200,6 +199,9 @@ public final class ActionTape {
         entry.put("args", maskValues(input));
         entry.put("outcome", outcome.name());
         entry.put("result", maskValues(result));
+        if (durationMs != null) {
+            entry.put("durationMs", durationMs);
+        }
         entries.add(entry);
         flush();
     }
@@ -258,63 +260,13 @@ public final class ActionTape {
         }
     }
 
-    /**
-     * Masks a secret only where it is a WHOLE JSON string value.
-     *
-     * <p>The first version replaced the secret wherever it occurred, and the
-     * very first real tape proved why that is wrong: the test password is
-     * {@code 123456} and the dealer code under test is {@code 81234567}, so
-     * the grid came back as {@code cell "8***7"} — the artifact corrupted on
-     * exactly the value the scenario asserts. A tape that edits the page's own
-     * data is worse than no tape, because it looks right.
-     *
-     * <p>So the match is anchored on the quotes: a credential is always a
-     * complete argument ({@code "value": "123456"}, {@code "text": "123456"}),
-     * never a fragment of a longer string, while a page value that merely
-     * CONTAINS those digits never has quotes around just that part. Same idea
-     * as Redactor, whose mask is itself a quoted argument so the pass is
-     * idempotent and bounded.
-     *
-     * <p>What this gives up: a password echoed back in plain prose by some
-     * tool would survive. These tools do not echo it — a fill reports "Typed
-     * into …" — and over-masking has now cost more than under-masking would.
-     */
+    /** See {@link SecretMask#maskValues} — the rule and why it is anchored on quotes. */
     private String maskValues(String text) {
-        if (text == null || secrets.isEmpty()) {
-            return text;
-        }
-        String masked = text;
-        for (String secret : secrets) {
-            // Double quotes for the model's own JSON argument, single quotes
-            // for the Playwright line the MCP server echoes back in its
-            // result: "### Ran Playwright code … page.locator('#password')
-            // .fill('123456')". The first version only covered the argument,
-            // so the password went into the tape anyway — through the half
-            // nobody had looked at, one line below the half that was masked.
-            masked = masked.replace('"' + secret + '"', '"' + MASK + '"')
-                    .replace('\'' + secret + '\'', '\'' + MASK + '\'');
-        }
-        return masked;
+        return mask.maskValues(text);
     }
 
-    /**
-     * Masks a secret anywhere, for the composed instruction only.
-     *
-     * <p>That text is written by {@code ExploreController.compose}, which puts
-     * the credential in unquoted ({@code - Şifre = 123456}), so the anchored
-     * rule above would miss it. The looser rule is acceptable here and nowhere
-     * else: the instruction is prose kept for audit, nothing is ever replayed
-     * from it, and over-masking a word in it costs a line of context rather
-     * than a value under test.
-     */
+    /** See {@link SecretMask#maskText} — the looser rule, for the composed instruction only. */
     private String maskText(String text) {
-        if (text == null || secrets.isEmpty()) {
-            return text;
-        }
-        String masked = text;
-        for (String secret : secrets) {
-            masked = masked.replace(secret, MASK);
-        }
-        return masked;
+        return mask.maskText(text);
     }
 }

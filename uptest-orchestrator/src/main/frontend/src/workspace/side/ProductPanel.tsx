@@ -17,7 +17,7 @@ import { NewScenario } from "../../product/NewScenario";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
 import { docAsText } from "../../lib/scenarioProse";
 import { useToast } from "../../ui/Toast";
-import type { Origin, RunLogin } from "../../api/types";
+import type { AiRunSummary, Origin, RunLogin } from "../../api/types";
 
 /** A walk that finished, kept until the analyst asks for its Gherkin. */
 interface FinishedWalk {
@@ -62,8 +62,12 @@ export function ProductPanel({
   users,
   onOpen,
   preselect,
+  onShowTrace,
 }: {
   active: boolean;
+  /** "Token ayrıntısı": opens Token Takibi on this walk's AI session -- by
+   *  id once the walk has answered, by scenario while it still runs. */
+  onShowTrace?: (target: { id?: string; scenarioPath?: string }) => void;
   /** Dashboard's "Düşenleri tekrar çalıştır": open this screen with these rows ticked. */
   preselect?: { app: string; product: string; flow: string; paths: string[]; nonce: number } | null;
   products: ReturnType<typeof useProducts>;
@@ -299,6 +303,8 @@ export function ProductPanel({
      prose is left for the instruction. */
   const toast = useToast();
   const [aiAnswer, setAiAnswer] = useState("");
+  /* The structured result of the last walk; null for prose, or none yet. */
+  const [aiSummary, setAiSummary] = useState<AiRunSummary | null>(null);
   const [aiClosed, setAiClosed] = useState(false);
   /* The walk rendered into steps, and whatever it could not express. Held
      beside the prose rather than written anywhere: it is a proposal until the
@@ -313,10 +319,15 @@ export function ProductPanel({
      open, or for a walk that has since been run again. */
   const [aiGherkinBusy, setAiGherkinBusy] = useState(false);
   const [finishedWalk, setFinishedWalk] = useState<FinishedWalk | null>(null);
+  /* The walk's AI session (Token Takibi). Known once the walk answers --
+     including a walk that failed, which is the one most worth reading. */
+  const [aiTraceId, setAiTraceId] = useState<string | null>(null);
   const gherkinRequest = useRef(0);
   useEffect(() => {
     gherkinRequest.current++;
+    setAiTraceId(null);
     setAiAnswer("");
+    setAiSummary(null);
     setAiClosed(false);
     setAiGherkin("");
     setAiNotes([]);
@@ -343,7 +354,9 @@ export function ProductPanel({
     ].join("\n");
 
     gherkinRequest.current++;
+    setAiTraceId(null);
     setAiAnswer("");
+    setAiSummary(null);
     setAiClosed(false);
     setAiGherkin("");
     setAiNotes([]);
@@ -358,7 +371,16 @@ export function ProductPanel({
       smsCode: TEST_SMS_CODE,
       mainMenu: category ? category.toLocaleUpperCase("tr-TR") : undefined,
       expected: scenario.doc.expected,
+      source: "ai-run",
+      app: selection.app,
+      product: selection.product,
+      flow: selection.flow ?? undefined,
+      scenarioPath: selection.path ?? undefined,
     });
+    const traced = result.ok
+      ? result.body.traceId
+      : (result.body as { traceId?: string } | null)?.traceId;
+    setAiTraceId(traced ?? null);
     if (!result.ok) {
       if (result.error === BROWSER_CLOSED) {
         setAiClosed(true);
@@ -368,6 +390,7 @@ export function ProductPanel({
       return;
     }
     setAiAnswer(result.body.answer);
+    setAiSummary(result.body.summary ?? null);
     setFinishedWalk({
       tapeId: result.body.tapeId,
       app: selection.app,
@@ -467,7 +490,7 @@ export function ProductPanel({
             const result = await createMenu(app, name);
             if (!result.ok) return result.error;
             await products.reload();
-            // Opened straight away, so its "+ Ekran ekle" is right there.
+            // Opened straight away, so its "+ Menü ekle" is right there.
             setExpanded((was) => new Set(was).add(categoryKey(result.body.category ?? name)));
             toast(name + " eklendi");
             return null;
@@ -618,12 +641,16 @@ export function ProductPanel({
                   onAiRun={() => aiRun.run()}
                   aiBusy={aiRun.busy}
                   aiAnswer={aiAnswer}
+                  aiSummary={aiSummary}
                   aiClosed={aiClosed}
                   aiGherkin={aiGherkin}
                   aiGherkinBusy={aiGherkinBusy}
                   canGenerateGherkin={finishedWalk !== null && !aiRun.busy}
                   onGenerateGherkin={generateGherkin}
                   aiNotes={aiNotes}
+                  onShowTokens={onShowTrace
+                    ? () => onShowTrace(aiTraceId ? { id: aiTraceId } : { scenarioPath: selection.path ?? undefined })
+                    : undefined}
                   onSave={async (edit) => {
                     const result = await products.saveScenario(
                       selection.app, selection.product, selection.path!, edit);

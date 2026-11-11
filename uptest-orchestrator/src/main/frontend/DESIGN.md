@@ -154,6 +154,24 @@ Sayılar her çubuğun altında sözcükle yazılır; renk tek başına anlam ta
 
 Yeni bir renk çifti eklersen oranını hesapla ve bu tabloya yaz.
 
+### Grafik işaretleri — Token Takibi
+
+Girdinin beş kaynağı (tool sonuçları, system prompt, tool tanımları, kullanıcı
+mesajı, model geçmişi) **kategorik** renklerdir: kimlik taşırlar, durum değil.
+dataviz varsayılan sırasının ilk beş slotu, `--tok-1…5` (`theme.css`, "Token
+Takibi" bölümü). Kalan ("şablon / ek") `--skip` gri: bir kaynak değil, kalan.
+`validate_palette.js` ile bu temanın kendi zeminlerine karşı ölçüldü (11.11.2026):
+
+| Mod / zemin | CVD (bitişik, en kötü) | Normal görüş (en kötü) | Zemine kontrast |
+|---|---|---|---|
+| açık / `#FFFFFF` | ΔE **9.1** ✅ | ΔE **19.6** ✅ | aqua 2.82, sarı 2.17, pembe 2.69 ⚠ |
+| koyu / `#151d27` | ΔE **8.4** ✅ | ΔE **19.3** ✅ | hepsi ≥ 3 ✅ |
+
+Açık modda üç renk 3:1'in altında kaldığı için her grafik her parçanın
+sayısını yanında sözcükle yazar (lejant satırı ve tool tablosu); renk tek başına
+okunmaz. Sıra yığında da aynıdır — bitişik çiftler doğrulanan çiftlerdir; sırayı
+değiştirmek yeniden ölçmek demektir. Metin hiçbir zaman seri rengini almaz.
+
 ---
 
 ## 3. Biçim kuralları

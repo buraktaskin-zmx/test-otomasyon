@@ -69,7 +69,8 @@ public final class TapeRenderer {
     /** Reads nothing and changes nothing; a scenario has no line for these. */
     private static final List<String> SILENT = List.of(
             "browser_snapshot", "browser_find", "browser_wait_for", "browser_navigate",
-            "browser_console_messages", "browser_network_requests", "browser_take_screenshot");
+            "browser_console_messages", "browser_network_requests", "browser_take_screenshot",
+            RunVerdict.TOOL);
 
     /** A failed look at the page is a retry, not a failed action. */
     private static final List<String> SILENT_FAILURES = List.of("browser_snapshot", "browser_find");

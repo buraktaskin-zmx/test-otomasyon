@@ -140,8 +140,8 @@ final class AgentPrompts {
             """;
 
     /**
-     * Added on top of SYSTEM for the free-text endpoint, which both Ekran
-     * Keşfi's Serbest Gözlem and a scenario's "AI ile çalıştır" call. The
+     * Added on top of SYSTEM for Ekran Keşfi's Serbest Gözlem. A scenario's
+     * "AI ile çalıştır" used to share it and now ends in RESULT_RULES. The
      * answer is read by an analyst checking one scenario, so it has to be
      * about that scenario and scannable, not a narrative of the walk.
      */
@@ -157,6 +157,31 @@ final class AgentPrompts {
               "Sonuç: BEKLENDİĞİ GİBİ" or "Sonuç: BEKLENDİĞİ GİBİ DEĞİL",
               followed by the reason in one sentence.
             - If you could not finish, say at which step and why.
+            """;
+
+    /**
+     * Added on top of SYSTEM for "AI ile çalıştır" instead of ANSWER_RULES.
+     *
+     * The answer is a tool call (RunVerdict) rather than a format asked for
+     * in prose; what is left here is only WHEN to call it and what counts as
+     * a failed step. Its arguments carry their own descriptions, which is
+     * where the model reads them at the moment it fills them in.
+     */
+    static final String RESULT_RULES = """
+
+            HOW TO FINISH
+            - You do NOT write your answer as text. When you have done every
+              step of the instruction -- or when you cannot go on -- call
+              report_result ONCE. It ends the task. Wherever the rules above
+              say "answer", here that means calling report_result.
+            - A step you could not do, skipped, or where the screen did not
+              show what the instruction expected is a FAILED step. Say which
+              step and why.
+            - passed is true ONLY when every step was done and every expected
+              result (BEKLENEN) was seen on the screen.
+            - Report ONLY what the instruction asked. Do not describe menus,
+              pages or fields the instruction did not mention.
+            - Every sentence you pass is in TURKISH.
             """;
 
     /**

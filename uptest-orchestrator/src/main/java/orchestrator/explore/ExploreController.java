@@ -1,5 +1,6 @@
 package orchestrator.explore;
 
+import orchestrator.aitrace.AiTraces;
 import orchestrator.catalog.CatalogService;
 import orchestrator.llm.LlmOutputCleaner;
 import org.springframework.ai.chat.client.ChatClient;
@@ -22,6 +23,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -146,7 +148,7 @@ public class ExploreController {
      *                    to it, which is what makes the walk replayable later
      */
     private Object[] toolsFor(CatalogSink sink, String instruction, Set<String> pending,
-                              AtomicBoolean aborted, ActionTape tape) {
+                              AtomicBoolean aborted, ActionTape tape, RunVerdict verdict) {
         List<ToolCallback> usable = new ArrayList<>(Arrays.stream(tools.getToolCallbacks())
                 .filter(callback -> !WITHHELD.contains(callback.getToolDefinition().name()))
                 .toList());
@@ -173,13 +175,16 @@ public class ExploreController {
         if (dates != null) {
             ours.add(dates);
         }
+        if (verdict != null) {
+            ours.add(verdict);
+        }
         if (!ours.isEmpty()) {
             usable.addAll(List.of(MethodToolCallbackProvider.builder()
                     .toolObjects(ours.toArray()).build().getToolCallbacks()));
         }
 
         return BudgetedTool.wrap(usable, budget, sink, forbidden(instruction), pending, instruction,
-                aborted, tape);
+                aborted, tape, verdict);
     }
 
     /**
@@ -311,10 +316,44 @@ public class ExploreController {
      *
      * Every field except {@code text} may be null — the older UI sent only
      * that, and a flow that is already logged in needs none of them.
+     *
+     * The last five only label the AI session the walk is recorded under
+     * (Token Takibi): {@code source = "ai-run"} for the "AI ile çalıştır"
+     * button of Kayıtlı Senaryolar, anything else for Ekran Keşfi; the rest
+     * name the scenario. Nothing about the walk itself reads them.
      */
     public record Instruction(String text, String url, String cif, String userId,
                               String password, String smsCode, String mainMenu,
-                              List<String> expected) {
+                              List<String> expected,
+                              String source, String app, String product, String flow,
+                              String scenarioPath) {
+    }
+
+    /**
+     * What the token trace calls this walk. The title is the scenario's path
+     * when there is one, otherwise the analyst's first line — never the
+     * composed instruction, whose first lines are the login.
+     */
+    private static AiTraces.Meta traceMeta(Instruction body, ActionTape tape) {
+        String firstLine = body.text().strip().lines().findFirst().orElse("");
+        return new AiTraces.Meta()
+                .title(present(body.scenarioPath()) ? body.scenarioPath() : firstLine)
+                .app(body.app())
+                .product(body.product())
+                .flow(body.flow())
+                .scenarioPath(body.scenarioPath())
+                .cif(body.cif())
+                .tapeId(tape.id())
+                .secrets(secretsOf(body));
+    }
+
+    /** The answer, plus the AI session's id when one is being recorded. */
+    private static Map<String, Object> traced(Map<String, ?> answer, String traceId) {
+        Map<String, Object> out = new LinkedHashMap<>(answer);
+        if (traceId != null) {
+            out.put("traceId", traceId);
+        }
+        return out;
     }
 
     /**
@@ -361,11 +400,12 @@ public class ExploreController {
      * is exactly the one whose recorded calls are worth reading, and it is the
      * one that leaves no prose behind to read instead.
      */
-    private static ResponseEntity<?> browserClosed(ActionTape tape) {
-        return ResponseEntity.status(409).body(Map.of(
+    private static ResponseEntity<?> browserClosed(ActionTape tape, AiTraces.Scope trace) {
+        trace.fail("Tarayıcı beklenmedik şekilde kapandı");
+        return ResponseEntity.status(409).body(traced(Map.of(
                 "error", "BROWSER_CLOSED",
                 "detail", "Tarayıcı beklenmedik şekilde kapandı",
-                "tapeId", tape.id()));
+                "tapeId", tape.id()), trace.id()));
     }
 
     private static void append(StringBuilder out, String label, String value) {
@@ -387,17 +427,24 @@ public class ExploreController {
         AtomicBoolean aborted = new AtomicBoolean();
         ActionTape tape = ActionTape.open(tapeDir, "explore", instruction,
                 body.url(), body.mainMenu(), secretsOf(body));
+        // Every model turn and tool call of this walk lands in one AI session
+        // (Token Takibi). Opened after the tape so the session knows its id.
+        boolean aiRun = "ai-run".equals(body.source());
+        AiTraces.Scope trace = AiTraces.open(aiRun ? "ai-run" : "explore", traceMeta(body, tape));
+        // A saved scenario's run ends in a structured result (RunVerdict);
+        // Serbest Gözlem is an observation, not a test, and keeps its prose.
+        RunVerdict verdict = aiRun ? new RunVerdict() : null;
         try {
             String answer = client.prompt()
-                    .system(SYSTEM + ANSWER_RULES)
+                    .system(SYSTEM + (aiRun ? RESULT_RULES : ANSWER_RULES))
                     .user(instruction)
-                    .tools(toolsFor(null, instruction, new LinkedHashSet<>(), aborted, tape))
+                    .tools(toolsFor(null, instruction, new LinkedHashSet<>(), aborted, tape, verdict))
                     .call()
                     .content();
             // Belt and braces: should the framework ever turn BrowserClosed
             // into a tool result, the flag still says the walk was cut short.
             if (aborted.get()) {
-                return browserClosed(tape);
+                return browserClosed(tape, trace);
             }
 
             // The walk, written back out as steps. A PROPOSAL, never a save:
@@ -406,15 +453,22 @@ public class ExploreController {
             // analyst reads the lines and decides.
             TapeRenderer.Rendered rendered =
                     TapeRenderer.render(tape.calls(), body.mainMenu(), body.expected());
-            return ResponseEntity.ok(Map.of(
-                    "answer", answer,
-                    "tapeId", tape.id(),
-                    "gherkin", String.join("\n", rendered.steps()),
-                    "notes", rendered.notes()));
+            Map<String, Object> reply = new LinkedHashMap<>();
+            // With a result the tool's own return line ("Sonuç kaydedildi")
+            // is what came back as content; the prose every older reader
+            // shows is rebuilt from the result instead.
+            reply.put("answer", verdict != null && verdict.isClosed() ? verdict.asText() : answer);
+            reply.put("tapeId", tape.id());
+            reply.put("gherkin", String.join("\n", rendered.steps()));
+            reply.put("notes", rendered.notes());
+            if (verdict != null && verdict.isClosed()) {
+                reply.put("summary", verdict.toJson());
+            }
+            return ResponseEntity.ok(traced(reply, trace.id()));
         } catch (Exception e) {
             for (Throwable cause = e; cause != null; cause = cause.getCause()) {
                 if (cause instanceof BudgetedTool.BrowserClosed || aborted.get()) {
-                    return browserClosed(tape);
+                    return browserClosed(tape, trace);
                 }
                 if (cause.getCause() == cause) {
                     break;
@@ -427,15 +481,17 @@ public class ExploreController {
             while (root.getCause() != null && root.getCause() != root) {
                 root = root.getCause();
             }
-            return ResponseEntity.status(502).body(Map.of(
+            trace.fail(root.getClass().getSimpleName() + ": " + root.getMessage());
+            return ResponseEntity.status(502).body(traced(Map.of(
                     "error", root.getClass().getSimpleName(),
                     "detail", String.valueOf(root.getMessage()),
-                    "tapeId", tape.id()));
+                    "tapeId", tape.id()), trace.id()));
         } finally {
             // Stamped before the browser goes, and on every path: the tape of
             // a run that died is the one worth reading.
             tape.finish();
             closeBrowser();
+            trace.close();
         }
     }
 
@@ -477,6 +533,7 @@ public class ExploreController {
         String instruction = compose(body) + CLOSING;
         ActionTape tape = ActionTape.open(tapeDir, "catalog", instruction,
                 body.url(), body.mainMenu(), secretsOf(body));
+        AiTraces.Scope trace = AiTraces.open("catalog", traceMeta(body, tape));
 
         try {
             CatalogSink sink = new CatalogSink();
@@ -487,7 +544,7 @@ public class ExploreController {
             String spoken = client.prompt()
                     .system(SYSTEM + CATALOG_RULES + schema)
                     .user(instruction)
-                    .tools(toolsFor(sink, instruction, skipped, new AtomicBoolean(), tape))
+                    .tools(toolsFor(sink, instruction, skipped, new AtomicBoolean(), tape, null))
                     .call()
                     .content();
 
@@ -528,22 +585,24 @@ public class ExploreController {
                         + ". Bu adim atlandiysa sonraki her sey DOGRU ama YANLIS ekranda "
                         + "yapilmis olabilir — katalogu kullanmadan once kontrol edin.");
             }
-            return ResponseEntity.ok(Map.of(
-                    "catalog", catalog, "problems", problems, "tapeId", tape.id()));
+            return ResponseEntity.ok(traced(Map.of(
+                    "catalog", catalog, "problems", problems, "tapeId", tape.id()), trace.id()));
         } catch (Exception e) {
             Throwable root = e;
             while (root.getCause() != null && root.getCause() != root) {
                 root = root.getCause();
             }
-            return ResponseEntity.status(502).body(Map.of(
+            trace.fail(root.getClass().getSimpleName() + ": " + root.getMessage());
+            return ResponseEntity.status(502).body(traced(Map.of(
                     "error", root.getClass().getSimpleName(),
                     "detail", String.valueOf(root.getMessage()),
-                    "tapeId", tape.id()));
+                    "tapeId", tape.id()), trace.id()));
         } finally {
             // Also on the failure paths: a run that died halfway leaves the
             // browser somewhere stranger than a finished one does.
             tape.finish();
             closeBrowser();
+            trace.close();
         }
     }
 

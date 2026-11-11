@@ -3,7 +3,10 @@ import type { ReactNode, RefCallback } from "react";
 import { tokenizeGherkinLine } from "../lib/gherkin";
 import { IconButton, useAutoGrow } from "../ui/InlineEdit";
 import type { ScenarioDoc } from "../lib/scenarioProse";
-import type { ScenarioDetail as Detail, ScenarioEdit, SourceChange } from "../api/types";
+import type { AiRunSummary, ScenarioDetail as Detail, ScenarioEdit, SourceChange } from "../api/types";
+
+/** The three parts of a scenario that each open for editing on their own. */
+type Section = "summary" | "gherkin" | "doc";
 
 /*
   Bir senaryo, iki dilde.
@@ -15,9 +18,13 @@ import type { ScenarioDetail as Detail, ScenarioEdit, SourceChange } from "../ap
   dille yazılır ve ajan onu tarayıcıyı sürerek uygular; Gherkin aynı senaryonun
   DETERMINISTIK TEKRARI olarak sonradan yazılır.
 
-  İkisi veritabanında ayrı alanlarda durur. Adın yanındaki kalem HEPSİNİ
-  birden düzenlemeye açar ve tek Kaydet hepsini bir istekte gönderir;
-  `version` da gider, o arada başkası kaydettiyse sunucu 409 ile reddeder.
+  İkisi veritabanında ayrı alanlarda durur. Açıklama, Gherkin ve Doğal dil'in
+  HER BİRİNİN kendi kalemi var: fare (ya da klavye odağı) hangi bölümdeyse
+  yalnızca onunki görünür, ve kendi Kaydet'i yalnızca kendi alanlarını
+  gönderir -- sunucu gönderilmeyen alana dokunmaz (ProductService.merged).
+  Senaryonun adı Doğal dil'in başlığında durduğu için onunla düzenlenir.
+  `version` her kayıtta gider, o arada başkası kaydettiyse sunucu 409 ile
+  reddeder.
 
   Gherkin kutusuna yapıştırılan tam bir dosyanın doğal dil tarafını
   bozmaması sunucuda duruyor, burada değil: ProductService.merged gelen
@@ -33,12 +40,14 @@ export function ScenarioDetail({
   onAiRun,
   aiBusy,
   aiAnswer,
+  aiSummary,
   aiClosed,
   aiGherkin,
   aiGherkinBusy,
   canGenerateGherkin,
   onGenerateGherkin,
   aiNotes,
+  onShowTokens,
   onSave,
 }: {
   detail: Detail | null;
@@ -51,6 +60,8 @@ export function ScenarioDetail({
   onAiRun: () => void;
   aiBusy: boolean;
   aiAnswer: string;
+  /** The walk's structured result; null when the agent answered in prose. */
+  aiSummary: AiRunSummary | null;
   /** The operator closed the agent's browser mid-run. */
   aiClosed: boolean;
   /** The walk rendered into steps -- a proposal, no login line, no assertion. */
@@ -64,11 +75,15 @@ export function ScenarioDetail({
   onGenerateGherkin: () => void;
   /** What the render could not express. Empty is normal; silent is not. */
   aiNotes: string[];
+  /** Opens Token Takibi on this walk: every turn, token and tool call. */
+  onShowTokens?: () => void;
   /** Saves the fields sent; resolves to true when it was saved. */
   onSave: (edit: ScenarioEdit) => Promise<boolean>;
 }) {
-  /** One switch for the whole record: the pencil opens every field at once. */
-  const [editing, setEditing] = useState(false);
+  /** Which part is open for editing; one at a time, each with its own Kaydet. */
+  const [editing, setEditing] = useState<Section | null>(null);
+  /** What the Açıklama box opened with, so an untouched fallback is not saved. */
+  const [summaryPrefill, setSummaryPrefill] = useState("");
   const [nameDraft, setNameDraft] = useState("");
   const [gherkinDraft, setGherkinDraft] = useState("");
   const [summaryDraft, setSummaryDraft] = useState("");
@@ -84,7 +99,7 @@ export function ScenarioDetail({
 
   // Another scenario opened: any half-finished edit belongs to the old one.
   useEffect(() => {
-    setEditing(false);
+    setEditing(null);
     setApplied(false);
     setSummaryOpen(false);
     setNameMissing(false);
@@ -102,38 +117,67 @@ export function ScenarioDetail({
   const doc: ScenarioDoc = { ...detail.doc, summary: detail.doc.summary ?? [] };
   const shown = detail.gherkin;
 
-  const startEdit = () => {
-    setNameDraft(doc.title || detail.title);
-    setGherkinDraft(shown);
-    setSummaryDraft(doc.summary.join("\n"));
-    setDocDraft({ ...doc });
-    setNameMissing(false);
-    // A collapsed Açıklama would hide half of what is being edited.
-    setSummaryOpen(true);
-    setEditing(true);
+  const summaryWritten = doc.summary.length > 0;
+
+  const startEdit = (section: Section) => {
+    if (section === "summary") {
+      /* The box opens with what the card SHOWED. With no Açıklama written the
+         card shows the steps and the expectation in its place, and opening
+         an empty box made that text look deleted the moment Düzenle was
+         pressed. */
+      const text = (summaryWritten ? doc.summary : fallbackSummary(doc)).join("\n");
+      setSummaryDraft(text);
+      setSummaryPrefill(text);
+      // A collapsed Açıklama would hide half of what is being edited.
+      setSummaryOpen(true);
+    } else if (section === "gherkin") {
+      setGherkinDraft(shown);
+    } else {
+      setNameDraft(doc.title || detail.title);
+      setDocDraft({ ...doc });
+      setNameMissing(false);
+    }
+    setEditing(section);
   };
 
   const cancelEdit = () => {
-    setEditing(false);
+    setEditing(null);
     setDocDraft(null);
     setNameMissing(false);
   };
 
   const save = async () => {
-    const name = nameDraft.trim();
-    if (!name) {
-      // A scenario with no name cannot be found again in the list, and the
-      // Scenario: line would be rewritten empty.
-      setNameMissing(true);
+    let edit: ScenarioEdit;
+    if (editing === "summary") {
+      /* The fallback opened untouched: saving it would freeze a copy of the
+         steps into the Açıklama, which would then stop following them. */
+      if (!summaryWritten && summaryDraft === summaryPrefill) {
+        cancelEdit();
+        return;
+      }
+      edit = { summary: summaryDraft.split("\n"), version: detail.version };
+    } else if (editing === "gherkin") {
+      edit = { gherkin: gherkinDraft, version: detail.version };
+    } else if (editing === "doc") {
+      const name = nameDraft.trim();
+      if (!name) {
+        // A scenario with no name cannot be found again in the list, and the
+        // Scenario: line would be rewritten empty.
+        setNameMissing(true);
+        return;
+      }
+      const draft = docDraft ?? doc;
+      edit = {
+        title: name,
+        rules: draft.rules,
+        preconditions: draft.preconditions,
+        steps: draft.steps,
+        expected: draft.expected,
+        version: detail.version,
+      };
+    } else {
       return;
     }
-    const edit: ScenarioEdit = {
-      ...(docDraft ?? doc),
-      title: name,
-      summary: summaryDraft.split("\n"),
-      gherkin: gherkinDraft,
-      version: detail.version,
-    };
     // Saving with the "kural değişti" banner on screen IS reviewing it: the
     // analyst read what moved and then wrote. Without the banner the stamp is
     // left alone, so an unrelated fix cannot clear a badge nobody looked at.
@@ -142,10 +186,23 @@ export function ScenarioDetail({
     const ok = await onSave(edit);
     setSaving(false);
     if (ok) {
-      setEditing(false);
+      setEditing(null);
       setDocDraft(null);
     }
   };
+
+  /** The pencil, or Kaydet/Vazgeç while this part is open. */
+  const controls = (section: Section, what: string) => (
+    <EditControls
+      section={section}
+      editing={editing}
+      saving={saving}
+      what={what}
+      onEdit={() => startEdit(section)}
+      onSave={() => void save()}
+      onCancel={cancelEdit}
+    />
+  );
 
   /* The proposal, under this scenario's own header. The steps replace what was
      in the Gherkin half; the natural language is not touched, because the two
@@ -170,35 +227,9 @@ export function ScenarioDetail({
         </button>
       </div>
 
-      {/* The name, and the one control that opens every field below it. */}
+      {/* The name. It is edited with Doğal dil, whose heading it is. */}
       <div className="sd-name-row">
-        {editing ? (
-          <>
-            <input
-              className="sd-name-input"
-              aria-label="Senaryo adı"
-              aria-invalid={nameMissing}
-              autoFocus
-              value={nameDraft}
-              onChange={(event) => {
-                setNameDraft(event.target.value);
-                if (nameMissing) setNameMissing(false);
-              }}
-            />
-            {nameMissing ? <span className="sd-name-error">Boş bırakılamaz</span> : null}
-            <IconButton glyph="check" tone="ok" label="Kaydet"
-                        title={saving ? "Kaydediliyor…" : "Değişiklikleri kaydet"}
-                        disabled={saving} onClick={() => void save()} />
-            <IconButton glyph="close" tone="mute" label="Vazgeç"
-                        title="Değişiklikleri at" disabled={saving} onClick={cancelEdit} />
-          </>
-        ) : (
-          <>
-            <h3 className="sd-title">{detail.title}</h3>
-            <IconButton glyph="pencil" label="Düzenle" title="Tüm alanları düzenle"
-                        onClick={startEdit} />
-          </>
-        )}
+        <h3 className="sd-title">{detail.title}</h3>
       </div>
 
       {detail.changes.length > 0 ? (
@@ -214,17 +245,19 @@ export function ScenarioDetail({
       ) : null}
 
       {/* --------------------------- Açıklama ---------------------------- */}
-      <section className="sd-pane sd-summary">
+      <section className={"sd-pane sd-summary" + (editing === "summary" ? " is-editing" : "")}>
         <header className="sd-pane-head">
           <span className="sd-pane-title">AÇIKLAMA</span>
+          {controls("summary", "Açıklamayı")}
         </header>
-        {editing ? (
+        {editing === "summary" ? (
           <textarea
             ref={attach}
             className="sd-box"
             aria-label="Açıklama"
             value={summaryDraft}
             placeholder="Bu senaryo neyi doğrular?"
+            autoFocus
             onChange={(event) => {
               setSummaryDraft(event.target.value);
               fit(event.currentTarget);
@@ -237,14 +270,15 @@ export function ScenarioDetail({
 
       <div className="sd-split">
         {/* ---------------------------- Gherkin ---------------------------- */}
-        <section className="sd-pane">
+        <section className={"sd-pane" + (editing === "gherkin" ? " is-editing" : "")}>
           <header className="sd-pane-head">
             <span className="sd-pane-title">GHERKİN</span>
+            {controls("gherkin", "Gherkin'i")}
             <code className="sd-path">{detail.path}</code>
             <button
               type="button"
               className="btn btn-primary sd-go"
-              disabled={editing}
+              disabled={editing !== null}
               title="Çalıştır ekranında aç: orada düzenlenir, doğrulanır ve çalıştırılır"
               onClick={() => onOpen(detail.feature)}
             >
@@ -252,9 +286,10 @@ export function ScenarioDetail({
             </button>
           </header>
 
-          {editing ? (
+          {editing === "gherkin" ? (
             <textarea
               ref={attach}
+              autoFocus
               className="sd-box sd-box-code"
               aria-label="Gherkin"
               spellCheck={false}
@@ -270,23 +305,51 @@ export function ScenarioDetail({
         </section>
 
         {/* -------------------------- Doğal dil --------------------------- */}
-        <section className="sd-pane">
+        <section className={"sd-pane" + (editing === "doc" ? " is-editing" : "")}>
           <header className="sd-pane-head">
             <span className="sd-pane-title">DOĞAL DİL</span>
+            {controls("doc", "Doğal dili")}
             <span className="sd-pane-gap" />
             <button
               type="button"
               className="btn btn-ghost"
-              disabled={aiBusy || editing}
+              disabled={aiBusy || editing !== null}
               title="Ajan tarayıcıyı sürerek bu senaryoyu uygular ve ne gördüğünü anlatır"
               onClick={onAiRun}
             >
               {aiBusy ? "Ajan çalışıyor…" : "AI ile çalıştır"}
             </button>
+            {onShowTokens && (aiBusy || aiAnswer || aiClosed) ? (
+              <button
+                type="button"
+                className="btn btn-ghost"
+                title="Bu ajan koşusunun her turunu, token'ını ve tool çağrısını Token Takibi'nde açar"
+                onClick={onShowTokens}
+              >
+                {aiBusy ? "Canlı izle →" : "Token ayrıntısı →"}
+              </button>
+            ) : null}
           </header>
 
-          {editing && docDraft ? (
-            <DocEditor doc={docDraft} onChange={setDocDraft} inPlace grow={attach} onGrow={fit} />
+          {editing === "doc" && docDraft ? (
+            <>
+              <div className="sd-doc-block">
+                <label className="sd-doc-label" htmlFor="sdName">İsim</label>
+                <input
+                  id="sdName"
+                  className="search"
+                  aria-invalid={nameMissing}
+                  autoFocus
+                  value={nameDraft}
+                  onChange={(event) => {
+                    setNameDraft(event.target.value);
+                    if (nameMissing) setNameMissing(false);
+                  }}
+                />
+                {nameMissing ? <span className="sd-name-error">Boş bırakılamaz</span> : null}
+              </div>
+              <DocEditor doc={docDraft} onChange={setDocDraft} inPlace grow={attach} onGrow={fit} />
+            </>
           ) : (
             <div className="sd-doc">
               <h4 className="sd-plain-title">{doc.title}</h4>
@@ -303,11 +366,8 @@ export function ScenarioDetail({
             <p className="sd-note browser-closed">
               <span aria-hidden="true">✗</span> Beklenmedik şekilde kapandı
             </p>
-          ) : aiAnswer ? (
-            <>
-              <span className="sd-pane-title">AJANIN ANLATTIĞI</span>
-              <pre className="sd-code sd-answer">{aiAnswer}</pre>
-            </>
+          ) : aiSummary || aiAnswer ? (
+            <AiSummaryView summary={aiSummary} answer={aiAnswer} />
           ) : null}
 
           {aiGherkinBusy ? (
@@ -318,7 +378,7 @@ export function ScenarioDetail({
               <button
                 type="button"
                 className="btn btn-primary"
-                disabled={editing}
+                disabled={editing !== null}
                 title="Ajanın bu koşusunu Gherkin senaryosuna çevirir (bir AI çağrısı)"
                 onClick={onGenerateGherkin}
               >
@@ -347,7 +407,7 @@ export function ScenarioDetail({
                 <button
                   type="button"
                   className="btn btn-primary"
-                  disabled={saving || editing}
+                  disabled={saving || editing !== null}
                   title="Ajanın yaptığı adımları bu senaryonun Gherkin'i olarak kaydeder"
                   onClick={() => void applyProposal()}
                 >
@@ -475,6 +535,96 @@ function Changed({
   );
 }
 
+/**
+ * What the Açıklama card shows when none was written: the steps and the
+ * expectation. The edit box opens with the same lines, so pressing Düzenle
+ * never makes the text on screen disappear.
+ */
+function fallbackSummary(doc: ScenarioDoc): string[] {
+  return [
+    ...(doc.steps.length ? ["Adımlar:", ...doc.steps.map((step) => "- " + step)] : []),
+    ...(doc.expected.length ? ["Beklenen:", ...doc.expected.map((item) => "- " + item)] : []),
+  ];
+}
+
+/**
+ * A part's pencil, shown only while the pointer (or the keyboard focus) is in
+ * that part -- see .sd-edit-reveal. While a part is open it shows Kaydet and
+ * Vazgeç instead, and the other parts show nothing: one edit at a time, so
+ * one Kaydet never has to guess which fields it means.
+ */
+function EditControls({ section, editing, saving, what, onEdit, onSave, onCancel }: {
+  section: Section;
+  editing: Section | null;
+  saving: boolean;
+  /** "Açıklamayı" -- the accusative the tooltip needs: "Açıklamayı düzenle". */
+  what: string;
+  onEdit: () => void;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  if (editing === section) {
+    return (
+      <span className="sd-edit-actions">
+        <IconButton glyph="check" tone="ok" label="Kaydet"
+                    title={saving ? "Kaydediliyor…" : what + " kaydet"}
+                    disabled={saving} onClick={onSave} />
+        <IconButton glyph="close" tone="mute" label="Vazgeç"
+                    title="Değişiklikleri at" disabled={saving} onClick={onCancel} />
+      </span>
+    );
+  }
+  if (editing !== null) return null;
+  return (
+    <span className="sd-edit-reveal">
+      <IconButton glyph="pencil" label={what + " düzenle"} title={what + " düzenle"} onClick={onEdit} />
+    </span>
+  );
+}
+
+/**
+ * "AI ile çalıştır"'s result: what went right, what did not, what to know,
+ * and one verdict. A section with nothing in it is left out. When the agent
+ * answered in prose instead of reporting, the prose is shown and the verdict
+ * says it was not reported -- never guessed from the wording.
+ */
+function AiSummaryView({ summary, answer }: { summary: AiRunSummary | null; answer: string }) {
+  return (
+    <div className="sd-ai">
+      <span className="sd-pane-title">AI ÖZET</span>
+      {summary ? (
+        <>
+          <AiList title="Doğru ilerleyen adımlar" items={summary.succeeded} tone="ok" />
+          <AiList title="Geçemeyen adımlar" items={summary.failed} tone="fail" />
+          <AiList title="Uyarılar" items={summary.warnings} tone="warn" />
+          {summary.verdict === "PASSED" ? (
+            <p className="sd-verdict is-pass"><span aria-hidden="true">✓</span> Geçti</p>
+          ) : (
+            <p className="sd-verdict is-fail"><span aria-hidden="true">✗</span> Geçmedi</p>
+          )}
+        </>
+      ) : (
+        <>
+          <pre className="sd-code sd-answer">{answer}</pre>
+          <p className="sd-verdict is-none">Sonuç bildirilmedi — ajan yapılandırılmış bir sonuç vermedi.</p>
+        </>
+      )}
+    </div>
+  );
+}
+
+function AiList({ title, items, tone }: { title: string; items: string[]; tone: "ok" | "fail" | "warn" }) {
+  if (items.length === 0) return null;
+  return (
+    <div className={"sd-ai-block is-" + tone}>
+      <span className="sd-doc-label">{title}</span>
+      <ul className="sd-ai-list">
+        {items.map((item, index) => <li key={index}>{item}</li>)}
+      </ul>
+    </div>
+  );
+}
+
 /** How many lines the Açıklama card shows before "Tümünü göster". */
 const SUMMARY_LINES = 8;
 
@@ -494,12 +644,7 @@ function SummaryText({
   onToggle: () => void;
 }) {
   const written = doc.summary.length > 0;
-  const lines = written
-    ? doc.summary
-    : [
-        ...(doc.steps.length ? ["Adımlar:", ...doc.steps.map((step) => "- " + step)] : []),
-        ...(doc.expected.length ? ["Beklenen:", ...doc.expected.map((item) => "- " + item)] : []),
-      ];
+  const lines = written ? doc.summary : fallbackSummary(doc);
   if (lines.length === 0) {
     return <span className="sd-doc-empty">yok</span>;
   }

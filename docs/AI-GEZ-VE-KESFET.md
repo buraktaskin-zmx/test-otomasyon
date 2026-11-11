@@ -35,11 +35,16 @@ terim ilk geçtiği yerde açıklanıyor.
 
 ---
 
-## 1. Projede üç ayrı "AI" var — karıştırmayın
+## 1. Projede dört ayrı "AI" var — karıştırmayın
 
-Bu projede "AI" kelimesi **üç farklı şey** için kullanılıyor ve üçü birbirine
-hiç benzemiyor. Yanlış olanı düşünmek, saatlerce yanlış yerde hata aramak
-demek.
+Bu projede "AI" kelimesi **dört farklı şey** için kullanılıyor ve dördü
+birbirine hiç benzemiyor. Yanlış olanı düşünmek, saatlerce yanlış yerde hata
+aramak demek.
+
+> Son kontrol: 2026-11-10. O gün "Chat" ve "AI ile Senaryo Üret" panelleri
+> silindi, dördüncü yol (görsel model) eklendi, ve 8. bölümdeki token
+> ölçümleri yeniden alındı. Sol panel bugün: Dashboard · Senaryo Üret ·
+> Kayıtlı Senaryolar · Ekran Keşfi · Çalıştır · Test Kullanıcıları.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -47,7 +52,11 @@ demek.
 │    (BU DOKÜMAN)         Tıklıyor, yazıyor, sayfayı okuyor.          │
 │                         Dakikalar sürer. Milyonlarca token yakar.   │
 │                         Tekrarlanabilir DEĞİL.                      │
-│                         → "Gez ve Anlat" ve "Katalog Üret"          │
+│                         → Ekran Keşfi'nde "Serbest Gözlem" ve       │
+│                           "Katalog Üret"; ayrıca Kayıtlı            │
+│                           Senaryolar'daki "AI ile çalıştır" —       │
+│                           o da AYNI /explore ucu, talimatı          │
+│                           senaryonun kendi düzyazısı.               │
 ├─────────────────────────────────────────────────────────────────────┤
 │ 2. DOM TARAMASI         AI YOK. Hiç model çağrısı yapmaz.           │
 │                         Playwright sayfanın HTML'ini okur.          │
@@ -58,21 +67,31 @@ demek.
 │ 3. SENARYO ÜRETECİ      Bir LLM, TEK çağrıda Gherkin yazıyor.       │
 │                         Tarayıcı yok, araç yok, durum yok.          │
 │                         Saniyeler sürer. ~5.000 token.              │
-│                         → "AI Üret" ve "Çoklu Üret"                 │
+│                         → "Senaryo Üret" (senaryo başına bir çağrı) │
+│                           ve ajan yürüyüşünden "Gherkin oluştur"    │
+├─────────────────────────────────────────────────────────────────────┤
+│ 4. GÖRSEL MODEL         Bir LLM ekran GÖRÜNTÜSÜNÜ okuyor.           │
+│    (2026-11-09)         Tarayıcı yok: analist tasarım görselini     │
+│                         yapıştırıyor, model alanları çıkarıyor.     │
+│                         Görsel başına bir çağrı, ~1-3k token.       │
+│                         AYRI bir istemci ve AYRI bir uç nokta       │
+│                         (uptest.vision.*), varsayılan KAPALI.       │
+│                         → "Senaryo Üret"in ekran okuma adımı        │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
 Ortak yanları yalnızca "bir dil modeli kullanıyor" olmaları. Maliyetleri,
 süreleri, güvenilirlikleri ve bozulma biçimleri tamamen farklı.
 
-| | MCP ajanı | DOM taraması | Senaryo üreteci |
-|---|---|---|---|
-| Tarayıcı sürer mi | **evet** | evet (ama Playwright sürer) | hayır |
-| Model çağrısı | ~50 tur | **0** | 1–2 |
-| Token | ~2.000.000 | **0** | ~5.000 |
-| Süre | 2–10 dk | 1–5 dk | 10–30 sn |
-| Aynı girdi → aynı çıktı | **hayır** | evet | evet (temperature 0.3) |
-| Ürünü | düzyazı / YAML taslağı | YAML taslağı | `.feature` dosyası |
+| | MCP ajanı | DOM taraması | Senaryo üreteci | Görsel model |
+|---|---|---|---|---|
+| Tarayıcı sürer mi | **evet** | evet (ama Playwright sürer) | hayır | hayır |
+| Model çağrısı | ~50 tur | **0** | 1–2 | ekran başına 1 |
+| Token | ~2.000.000 | **0** | ~5.000 | ~1–3.000 |
+| Süre | 2–10 dk | 1–5 dk | 10–30 sn | saniyeler |
+| Aynı girdi → aynı çıktı | **hayır** | evet | evet (temperature 0.3) | hayır |
+| Ürünü | düzyazı / YAML taslağı | YAML taslağı | `.feature` dosyası | ekran okuması (YAML) |
+| Çalışan ekran gerekir mi | **evet** | **evet** | hayır | **hayır** |
 
 Bu dokümanın konusu **yalnızca birincisi**.
 
@@ -417,7 +436,7 @@ görüntüsüyle karşılaştırmaktı.
 ```
 TUR N
 ├─ Biz modele gönderiyoruz:
-│    • sistem promptu          (her turda aynı, ~2.200 token)
+│    • sistem promptu          (her turda aynı, ~2.400 token)
 │    • analistin talimatı      (her turda aynı)
 │    • ÖNCEKİ TÜM TURLAR       (büyüyen kısım)
 │    • araç listesi + şemaları
@@ -502,24 +521,30 @@ Elli tur için toplam prompt token'ı, turların toplamıdır — yani kabaca
 
 ### 8.2 Ölçülmüş boyutlar
 
-Ölçüm, 2026-10-09'da `wc -m` ile:
+Ölçüm **2026-11-10**'da yenilendi (önceki ölçüm 2026-10-09'daydı; üç parça da
+o zamandan beri büyümüş):
 
-| Parça | Karakter | ≈ Token |
-|---|---|---|
-| `SYSTEM` — ajan sistem promptu | 8.353 | ~2.200 |
-| `CATALOG_RULES` — yalnızca katalog uç noktasında | 8.382 | ~2.200 |
-| `catalogs/SCHEMA.md` — prompta aynen girer | 14.380 | ~3.800 |
-| Bir sayfa anlık görüntüsü (üst sınır) | 12.000 | ~3.000 |
+| Parça | Karakter | ≈ Token | 09.10'da |
+|---|---|---|---|
+| `SYSTEM` — ajan sistem promptu | 8.511 | ~2.240 | 8.353 |
+| `ANSWER_RULES` — yalnızca gözlem ucunda | 658 | ~170 | (ölçülmemiş) |
+| `CATALOG_RULES` — yalnızca katalog ucunda | 9.013 | ~2.370 | 8.382 |
+| `catalogs/SCHEMA.md` — prompta aynen girer | 16.259 | ~4.280 | 14.380 |
+| `CLOSING` — talimatın sonuna eklenir | 430 | ~110 | (ölçülmemiş) |
+| Bir sayfa anlık görüntüsü (üst sınır) | 12.000 | ~3.000 | 12.000 |
 
-Buradan iki farklı sistem promptu çıkıyor:
+Buradan iki farklı sistem promptu çıkıyor — ikisi de
+`ExploreController`'dan okunabilir (`.system(...)` çağrıları):
 
 | Uç nokta | Sistem promptu | ≈ Token |
 |---|---|---|
-| `/api/v1/explore` ("Gez ve Anlat") | `SYSTEM` | **~2.200** |
-| `/api/v1/explore/catalog` ("Katalog Üret") | `SYSTEM + CATALOG_RULES + SCHEMA.md` | **~8.200** |
+| `/api/v1/explore` (Serbest Gözlem, "AI ile çalıştır") | `SYSTEM + ANSWER_RULES` | **~2.410** |
+| `/api/v1/explore/catalog` ("Katalog Üret") | `SYSTEM + CATALOG_RULES + SCHEMA.md` | **~8.890** |
 
 Katalog uç noktası neredeyse dört kat ağır başlıyor — ve bu ağırlık **her
-turda** yeniden gönderiliyor.
+turda** yeniden gönderiliyor. `SCHEMA.md` tek başına o ağırlığın yarısı:
+şemayı kısaltmak, katalog ucunun turbaşı maliyetini doğrudan düşüren tek
+şey.
 
 ### 8.3 Karşılaştırma
 

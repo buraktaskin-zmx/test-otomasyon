@@ -1,5 +1,6 @@
 package orchestrator.explore;
 
+import orchestrator.aitrace.AiTraces;
 import orchestrator.catalog.CatalogService;
 import orchestrator.llm.PromptBuilder;
 import orchestrator.llm.SuggestService;
@@ -113,19 +114,31 @@ public class TapeGherkinController {
                 TapeEvidence.digest(tape.calls(), mainMenu), draft.steps(), draft.notes());
 
         SuggestService.Suggestion made;
-        try {
-            made = suggest.suggestFromWalk(user, intent, vocabulary.get(),
-                    SuggestService.ProductContext.NONE,
-                    feature -> Provenance.checkAgainstWalk(feature, screenOf(tape), tape.raw(), catalog,
-                            intent, mainMenu));
-        } catch (RuntimeException failed) {
-            Throwable root = failed;
-            while (root.getCause() != null && root.getCause() != root) {
-                root = root.getCause();
+        // Its own AI session, hung under the walk it was made from, so the
+        // walk's page in Token Takibi shows what turning it into steps cost.
+        String traceId;
+        try (AiTraces.Scope trace = AiTraces.open("gherkin", new AiTraces.Meta()
+                .title(firstLine(scenario))
+                .app(body.app())
+                .flow(body.flow())
+                .tapeId(body.tapeId())
+                .parentId(AiTraces.sessionOfTape(body.tapeId())))) {
+            traceId = trace.id();
+            try {
+                made = suggest.suggestFromWalk(user, intent, vocabulary.get(),
+                        SuggestService.ProductContext.NONE,
+                        feature -> Provenance.checkAgainstWalk(feature, screenOf(tape), tape.raw(), catalog,
+                                intent, mainMenu));
+            } catch (RuntimeException failed) {
+                Throwable root = failed;
+                while (root.getCause() != null && root.getCause() != root) {
+                    root = root.getCause();
+                }
+                trace.fail(root.getClass().getSimpleName() + ": " + root.getMessage());
+                System.out.println("[uptest] tape-gherkin: model cagrisi basarisiz — " + root);
+                return fallback(draft, "AI ile Gherkin üretilemedi (" + root.getClass().getSimpleName()
+                        + ": " + root.getMessage() + "); kural tabanlı taslak gösteriliyor.");
             }
-            System.out.println("[uptest] tape-gherkin: model cagrisi basarisiz — " + root);
-            return fallback(draft, "AI ile Gherkin üretilemedi (" + root.getClass().getSimpleName()
-                    + ": " + root.getMessage() + "); kural tabanlı taslak gösteriliyor.");
         }
 
         List<String> steps = stepsOf(made.feature());
@@ -146,7 +159,15 @@ public class TapeGherkinController {
         answer.put("valid", made.valid());
         answer.put("source", "ai");
         answer.put("attempts", made.attempts());
+        if (traceId != null) {
+            answer.put("traceId", traceId);
+        }
         return ResponseEntity.ok(answer);
+    }
+
+    private static String firstLine(String text) {
+        String line = text == null ? "" : text.strip().lines().findFirst().orElse("");
+        return line.isEmpty() ? "Gherkin oluştur" : line;
     }
 
     /**

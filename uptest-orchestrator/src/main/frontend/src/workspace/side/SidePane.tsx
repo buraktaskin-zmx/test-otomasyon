@@ -14,7 +14,7 @@ import type { ReactNode } from "react";
   .is-active, exactly as the tab strip did.
 */
 
-export type SideTab = "dashboard" | "flow" | "product" | "users" | "timeline" | "agent";
+export type SideTab = "dashboard" | "tokens" | "flow" | "product" | "users" | "timeline" | "agent";
 
 /*
   Inline SVG, 16px, stroke-based.
@@ -57,6 +57,14 @@ const ICONS: Record<SideTab, ReactNode> = {
       <rect x="9" y="2.5" width="4.5" height="4.5" rx="1" />
       <rect x="2.5" y="9" width="4.5" height="4.5" rx="1" />
       <rect x="9" y="9" width="4.5" height="4.5" rx="1" />
+    </Icon>
+  ),
+  // Token Takibi: a gauge -- how much has been spent.
+  tokens: (
+    <Icon>
+      <path d="M2.5 11.5a5.5 5.5 0 1 1 11 0" />
+      <path d="M8 11.5 10.6 7.4" />
+      <path d="M2.5 13.5h11" />
     </Icon>
   ),
   // The rule book: a document with a checked clause.
@@ -113,6 +121,7 @@ export function SideRail({
 }) {
   const tabs: ReadonlyArray<{ id: SideTab; label: string }> = [
     { id: "dashboard", label: "Dashboard" },
+    { id: "tokens", label: "Token Takibi" },
     { id: "flow", label: "Senaryo Üret" },
     { id: "product", label: "Kayıtlı Senaryolar" },
     ...(agentVisible ? ([{ id: "agent", label: "Ekran Keşfi" }] as const) : []),

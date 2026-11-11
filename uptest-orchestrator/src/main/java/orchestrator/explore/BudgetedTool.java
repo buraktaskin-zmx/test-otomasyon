@@ -54,6 +54,11 @@ final class BudgetedTool implements ToolCallback {
             call any tool. Reply with one short line and stop.
             """;
 
+    private static final String REPORTED = """
+            The result has already been reported and this task is over. Do not
+            call any tool. Reply with one short line and stop.
+            """;
+
     private static final String FORBIDDEN = """
             The instruction explicitly said NOT to touch this control: %s.
             That was not an oversight — pressing it changes what the
@@ -214,9 +219,12 @@ final class BudgetedTool implements ToolCallback {
      */
     private final ActionTape tape;
 
+    /** "AI ile çalıştır"'s result; null on every other walk. */
+    private final RunVerdict verdict;
+
     private BudgetedTool(ToolCallback delegate, AtomicInteger remaining, Set<String> visited,
                          CatalogSink sink, List<String> forbidden, AtomicBoolean aborted,
-                         Set<String> pending, String instruction, ActionTape tape) {
+                         Set<String> pending, String instruction, ActionTape tape, RunVerdict verdict) {
         this.delegate = delegate;
         this.remaining = remaining;
         this.visited = visited;
@@ -226,6 +234,7 @@ final class BudgetedTool implements ToolCallback {
         this.pending = pending;
         this.instruction = instruction;
         this.tape = tape;
+        this.verdict = verdict;
     }
 
     /**
@@ -255,14 +264,15 @@ final class BudgetedTool implements ToolCallback {
      */
     static Object[] wrap(List<ToolCallback> callbacks, int budget, CatalogSink sink,
                          List<String> forbidden, Set<String> pending, String instruction,
-                         AtomicBoolean aborted, ActionTape tape) {
+                         AtomicBoolean aborted, ActionTape tape, RunVerdict verdict) {
         AtomicInteger remaining = new AtomicInteger(budget);
         Set<String> visited = new HashSet<>();
         List<String> lowered = forbidden.stream().map(BudgetedTool::fold).toList();
         String folded = fold(instruction == null ? "" : instruction);
         return callbacks.stream()
                 .map(callback -> (Object) new BudgetedTool(
-                        callback, remaining, visited, sink, lowered, aborted, pending, folded, tape))
+                        callback, remaining, visited, sink, lowered, aborted, pending, folded, tape,
+                        verdict))
                 .toArray();
     }
 
@@ -333,24 +343,25 @@ final class BudgetedTool implements ToolCallback {
     }
 
     private String guarded(String input, Supplier<String> invoke) {
+        long began = System.nanoTime();
         trace(input);
         String refusal = refuse(input);
         if (refusal != null) {
             // A refused call is a fact about the walk, not a non-event: it is
             // what the model tried to do, and the sentence it got back is why
             // the next call looks the way it does.
-            tape.record(name(), input, ActionTape.Outcome.REFUSED, refusal);
+            record(input, ActionTape.Outcome.REFUSED, refusal, refusal, began);
             return refusal;
         }
         String result;
         try {
             result = watch(invoke.get());
         } catch (BrowserClosed closed) {
-            tape.record(name(), input, ActionTape.Outcome.ERROR, closed.getMessage());
+            record(input, ActionTape.Outcome.ERROR, closed.getMessage(), null, began);
             throw closed;
         } catch (RuntimeException failed) {
             watch(String.valueOf(failed.getMessage()));
-            tape.record(name(), input, ActionTape.Outcome.ERROR, String.valueOf(failed.getMessage()));
+            record(input, ActionTape.Outcome.ERROR, String.valueOf(failed.getMessage()), null, began);
             if (aborted.get()) {
                 // Answer rather than rethrow: a thrown tool is one the model
                 // retries, and retrying is exactly how it kept reopening the
@@ -369,7 +380,7 @@ final class BudgetedTool implements ToolCallback {
             // The call itself came back carrying the browser-is-gone marker.
             // Recorded with the real result rather than a note, because that
             // text is the only evidence of WHEN the window was shut.
-            tape.record(name(), input, ActionTape.Outcome.ERROR, result);
+            record(input, ActionTape.Outcome.ERROR, result, null, began);
             return closed();
         }
         // Recorded BEFORE trim, and that is a correction of the first version.
@@ -385,8 +396,23 @@ final class BudgetedTool implements ToolCallback {
         // read once, long afterwards, and it costs a few hundred kilobytes of
         // a directory that already holds Playwright traces.
         String answer = trim(result);
-        tape.record(name(), input, ActionTape.Outcome.OK, result);
+        record(input, ActionTape.Outcome.OK, result, answer, began);
         return answer;
+    }
+
+    /**
+     * Writes one call to the tape and to the open AI session.
+     *
+     * The tape keeps the WHOLE result (see above); the session also gets what
+     * the model was actually handed back, because that trimmed text is what
+     * the next turn's prompt pays for.
+     *
+     * @param seen what the model received, or null when the call threw
+     */
+    private void record(String input, ActionTape.Outcome outcome, String result, String seen, long began) {
+        long ms = java.time.Duration.ofNanos(System.nanoTime() - began).toMillis();
+        tape.record(name(), input, outcome, result, ms);
+        orchestrator.aitrace.AiTraces.tool(name(), input, outcome.name(), result, seen, ms);
     }
 
     /** This tool's own name, which is what the tape and the guards key on. */
@@ -534,6 +560,23 @@ final class BudgetedTool implements ToolCallback {
             System.out.println("[uptest] explore: katalog gonderildi, sonrasinda arac cagrisi "
                     + "yapildi — reddedildi");
             return FINISHED;
+        }
+        // Same reason as the catalog: once the result is in, nothing the agent
+        // does next can change it.
+        if (verdict != null && verdict.isClosed()) {
+            System.out.println("[uptest] explore: sonuc bildirildi, sonrasinda arac cagrisi "
+                    + "yapildi — reddedildi");
+            return REPORTED;
+        }
+        // Reporting the result touches nothing on the page, so the guards that
+        // protect the page do not apply to it. The off-limits check in
+        // particular would REFUSE it: it searches the whole argument text, and
+        // a summary saying "Garantili Ödeme'ye dokunulmadı" names the very
+        // caption it is honouring. Nor may a spent budget silence the verdict
+        // -- a walk that ran out of calls is exactly the one whose result the
+        // analyst needs.
+        if (RunVerdict.TOOL.equals(getToolDefinition().name())) {
+            return null;
         }
         String banned = banned(input);
         if (banned != null) {

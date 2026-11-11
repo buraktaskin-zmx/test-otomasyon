@@ -38,6 +38,7 @@ import type {
   DashboardHistory, DashboardOverview, DashboardPeriod, DashboardScreenDetail, RunMeta,
   FlowState, FlowTree, ScreenReadResponse, FlowPlan, FlowBatch, BulkSaveResult,
 } from "./types";
+import type { AiTraceDetail, AiTraceOverview, AiTurnMessages } from "./types";
 
 /*
   All 24 orchestrator endpoints, named once, each a thin wrapper around api().
@@ -193,7 +194,7 @@ export const getScenario = (app: string, product: string, path: string) =>
 export const createMenu = (app: string, name: string) =>
   api<ProductSummary>("POST", "/api/v1/products", { app, name });
 
-/** "+ Ekran ekle": declares a screen on a product; answers with its flow. */
+/** Kayıtlı Senaryolar' "+ Menü ekle": declares a screen on a product; answers with its flow. */
 export const addScreen = (app: string, product: string, name: string) =>
   api<{ flow: string }>(
     "POST",
@@ -365,6 +366,41 @@ export const getScenarioHistory = (app: string, product: string, path: string) =
     "/api/v1/dashboard/scenarios/" + encodeURIComponent(app) + "/" + encodeURIComponent(product)
       + "?period=30d&path=" + encodeURIComponent(path),
   );
+
+/* ------------------------------ Token Takibi ------------------------------ */
+
+/** `kind`: comma separated session kinds; "" = everything but the health check. */
+export const getAiTraces = (period: DashboardPeriod, kind: string) =>
+  api<AiTraceOverview>(
+    "GET",
+    "/api/v1/ai-traces?period=" + period + (kind ? "&kind=" + encodeURIComponent(kind) : ""),
+  );
+
+export const getAiTrace = (id: string) =>
+  api<AiTraceDetail>("GET", "/api/v1/ai-traces/" + encodeURIComponent(id));
+
+export const getAiTurnMessages = (id: string, seq: number) =>
+  api<AiTurnMessages>("GET", "/api/v1/ai-traces/" + encodeURIComponent(id) + "/turns/" + seq + "/messages");
+
+/**
+ * One stored text, whole, as TEXT.
+ *
+ * Not through api(): that parses any body that happens to be JSON, and a tool
+ * argument or a page snapshot often is -- the panel would then show
+ * "[object Object]" for exactly the texts it exists to show verbatim.
+ */
+export async function getAiContent(id: string, sha: string): Promise<ApiResult<string>> {
+  try {
+    const response = await fetch(
+      "/api/v1/ai-traces/" + encodeURIComponent(id) + "/content/" + encodeURIComponent(sha));
+    const text = await response.text();
+    return response.ok
+      ? { ok: true, status: response.status, body: text }
+      : { ok: false, status: response.status, body: text, error: "HTTP " + response.status };
+  } catch (cause) {
+    return { ok: false, status: 0, body: null, error: cause instanceof Error ? cause.message : String(cause) };
+  }
+}
 
 /* ------------------------ Senaryo Üret (akış) -------------------------- */
 

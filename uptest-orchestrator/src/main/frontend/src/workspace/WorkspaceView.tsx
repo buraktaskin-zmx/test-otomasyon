@@ -25,6 +25,8 @@ import { useToast } from "../ui/Toast";
 import { DashboardPanel } from "../dashboard/DashboardPanel";
 import { FlowPanel } from "../flow/FlowPanel";
 import type { RerunRequest } from "../dashboard/DashboardPanel";
+import { TokenPanel } from "../tokens/TokenPanel";
+import type { TraceTarget } from "../tokens/TokenPanel";
 import type { Origin, RunLogin, RunMeta, ValidationResult } from "../api/types";
 import { splitTags } from "../lib/scenarioProse";
 import { loginStepFor, withLogin } from "../lib/loginLine";
@@ -82,6 +84,8 @@ export function WorkspaceView({
   /* Dashboard's "Düşenleri tekrar çalıştır": Kayıtlı Senaryolar opens on that
      screen with those rows ticked, where the CIF is in sight before Çalıştır. */
   const [rerun, setRerun] = useState<(RerunRequest & { nonce: number }) | null>(null);
+  /* "Token ayrıntısı" beside an AI walk: Token Takibi opens on that session. */
+  const [traceTarget, setTraceTarget] = useState<TraceTarget | null>(null);
   const toast = useToast();
   const origin = useOrigin();
   const catalogs = useCatalogs();
@@ -392,7 +396,8 @@ export function WorkspaceView({
      open, which is the test -- not how much markup it happens to have. */
   const wideMode = panelOpen
     && (sideTab === "product" || sideTab === "users"
-      || sideTab === "agent" || sideTab === "dashboard" || sideTab === "flow");
+      || sideTab === "agent" || sideTab === "dashboard" || sideTab === "flow"
+      || sideTab === "tokens");
 
   const liveRun = runPoll.run?.status === "RUNNING";
   const agentVisible = !tools.loaded || tools.available;
@@ -478,6 +483,7 @@ export function WorkspaceView({
             showPanel("product");
           }}
         />
+        <TokenPanel active={sideTab === "tokens"} target={traceTarget} />
         <FlowPanel
           active={sideTab === "flow"}
           products={products.products}
@@ -511,6 +517,10 @@ export function WorkspaceView({
           products={products}
           onOpen={openRegistered}
           preselect={rerun}
+          onShowTrace={(target) => {
+            setTraceTarget({ ...target, nonce: Date.now() });
+            showPanel("tokens");
+          }}
         />
         <TimelinePanel
           active={sideTab === "timeline"}

@@ -667,6 +667,13 @@ export interface ExploreRequest {
    *  The tape is used only to check the label was on the screen the walk
    *  ended on, and to report a value that disagrees. */
   expected?: string[];
+  /** Labels the walk's AI session in Token Takibi; nothing about the walk
+   *  reads them. "ai-run" = Kayıtlı Senaryolar' "AI ile çalıştır". */
+  source?: "ai-run" | "explore";
+  app?: string;
+  product?: string;
+  flow?: string;
+  scenarioPath?: string;
 }
 
 /** POST /api/v1/explore 200 body.
@@ -688,6 +695,21 @@ export interface ExploreAnswerResponse {
   tapeId: string;
   gherkin: string;
   notes: string[];
+  /** The AI session the walk was recorded under (Token Takibi); absent when
+   *  the server is older or recording failed. */
+  traceId?: string;
+  /** "AI ile çalıştır" only: the agent's structured result. Absent when the
+   *  agent never reported one -- `answer` is then its prose. */
+  summary?: AiRunSummary;
+}
+
+/** RunVerdict.toJson. `verdict` is settled on the server: one failed step is
+ *  FAILED whatever the agent claimed. Empty lists are "none". */
+export interface AiRunSummary {
+  succeeded: string[];
+  failed: string[];
+  warnings: string[];
+  verdict: "PASSED" | "FAILED";
 }
 
 /** POST /api/v1/explore/gherkin -- TapeGherkinController.Request. Made AFTER
@@ -716,6 +738,7 @@ export interface TapeGherkinResponse {
   valid: boolean;
   source: "ai" | "kural";
   attempts: number;
+  traceId?: string;
 }
 
 /** POST /api/v1/explore/catalog 200 body -- TWO keys, neither optional:
@@ -1086,4 +1109,174 @@ export interface FlowBatch {
 export interface BulkSaveResult {
   created: string[];
   refused: Array<{ index: number; error: string }>;
+}
+
+/* ------------------------------ Token Takibi ------------------------------ */
+
+/* AiTraceService's records, field for field. See docs/TOKEN-TAKIBI.md for
+   what each number means and which ones are exact. */
+
+/** ai-run = Kayıtlı Senaryolar' "AI ile çalıştır"; explore = Ekran Keşfi's
+ *  Serbest Gözlem; flow-* = Senaryo Üret's three stages; health = the model
+ *  dot's one call per page load, hidden unless asked for. */
+export type AiSessionKind =
+  | "ai-run" | "explore" | "catalog" | "gherkin"
+  | "flow-read" | "flow-plan" | "flow-suggest" | "health" | "other";
+
+export type AiSessionStatus = "RUNNING" | "DONE" | "FAILED" | "UNKNOWN";
+
+export interface AiSession {
+  id: string;
+  kind: AiSessionKind;
+  status: AiSessionStatus;
+  startedAt: string;
+  finishedAt: string | null;
+  durationMs: number | null;
+  title: string | null;
+  app: string | null;
+  product: string | null;
+  flow: string | null;
+  scenarioPath: string | null;
+  cif: string | null;
+  tapeId: string | null;
+  parentId: string | null;
+  models: string | null;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  /** null = the server never reported a cache figure, which is not 0. */
+  cachedTokens: number | null;
+  turns: number;
+  toolCalls: number;
+  error: string | null;
+}
+
+export interface AiTraceKpis {
+  totalTokens: number;
+  promptTokens: number;
+  completionTokens: number;
+  cachedTokens: number | null;
+  sessions: number;
+  avgPerAiRun: number | null;
+  aiRuns: number;
+  mostExpensive: AiSession | null;
+}
+
+export interface AiTraceDay {
+  date: string;
+  prompt: number;
+  completion: number;
+  sessions: number;
+}
+
+export interface AiTraceOverview {
+  period: DashboardPeriod;
+  kind: string;
+  kpis: AiTraceKpis;
+  daily: AiTraceDay[];
+  byKind: Array<{ kind: AiSessionKind; sessions: number; tokens: number }>;
+  sessions: AiSession[];
+  running: boolean;
+  /** More sessions than the list shows; the totals still count them all. */
+  truncated: boolean;
+}
+
+/** A prompt split by source. Every part null until counted; `exact` false =
+ *  estimated from the session's own characters-per-token. `overhead` is the
+ *  server's prompt figure minus the parts. */
+export interface AiBreakdown {
+  system: number | null;
+  toolDefs: number | null;
+  user: number | null;
+  toolResults: number | null;
+  assistant: number | null;
+  overhead: number | null;
+  exact: boolean | null;
+  missingTurns: number;
+}
+
+export interface AiTurn {
+  seq: number;
+  startedAt: string;
+  durationMs: number;
+  model: string | null;
+  promptTokens: number | null;
+  completionTokens: number | null;
+  totalTokens: number | null;
+  cachedTokens: number | null;
+  finishReason: string | null;
+  messageCount: number;
+  newMessageCount: number;
+  toolDefCount: number;
+  requestedToolCalls: number;
+  responseChars: number;
+  responsePreview: string | null;
+  responseSha: string | null;
+  reasoningChars: number;
+  reasoningSha: string | null;
+  breakdown: AiBreakdown | null;
+  error: string | null;
+}
+
+export type AiToolOutcome = "OK" | "REFUSED" | "ERROR";
+
+export interface AiToolCall {
+  seq: number;
+  /** The model turn that asked for it. */
+  turnSeq: number | null;
+  tool: string;
+  outcome: AiToolOutcome;
+  startedAt: string;
+  durationMs: number | null;
+  argsChars: number;
+  resultChars: number;
+  /** Tokens of what the MODEL got back (after trimming), once counted. */
+  resultTokens: number | null;
+  resultExact: boolean | null;
+  argsPreview: string | null;
+  resultPreview: string | null;
+  argsSha: string | null;
+  resultSha: string | null;
+}
+
+export interface AiToolStat {
+  tool: string;
+  calls: number;
+  refused: number;
+  errors: number;
+  resultChars: number;
+  resultTokens: number | null;
+  durationMs: number;
+}
+
+export interface AiTraceDetail {
+  session: AiSession;
+  parent: AiSession | null;
+  turns: AiTurn[];
+  toolCalls: AiToolCall[];
+  toolStats: AiToolStat[];
+  totals: AiBreakdown | null;
+  children: AiSession[];
+}
+
+export interface AiMessage {
+  index: number;
+  role: string;
+  name: string | null;
+  toolCallId: string | null;
+  sha: string;
+  chars: number;
+  /** First time this session sent it. */
+  isNew: boolean;
+  tokens: number | null;
+  exact: boolean | null;
+}
+
+export interface AiTurnMessages {
+  seq: number;
+  messages: AiMessage[];
+  toolDefs: AiMessage | null;
+  response: AiMessage | null;
+  reasoning: AiMessage | null;
+  toolCalls: Array<{ id: string; name: string; arguments: string }>;
 }
