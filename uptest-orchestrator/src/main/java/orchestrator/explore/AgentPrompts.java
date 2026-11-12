@@ -227,6 +227,13 @@ final class AgentPrompts {
               step of the instruction -- or when you cannot go on -- call
               report_result ONCE. It ends the task. Wherever the rules above
               say "answer", here that means calling report_result.
+            - MANDATORY: the scenario's LAST step is the end of the task. As
+              soon as it is done and its expected result (BEKLENEN) checked,
+              call report_result at once. No further clicks, no going back,
+              no looking at other screens or menus.
+            - Do NOT close the browser or the tab yourself. The system closes
+              it after report_result; a browser closed before that loses the
+              whole result.
             - A step you could not do, skipped, or where the screen did not
               show what the instruction expected is a FAILED step. Say which
               step and why.

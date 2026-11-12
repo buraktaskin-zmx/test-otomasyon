@@ -170,6 +170,47 @@ class AiRunPreludeTest {
                 .doesNotContain("pw987654");
     }
 
+    /** ProductPanel.aiRun's text, character for character. */
+    private static final String UI_TEXT = String.join("\n",
+            "NAKİT YÖNETİMİ menüsü altındaki \"Firma Fatura İşlemleri\" ekranına git.",
+            "Sonra şu senaryoyu uygula:",
+            "",
+            "Firma Seçimi listesinde arama yapılır",
+            "Adımlar:",
+            "1. Firma Seçimi listesini aç");
+
+    @Test
+    @DisplayName("on the screen: the UI's 'ekranına git' opening is dropped — it contradicted 'Menüye tekrar gitme'")
+    void onScreenDropsTheGoToLine() {
+        String text = AiRunPrelude.instruction(
+                new AiRunPrelude.Outcome(AiRunPrelude.Reached.ON_SCREEN, "PAGE", null),
+                UI_TEXT, "COMPOSED", "NAKİT YÖNETİMİ", "Firma Fatura İşlemleri", 100);
+        assertThat(text).contains("Menüye tekrar gitme")
+                .doesNotContain("ekranına git.")
+                .doesNotContain("Sonra şu senaryoyu uygula:")
+                .contains("Firma Seçimi listesinde arama yapılır\nAdımlar:\n1. Firma Seçimi listesini aç");
+    }
+
+    @Test
+    @DisplayName("logged in but the menu did not open: the go-to line stays, the agent still has to find the screen")
+    void loggedInKeepsTheGoToLine() {
+        String text = AiRunPrelude.instruction(
+                new AiRunPrelude.Outcome(AiRunPrelude.Reached.LOGGED_IN, "PAGE", "menü koddan açılamadı"),
+                UI_TEXT, "COMPOSED", "NAKİT YÖNETİMİ", "Firma Fatura İşlemleri", 100);
+        assertThat(text).contains(UI_TEXT);
+    }
+
+    @Test
+    @DisplayName("only the LEADING go-to goes: the same words inside the scenario are left as written")
+    void onlyTheOpeningIsDropped() {
+        String inside = "Faturayı seç.\nListe ekranına git.";
+        assertThat(AiRunPrelude.withoutGoTo(inside)).isEqualTo(inside);
+        assertThat(AiRunPrelude.withoutGoTo("\"X\" ekranına git.\nSonra şu senaryoyu uygula:\n\nAdım"))
+                .isEqualTo("Adım");
+        assertThat(AiRunPrelude.withoutGoTo("\"X\" ekranına git.\nAdım")).isEqualTo("Adım");
+        assertThat(AiRunPrelude.withoutGoTo("")).isEmpty();
+    }
+
     private static String target(String line) {
         int at = line.indexOf("\"target\":\"");
         if (at < 0) {

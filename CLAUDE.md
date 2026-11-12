@@ -1241,6 +1241,28 @@ and leave each independently runnable.
   turn away from the model when code can do it (login, menu, waiting, reading
   the page), and stop resending what is dead (old pages). A shorter prompt is
   the smallest of them.
+- **A cap on what the model is shown can hide the element its next action
+  needs.** `page-cap` cut a 20.192-character page to 6.000, and Select2's
+  search box opens at the END of the page, so it was never in the part the
+  model saw; the agent invented `textbox "Seçiniz"` and `textbox` as targets
+  and retried each (26 turns, 112k tokens, scenario unfinished). The tempting
+  fix — shrink the page smarter — was built (`40a2a7f`: one line per element, 4,3× smaller) and blinded the
+  agent on the very next run, because the menu link it needed sat in the part
+  that was dropped. Passing a "every ref survives" unit test did not prevent
+  it: the test checked what the summary KEPT, the run needed what the NEXT
+  ACTION required. The fix chosen instead (unit-tested, NOT yet confirmed by a real
+  run) gives the agent a way that does not need the hidden part: an opened dropdown's search box already has the
+  keyboard focus, so `browser_press_sequentially` (text, no target) is enough,
+  and a malformed target is answered with exactly that
+  (`BudgetedTool.targetHint`). Measure a page summary on a real walk, never on
+  fixtures alone.
+- **The instruction can contradict itself before the model reads a word.**
+  The first message of "AI ile çalıştır" says "menu is open, do not go to it
+  again" (`AiRunPrelude`) and, one paragraph later, "go to the screen under
+  menu X" (`ProductPanel.tsx`, the text the UI prepends). In the 09:53 walk the
+  agent clicked the already-open main menu. Same family as the lesson on prompt rules above, with a different
+  author: two pieces of code each add a paragraph and neither knows the other.
+  Token Takibi → turn #1 → "tek metin" shows the message exactly as sent.
 - **Hooks must close everything even when tracing fails.** `Playwright.create()`
   starts a node driver process per scenario; a throwing `tracing().stop()` that
   skipped the closes leaked that driver and its browser for the lifetime of the

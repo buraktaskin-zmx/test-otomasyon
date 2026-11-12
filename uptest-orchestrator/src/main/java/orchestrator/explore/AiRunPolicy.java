@@ -4,7 +4,9 @@ import orchestrator.aitrace.AiTraces;
 import org.springframework.ai.tool.ToolCallback;
 
 import java.time.Duration;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.LongSupplier;
 import java.util.function.UnaryOperator;
 
@@ -155,6 +157,52 @@ final class AiRunPolicy {
     /** What is left of the budget, for the log and the refusal. */
     long used() {
         return Math.max(0, spent.getAsLong());
+    }
+
+    /**
+     * Calls that failed on the page as it stands: (tool, arguments) to the
+     * error they got.
+     *
+     * <p><b>Measured 12.11.2026</b>, "Firma Seçimi listesinde arama yapılır":
+     * the agent invented two targets, {@code textbox "Seçiniz"} and
+     * {@code textbox}, and sent EACH of them five times. Every repeat got the
+     * same error, because nothing had changed that could make it pass — and
+     * every repeat was a full turn resending the whole conversation. A second
+     * identical call on an unchanged page is not a retry, it is the same
+     * answer asked for again.
+     *
+     * <p>"Unchanged" is the load-bearing word: a successful action changes the
+     * page, and a call that failed before it may well work after it (a
+     * dropdown option is only there once the list is open). So any successful
+     * {@link #ACTING} call forgets everything, and only a repeat with nothing
+     * in between is refused.
+     */
+    private final Map<String, String> failures = new ConcurrentHashMap<>();
+
+    /**
+     * What one call came to. An error is either thrown (MCP's isError) or
+     * returned as text under MCP's own {@code ### Error} heading; both count.
+     */
+    void outcome(String tool, String input, String result, boolean threw) {
+        if (threw || (result != null && result.contains("### Error"))) {
+            failures.put(key(tool, input), oneLine(result));
+        } else if (ACTING.contains(tool)) {
+            failures.clear();
+        }
+    }
+
+    /** The error this exact call already got on this page, or null. */
+    String failedBefore(String tool, String input) {
+        return failures.get(key(tool, input));
+    }
+
+    private static String key(String tool, String input) {
+        return tool + "\n" + (input == null ? "" : input.replaceAll("\\s+", " ").trim());
+    }
+
+    private static String oneLine(String text) {
+        String flat = text == null ? "" : text.replaceAll("\\s+", " ").trim();
+        return flat.length() > 200 ? flat.substring(0, 200) + "…" : flat;
     }
 
     String budgetNote() {

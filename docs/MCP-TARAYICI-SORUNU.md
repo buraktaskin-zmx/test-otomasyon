@@ -211,8 +211,9 @@ git status --short .mcp.json; grep -n "executable-path\|--browser" .mcp.json
 |---|---|---|
 | `40a2a7f` | Sayfayı düz listeye çeviren `LeanPage`, birkaç adımı tek turda yapan `do_steps` (`StepRunner`), `browser_fill_form` kaldırıldı, sayfa sınırı 6000 → 2500, ana menü sayfadan atılıyordu | **geri alındı** |
 | `f713b14` | `40a2a7f`'in geri alınması — ağaç `6163fea` ile birebir aynı | master'da |
-| `stash@{0}` (push edilmedi) | Girişte adresi geçici hatalarda 3 kez deneme; hata mesajının sebep tahmin etmemesi; `UPTEST_MCP_CONFIG` ile makineye özel `.mcp.local.json` | **bekliyor** |
-| (commit bekliyor) | Dropdown araması: `browser_press_sequentially` ajana açıldı; hatalı `target`'a ipucu (`BudgetedTool.targetHint`); `RUN_SYSTEM`'e iki cümle | **yerelde, testli** |
+| `stash@{1}` (push edilmedi) | Girişte adresi geçici hatalarda 3 kez deneme; hata mesajının sebep tahmin etmemesi; `UPTEST_MCP_CONFIG` ile makineye özel `.mcp.local.json` | **bekliyor** (`stash@{0}` başka bir şey: geri alınan Token Takibi son-koşu/Geçmiş arayüzü) |
+| `82008f1` | Dropdown araması: `browser_press_sequentially` ajana açıldı; hatalı `target`'a ipucu (`BudgetedTool.targetHint`); `RUN_SYSTEM`'e iki cümle; bu belge | master'da, birim testli; **VDI/Mac koşusuyla doğrulanmadı** |
+| `0369853` | Token Takibi: bir turun tam girdisi ve çıktısı okunur (`TurnTranscript`, "tek metin" görünümü) — ajana giden hiçbir şey değişmedi, yalnız gösterim | master'da; `docs/TOKEN-TAKIBI.md` §3b |
 
 **Dropdown araması (10:44 koşusu, MCP 0.0.82 ile — giriş artık çalışıyor):**
 Firma Seçimi açıldı, ama sayfa 20.192 karakterdi ve sınır 6.000'i tutuyordu

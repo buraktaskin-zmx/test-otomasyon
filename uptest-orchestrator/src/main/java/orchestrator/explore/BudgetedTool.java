@@ -448,6 +448,9 @@ final class BudgetedTool implements ToolCallback {
         } catch (RuntimeException failed) {
             watch(String.valueOf(failed.getMessage()));
             record(input, ActionTape.Outcome.ERROR, String.valueOf(failed.getMessage()), null, began);
+            if (policy != null) {
+                policy.outcome(name(), input, String.valueOf(failed.getMessage()), true);
+            }
             if (aborted.get()) {
                 // Answer rather than rethrow: a thrown tool is one the model
                 // retries, and retrying is exactly how it kept reopening the
@@ -486,6 +489,9 @@ final class BudgetedTool implements ToolCallback {
         // a directory that already holds Playwright traces.
         String answer = trim(result);
         record(input, ActionTape.Outcome.OK, result, answer, began);
+        if (policy != null) {
+            policy.outcome(name(), input, result, false);
+        }
         // After the record, so the tape keeps the action's own result and the
         // page taken after it as two entries, in the order they happened.
         return policy == null ? answer : policy.after(name(), answer, this::trim, tape);
@@ -720,6 +726,12 @@ final class BudgetedTool implements ToolCallback {
                     + "baslatilmak uzere — reddedildi");
             return ALREADY_THERE;
         }
+        String before = policy == null ? null : policy.failedBefore(name(), input);
+        if (before != null) {
+            System.out.println("[uptest] explore: ayni cagri ayni sayfada ikinci kez — " + name()
+                    + " reddedildi");
+            return SAME_FAILURE.formatted(before);
+        }
         if (remaining.decrementAndGet() < 0) {
             return EXHAUSTED;
         }
@@ -744,6 +756,15 @@ final class BudgetedTool implements ToolCallback {
     private static final List<String> COMMITTING = List.of(
             "onayla", "onay ver", "evet", "gönder", "kaydet", "sil", "tamam",
             "approve", "confirm", "submit", "delete", "yes");
+
+    /** See AiRunPolicy.failures: the identical call, on a page nothing has changed. */
+    private static final String SAME_FAILURE = """
+            REFUSED: you already made exactly this call and nothing has changed on
+            the page since, so it fails the same way. The error it got was:
+            %s
+            Do something different: use a reference (like e42) from the latest
+            page, another tool, or call report_result and put this step in failed.
+            """;
 
     /** Clicking, or accepting the browser's own dialog, is how a commit happens. */
     private static final List<String> COMMITTING_TOOLS =

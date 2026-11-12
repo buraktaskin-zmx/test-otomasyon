@@ -5,6 +5,7 @@ import org.springframework.ai.tool.ToolCallback;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -160,9 +161,11 @@ final class AiRunPrelude {
             return composed;
         }
         StringBuilder out = new StringBuilder();
+        String task = scenario == null ? "" : scenario.trim();
         if (outcome.reached() == Reached.ON_SCREEN) {
             out.append("Giriş yapıldı ve \"").append(mainMenu).append("\" menüsündeki \"")
                     .append(screen).append("\" ekranı açık. Menüye tekrar gitme.\n\n");
+            task = withoutGoTo(task);
         } else {
             out.append("Giriş yapıldı.");
             if (present(mainMenu)) {
@@ -170,7 +173,7 @@ final class AiRunPrelude {
             }
             out.append("\n\n");
         }
-        out.append(scenario == null ? "" : scenario.trim());
+        out.append(task);
         String page = outcome.page();
         if (page != null && !page.isBlank()) {
             String capped = page.length() > pageCap ? page.substring(0, pageCap) + "\n[... kesildi]" : page;
@@ -178,6 +181,37 @@ final class AiRunPrelude {
                     .append(capped).append('\n').append(CompactingAdvisor.SCREEN_CLOSE);
         }
         return out.toString();
+    }
+
+    /** The opening line ProductPanel puts in front of every ai-run scenario. */
+    private static final String GO_TO = "ekranına git.";
+    private static final String THEN = "Sonra şu senaryoyu uygula:";
+
+    /**
+     * The scenario without the UI's "go to the screen" opening.
+     *
+     * ProductPanel writes "… menüsü altındaki "X" ekranına git. / Sonra şu
+     * senaryoyu uygula:" above every scenario, which is right when the agent
+     * has to find the screen and wrong when code has already opened it: the
+     * turn then said "Menüye tekrar gitme" and, one line later, "ekranına
+     * git", and the agent obeyed the second — it clicked the open menu again,
+     * the page grew to 14.275 characters and the link it needed fell past the
+     * cap (12.11.2026, Mac). Only the LEADING lines go, so a step inside the
+     * scenario that happens to say the same words is left exactly as written.
+     */
+    static String withoutGoTo(String task) {
+        String[] lines = task.split("\n", -1);
+        int at = 0;
+        if (at < lines.length && lines[at].trim().endsWith(GO_TO)) {
+            at++;
+            if (at < lines.length && lines[at].trim().equals(THEN)) {
+                at++;
+            }
+        }
+        if (at == 0) {
+            return task;
+        }
+        return String.join("\n", Arrays.copyOfRange(lines, at, lines.length)).trim();
     }
 
     /**

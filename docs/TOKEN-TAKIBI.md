@@ -197,6 +197,9 @@ istiyordu ("SEARCH, DO NOT SNAPSHOT", "wait a few seconds … READ THE PAGE AGAI
 | 7 | Giriş koddan yapılamazsa ajan **hiç başlatılmaz**; sebep (ağ / sayfa) adıyla söylenir | `AiRunPrelude.diagnose` |
 | 8 | Sayfa modele **özetlenerek** verilir: adı olan ve tıklanabilen her şey kalır, adsız iskelet ve kod yankısı atılır | `LeanResults`, `uptest.explore.ai-run.page-cap` |
 | 9 | Senaryoda geçmeyen bir **onay** (Onayla/Evet/Gönder…) tıklanamaz — banka kaydı geri alınamaz | `BudgetedTool.unaskedCommit` |
+| 10 | Açılır listede **arama**: hedefsiz yazan `browser_press_sequentially` ajana sunulur; hatalı bir `target` ne yapılacağını söyleyen bir cevapla döner | `AI_RUN_TOOLS`, `BudgetedTool.targetHint` |
+| 11 | Ekran koddan açıldıysa arayüzün "… ekranına git." açılış satırı ajana **gitmez** — "Menüye tekrar gitme" ile çelişiyordu | `AiRunPrelude.withoutGoTo` |
+| 12 | **Aynı başarısız çağrı**, arada sayfayı değiştiren başarılı bir eylem yoksa ikinci kez tarayıcıya gitmez; ajana önceki hata ve ne yapacağı söylenir | `AiRunPolicy.outcome` / `failedBefore`, `BudgetedTool.SAME_FAILURE` |
 
 Gherkin oluştur etkilenmez: bant, koddan yapılan menüyü tek bir `prelude_menu`
 kaydı olarak tutar ve renderer bundan `navigate to` satırını üretir.
@@ -217,3 +220,34 @@ Kalan kalemler aynı ölçümde: system prompt 13.786 (%11, tur başına ~620 �
 
 Token Takibi'nde oturumun "Bütçe" kartı ve listede "bütçe aşıldı" işareti
 hedefe göre durumu gösterir.
+
+### 12.11.2026: hâlâ pahalı — ve denenip geri alınan çözüm
+
+**Ölçüm:** 26 tur, 112.547 token, senaryo bitmedi ("Arama kutusuna 'san'
+yazılamadı"). Sebep bütçe duvarının geç gelmesi değil, **ajanın göremediği bir
+şey**: Firma Seçimi açılınca sayfa 20.192 karakter oldu, `page-cap` 6.000'de
+kesti (`browser_click sonucu 20192 -> 6153`), ve Select2'nin arama kutusu
+sayfanın **sonunda** açıldığı için modelin gördüğü kısımda yoktu. Ajan ref'ini
+bulamayınca hedef uydurdu (`textbox "Seçiniz"`, `textbox`) ve her birini beş
+kez denedi. Düzeltme 10. satır: liste açılınca arama kutusu zaten odakta,
+yazmak için hedef gerekmiyor.
+
+**Denendi, geri alındı (`40a2a7f` → `f713b14`):** sayfayı tek satırlık düz
+listeye çevirmek (7.187 → 1.665 karakter, 4,3×), `page-cap`'i 2.500'e
+indirmek ve birkaç adımı tek turda yürüten `do_steps`. Birim testleri geçti,
+gerçek koşuda ajan **körleşti**: sayfa 14.275 karaktere çıktı, 2.500'lük sınır
+onu 2.653'e kesti (`14275 -> 2653`) ve aranan menü bağlantısı kesilen kısımda
+kaldı; kesme notu "snapshot'ı daralt" dediği için ajan daraltılmış snapshot
+döngüsüne girdi. Ayrıntı: `docs/MCP-TARAYICI-SORUNU.md`. Çıkarılan ders: bir sayfa özetinin doğruluğu "ref'ler
+korunuyor" testiyle değil, **ajanın bir sonraki eylemi için gereken şeyin
+özette kalmasıyla** ölçülür — ve bunu yalnızca gerçek bir koşu gösterir. Sayfa
+küçültme yeniden denenirse önce hangi öğenin hangi adımda gerektiği ölçülmeli.
+
+**Düzeltildi (tablo satırı 11), gerçek koşuyla henüz ölçülmedi — talimat
+kendiyle çelişiyordu.** Ajana giden ilk mesaj
+art arda üç şey söylüyor: `AiRunPrelude` "ekranı açık, menüye tekrar gitme"
+diyor; hemen ardından arayüzün eklediği satır (`ProductPanel.tsx`, `category
+menüsü altındaki "…" ekranına git.`) tersini söylüyor. Ajan ikincisini
+uyguluyor ve zaten açık olan menüye tıklıyor. Çelişkiyi görmenin yolu: Token
+Takibi → oturum → tur #1 → "Bu turun tam girdisini göster" → `kullanıcı`
+mesajı (§3b).
