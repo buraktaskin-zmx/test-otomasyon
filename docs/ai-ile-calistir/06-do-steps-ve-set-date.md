@@ -61,7 +61,12 @@ her adım için:
    ekran YENİ bir şey söylüyor mu? (önceki adımda olmayan dialog / alertdialog /
                                       alert, ya da "… giriniz." / "… seçiniz." satırı)
      └─ evet → "ekran yeni bir şey söylüyor: …" → DUR
+   senaryo bu adımın altına "Beklenen:" yazmış mı? (StepExpectations, §30)
+     └─ evet ve partide başka adım var → "BEKLENEN KONTROLÜ: …" → DUR
 ```
+
+Partinin yaptığı adımlar `StepJournal`'a da yazılır. Adım cache'i (§29)
+yürüyüşü bunlardan okur.
 
 ### 15.4 Modelin gördüğü cevap
 

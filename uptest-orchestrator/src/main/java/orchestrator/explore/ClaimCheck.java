@@ -111,6 +111,10 @@ final class ClaimCheck {
             }
             String text = step.group(1);
             String folded = TapeRenderer.fold(text);
+            if (folded.startsWith("beklenen")) {
+                // An expectation an older UI numbered like a step: it presses nothing.
+                continue;
+            }
             Matcher verb = PRESS.matcher(folded);
             if (!verb.find()) {
                 continue;

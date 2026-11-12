@@ -191,7 +191,18 @@ Geri butonuna tıkla                                      Açılan güncelleme e
 | Senaryo adı | Evet ("yalnızca bir isim, yapılacak bir adım DEĞİL" notuyla) | Token Takibi başlığı | Adım değildir |
 | Ön koşul | Evet | Yalnız dolaylı: onay engeli ve liste kısaltma **bütün** metne bakar | Ajan veri **yaratmaz**, yalnız okur. Ön koşul ortamda sağlanmıyorsa koşu kırmızı çıkar ama hata uygulamada değildir |
 | Adımlar | Evet, numaralı | ClaimCheck (yalnız numaralı basma adımları), liste kısaltma, PageChrome, onay engeli | Tırnaklı adlar burada işe yarar |
+| Adımlar içinde `Beklenen:` satırı | Evet, numarasız, adımın altında | `StepRunner` partiyi o adımdan sonra durdurur; cache'li koşuda tırnaklı ad kodla aranır ([§30](14-adim-cache.md)) | Ara durumu (açılan pencere, çıkan mesaj) o adımdan **hemen sonra** kontrol ettirir |
 | Beklenen | Evet | Kod **doğrulamaz** (onay engeli ve liste kısaltma yine bütün metne bakar); "Gherkin oluştur" THEN satırlarını buradan üretir | Ajan görüp görmediğine kendisi karar verir. Görünür ve tırnaklı yaz ki yanlış karar zorlaşsın |
+
+**Bir adımın sonucunu o adımın altına yazın.** Sondaki Beklenen alanı ancak
+son ekranı görür. "Fatura İptal Et"in açtığı pencere, "Geri"ye basıldıktan
+sonra artık yoktur:
+
+```
+"Fatura İptal Et" bağlantısına tıkla
+Beklenen: "Fatura İptal" ekranı açılır
+"Geri" düğmesine tıkla
+```
 
 Ekran Keşfi'ndeki `TIKLAMA:` / `ZORUNLU:` satırları burada **çalışmaz**:
 senaryo metni numaralandırıldığı için satır başında durmazlar.

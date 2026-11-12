@@ -201,6 +201,40 @@ export function writeDoc(feature: string, doc: ScenarioDoc): string {
  * The Açıklama is left out on purpose: it is context for a person, and the
  * agent acts on every sentence it is given.
  */
+const STEP_EXPECTATION = /^\s*beklenen\s*:\s*/i;
+
+/**
+ * A steps item that is the expectation of the step above it, written by the
+ * analyst as "Beklenen: …" on its own line. It is checked right after that
+ * step, while its page is still there -- a window "Fatura İptal Et" opens is
+ * gone by the time "Geri" is pressed, so the final Beklenen cannot see it.
+ * Returns the expectation without its prefix, or null for an ordinary step.
+ */
+export function stepExpectation(item: string): string | null {
+  return STEP_EXPECTATION.test(item) ? item.replace(STEP_EXPECTATION, "").trim() : null;
+}
+
+/**
+ * Numbered steps with each step expectation indented under its step and NOT
+ * numbered. The server reads exactly this shape (StepExpectations.java):
+ * ClaimCheck counts numbered lines as steps, so a numbered expectation would
+ * be read as one more thing to do.
+ */
+function stepLines(steps: string[]): string[] {
+  const out: string[] = [];
+  let number = 0;
+  for (const step of steps) {
+    const expected = stepExpectation(step);
+    if (expected !== null && number > 0) {
+      out.push("   Beklenen (bu adımdan hemen sonra kontrol et): " + expected);
+    } else {
+      number += 1;
+      out.push(number + ". " + step);
+    }
+  }
+  return out;
+}
+
 export function docAsText(
   doc: Pick<ScenarioDoc, "title" | "preconditions" | "steps" | "expected">,
 ): string {
@@ -211,7 +245,7 @@ export function docAsText(
       "",
       "Adımlar — numara sırasıyla, birer birer uygula. Bir adım bitmeden sonrakine geçme;"
         + " sonraki bir adımın butonuna önceden basma; burada yazmayan bir butona basma:",
-      ...doc.steps.map((s, i) => i + 1 + ". " + s),
+      ...stepLines(doc.steps),
     );
   }
   if (doc.expected.length) out.push("", "Beklenen:", ...doc.expected.map((e) => "- " + e));

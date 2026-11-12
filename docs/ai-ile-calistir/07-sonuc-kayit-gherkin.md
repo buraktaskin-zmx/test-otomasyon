@@ -84,6 +84,7 @@ bir ajan yeşil sonuç alıyordu.
   "tapeId":  "a73ead34-…",
   "gherkin": "navigate to \"NAKİT YÖNETİMİ\" \"Firma Fatura İşlemleri\"\nselect \"…\" from \"Firma Seçimi\"\n…",
   "notes":   ["#12 browser_press_key için vocabulary'de karşılık yok, satır üretilmedi."],
+  "cache":   { "state": "miss", "note": "kayıtlı akış yok", "stepCount": 0, "log": [], "saved": "4 adım kaydedildi" },
   "traceId": "…"
 }
 ```

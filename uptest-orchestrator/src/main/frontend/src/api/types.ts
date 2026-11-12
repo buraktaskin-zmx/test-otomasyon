@@ -677,6 +677,9 @@ export interface ExploreRequest {
   /** The screen's name as its menu prints it: where the code navigates
    *  before the agent starts ("AI ile çalıştır" only). */
   screen?: string;
+  /** "AI ile çalıştır" only: walk from scratch even when the scenario has a
+   *  cached walk ("Cache'siz, ajanla baştan"). */
+  ignoreCache?: boolean;
 }
 
 /** POST /api/v1/explore 200 body.
@@ -704,6 +707,22 @@ export interface ExploreAnswerResponse {
   /** "AI ile çalıştır" only: the agent's structured result. Absent when the
    *  agent never reported one -- `answer` is then its prose. */
   summary?: AiRunSummary;
+  /** "AI ile çalıştır" only: what the run did with the step cache. */
+  cache?: AiRunCache;
+}
+
+/** AiRunCache.Visit.toJson. hit = every step replayed in code and one model
+ *  turn judged it; takeover = the replay stopped at `stoppedAt` and the agent
+ *  went on from there; miss / ignored = the agent walked from scratch; none =
+ *  not a saved scenario. `log` is the replay, line for line, as the server
+ *  console printed it; `saved` says whether this run's steps were cached. */
+export interface AiRunCache {
+  state: "none" | "miss" | "ignored" | "hit" | "takeover";
+  note?: string;
+  stepCount: number;
+  stoppedAt?: number;
+  log: string[];
+  saved?: string;
 }
 
 /** RunVerdict.toJson. `verdict` is settled on the server: one failed step is

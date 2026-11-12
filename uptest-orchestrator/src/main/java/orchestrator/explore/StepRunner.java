@@ -87,6 +87,27 @@ final class StepRunner implements ToolCallback {
     private Map<String, ToolCallback> tools = Map.of();
     private ActionTape tape;
 
+    /** Where finished batches are noted for the step cache; null when nobody asks. */
+    private StepJournal journal;
+
+    /**
+     * Compacted name → the expectation the scenario wrote under the step that
+     * quotes it ({@link StepExpectations#checkpoints}). A batch stops right
+     * after such a step: the page it hands back is where the expectation is
+     * checked, and the next step would replace that page.
+     */
+    private Map<String, String> checkpoints = Map.of();
+
+    StepRunner journal(StepJournal journal) {
+        this.journal = journal;
+        return this;
+    }
+
+    StepRunner checkpoints(Map<String, String> checkpoints) {
+        this.checkpoints = checkpoints == null ? Map.of() : Map.copyOf(checkpoints);
+        return this;
+    }
+
     /**
      * Hands the runner the WRAPPED tools. Two-phase because the runner is
      * itself among the callbacks being wrapped (so the batch is guarded and
@@ -147,28 +168,37 @@ final class StepRunner implements ToolCallback {
         }
         Set<String> before = complaints(AriaSnapshot.of(latestPage()));
         List<String> log = new ArrayList<>();
+        List<Step> done = new ArrayList<>();
+        int from = tape.calls().size();
         String halted = null;
-        for (int i = 0; i < steps.size() && halted == null; i++) {
-            Step step = steps.get(i);
-            String outcome;
-            try {
-                outcome = perform(step);
-            } catch (BudgetedTool.BrowserClosed closed) {
-                throw closed;
-            } catch (RuntimeException failed) {
-                outcome = "HATA: " + firstLine(String.valueOf(failed.getMessage()));
-            }
-            if (!outcome.startsWith("tamam")) {
-                halted = outcome;
+        try {
+            for (int i = 0; i < steps.size() && halted == null; i++) {
+                Step step = steps.get(i);
+                String outcome = attempt(step);
+                if (!outcome.startsWith("tamam")) {
+                    halted = outcome;
+                    log.add(line(i, step, outcome));
+                    break;
+                }
+                done.add(step);
                 log.add(line(i, step, outcome));
-                break;
+                Set<String> now = complaints(AriaSnapshot.of(latestPage()));
+                now.removeAll(before);
+                if (!now.isEmpty()) {
+                    log.add("   ekran yeni bir şey söylüyor: " + String.join(" | ", now));
+                    halted = "ekran değişti";
+                    break;
+                }
+                String expected = expectationAfter(step);
+                if (expected != null && i < steps.size() - 1) {
+                    log.add("   BEKLENEN KONTROLÜ: senaryo bu adımın altına \"" + expected
+                            + "\" yazmış. Aşağıdaki sayfada bunu kontrol et, sonra kalan adımları gönder.");
+                    halted = "beklenen kontrolü";
+                }
             }
-            log.add(line(i, step, outcome));
-            Set<String> now = complaints(AriaSnapshot.of(latestPage()));
-            now.removeAll(before);
-            if (!now.isEmpty()) {
-                log.add("   ekran yeni bir şey söylüyor: " + String.join(" | ", now));
-                halted = "ekran değişti";
+        } finally {
+            if (journal != null) {
+                journal.add(from, tape.calls().size(), done);
             }
         }
         StringBuilder out = new StringBuilder(String.join("\n", log));
@@ -180,6 +210,46 @@ final class StepRunner implements ToolCallback {
             out.append("\n\n").append(LeanResults.unwrap(page));
         }
         return out.toString();
+    }
+
+    /** {@link #perform}, with a failure turned into its reason; a closed browser still ends the walk. */
+    String attempt(Step step) {
+        try {
+            return perform(step);
+        } catch (BudgetedTool.BrowserClosed closed) {
+            throw closed;
+        } catch (RuntimeException failed) {
+            return "HATA: " + firstLine(String.valueOf(failed.getMessage()));
+        }
+    }
+
+    /**
+     * One step, noted in the journal as a batch of its own — what a cached
+     * replay uses, so a walk the agent finishes after it can be cached whole.
+     */
+    String attemptNoted(Step step) {
+        int from = tape.calls().size();
+        String outcome = "HATA: adım koşulamadı";
+        try {
+            outcome = attempt(step);
+            return outcome;
+        } finally {
+            if (journal != null) {
+                journal.add(from, tape.calls().size(), outcome.startsWith("tamam") ? List.of(step) : List.of());
+            }
+        }
+    }
+
+    /** The expectation the scenario wrote under the step this one carries out, or null. */
+    String expectationAfter(Step step) {
+        if (checkpoints.isEmpty()) {
+            return null;
+        }
+        String byName = checkpoints.get(ClaimCheck.compact(step.name()));
+        if (byName != null) {
+            return byName;
+        }
+        return blank(step.value()) ? null : checkpoints.get(ClaimCheck.compact(step.value()));
     }
 
     /** "tamam…" when the step was carried out, otherwise why not. */
@@ -358,7 +428,7 @@ final class StepRunner implements ToolCallback {
     }
 
     /** The latest WHOLE page on the tape: a snapshot narrowed to one element does not count. */
-    private String latestPage() {
+    String latestPage() {
         if (tape == null) {
             return null;
         }

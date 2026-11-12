@@ -17,7 +17,7 @@ import { NewScenario } from "../../product/NewScenario";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
 import { docAsText } from "../../lib/scenarioProse";
 import { useToast } from "../../ui/Toast";
-import type { AiRunSummary, Origin, RunLogin } from "../../api/types";
+import type { AiRunCache, AiRunSummary, Origin, RunLogin } from "../../api/types";
 
 /** A walk that finished, kept until the analyst asks for its Gherkin. */
 interface FinishedWalk {
@@ -319,6 +319,8 @@ export function ProductPanel({
      open, or for a walk that has since been run again. */
   const [aiGherkinBusy, setAiGherkinBusy] = useState(false);
   const [finishedWalk, setFinishedWalk] = useState<FinishedWalk | null>(null);
+  /* What the last walk did with the step cache (AiRunCache on the server). */
+  const [aiCache, setAiCache] = useState<AiRunCache | null>(null);
   /* The walk's AI session (Token Takibi). Known once the walk answers --
      including a walk that failed, which is the one most worth reading. */
   const [aiTraceId, setAiTraceId] = useState<string | null>(null);
@@ -333,9 +335,10 @@ export function ProductPanel({
     setAiNotes([]);
     setAiGherkinBusy(false);
     setFinishedWalk(null);
+    setAiCache(null);
   }, [selection?.path]);
 
-  const aiRun = useAsyncAction(async () => {
+  const aiRun = useAsyncAction(async (fresh?: boolean) => {
     const scenario = products.scenario;
     if (!selection || !scenario) return;
     if (!chosenUser) {
@@ -362,6 +365,7 @@ export function ProductPanel({
     setAiNotes([]);
     setAiGherkinBusy(false);
     setFinishedWalk(null);
+    setAiCache(null);
     const result = await explore({
       text,
       url: LOGIN_URL[selection.app.toLowerCase()],
@@ -377,6 +381,7 @@ export function ProductPanel({
       flow: selection.flow ?? undefined,
       scenarioPath: selection.path ?? undefined,
       screen: screenName || undefined,
+      ignoreCache: fresh === true ? true : undefined,
     });
     const traced = result.ok
       ? result.body.traceId
@@ -392,6 +397,7 @@ export function ProductPanel({
     }
     setAiAnswer(result.body.answer);
     setAiSummary(result.body.summary ?? null);
+    setAiCache(result.body.cache ?? null);
     setFinishedWalk({
       tapeId: result.body.tapeId,
       app: selection.app,
@@ -640,6 +646,8 @@ export function ProductPanel({
                     { app: selection.app, product: selection.product, path: selection.path! },
                   )}
                   onAiRun={() => aiRun.run()}
+                  onAiRunFresh={() => aiRun.run(true)}
+                  aiCache={aiCache}
                   aiBusy={aiRun.busy}
                   aiAnswer={aiAnswer}
                   aiSummary={aiSummary}

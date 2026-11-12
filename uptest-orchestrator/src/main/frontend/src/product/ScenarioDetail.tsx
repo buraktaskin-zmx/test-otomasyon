@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import type { ReactNode, RefCallback } from "react";
 import { tokenizeGherkinLine } from "../lib/gherkin";
 import { IconButton, useAutoGrow } from "../ui/InlineEdit";
+import { stepExpectation } from "../lib/scenarioProse";
 import type { ScenarioDoc } from "../lib/scenarioProse";
-import type { AiRunSummary, ScenarioDetail as Detail, ScenarioEdit, SourceChange } from "../api/types";
+import type { AiRunCache, AiRunSummary, ScenarioDetail as Detail, ScenarioEdit, SourceChange } from "../api/types";
 
 /** The three parts of a scenario that each open for editing on their own. */
 type Section = "summary" | "gherkin" | "doc";
@@ -38,6 +39,8 @@ export function ScenarioDetail({
   onBack,
   onOpen,
   onAiRun,
+  onAiRunFresh,
+  aiCache,
   aiBusy,
   aiAnswer,
   aiSummary,
@@ -58,6 +61,10 @@ export function ScenarioDetail({
   /** Hands the scenario to the browsing agent -- the same call as Ekran
    *  Keşfi's Serbest Gözlem. */
   onAiRun: () => void;
+  /** The same run with the step cache ignored: the agent walks from scratch. */
+  onAiRunFresh: () => void;
+  /** What the last run did with the step cache; null before a run. */
+  aiCache: AiRunCache | null;
   aiBusy: boolean;
   aiAnswer: string;
   /** The walk's structured result; null when the agent answered in prose. */
@@ -367,7 +374,10 @@ export function ScenarioDetail({
               <span aria-hidden="true">✗</span> Beklenmedik şekilde kapandı
             </p>
           ) : aiSummary || aiAnswer ? (
-            <AiSummaryView summary={aiSummary} answer={aiAnswer} />
+            <>
+              {aiCache ? <AiCacheLine cache={aiCache} onFresh={onAiRunFresh} /> : null}
+              <AiSummaryView summary={aiSummary} answer={aiAnswer} />
+            </>
           ) : null}
 
           {aiGherkinBusy ? (
@@ -613,6 +623,62 @@ function AiSummaryView({ summary, answer }: { summary: AiRunSummary | null; answ
   );
 }
 
+/**
+ * How the last run used the step cache: replayed in code, taken over by the
+ * agent part way, or walked from scratch -- and why. The full step log is in
+ * the orchestrator console with the "[uptest] ai-cache" prefix; the same
+ * lines are under "Adımlar".
+ */
+function AiCacheLine({ cache, onFresh }: { cache: AiRunCache; onFresh: () => void }) {
+  const [open, setOpen] = useState(false);
+  let text: string;
+  switch (cache.state) {
+    case "hit":
+      text = `Kayıtlı akıştan çalıştı: ${cache.stepCount} adım koddan, sonuç tek AI turuyla.`;
+      break;
+    case "takeover":
+      text = `Kayıtlı akış ${cache.stoppedAt ?? "?"}. adımda durdu, ajan oradan devraldı`
+        + (cache.note ? ` (${cache.note}).` : ".");
+      break;
+    case "ignored":
+      text = "Kayıtlı akış kullanılmadı: ajanla baştan istendi.";
+      break;
+    case "miss":
+      text = "Kayıtlı akış yok" + (cache.note ? ` (${cache.note})` : "") + "; ajan ekranı baştan gezdi.";
+      break;
+    default:
+      text = "";
+  }
+  if (!text) return null;
+  const replayed = cache.state === "hit" || cache.state === "takeover";
+  return (
+    <div className="sd-cache">
+      <p className="sd-note">
+        {text}
+        {cache.saved ? ` Akış: ${cache.saved}.` : ""}
+      </p>
+      <div className="sd-cache-actions">
+        {cache.log.length > 0 ? (
+          <button type="button" className="btn btn-ghost" aria-expanded={open} onClick={() => setOpen(!open)}>
+            {open ? "Adımları gizle" : "Adımlar"}
+          </button>
+        ) : null}
+        {replayed ? (
+          <button
+            type="button"
+            className="btn btn-ghost"
+            title="Kayıtlı akışı kullanmadan ajanı ekranı baştan gezdirir; geçerse akış yenilenir"
+            onClick={onFresh}
+          >
+            Cache'siz, ajanla baştan
+          </button>
+        ) : null}
+      </div>
+      {open ? <pre className="sd-code sd-answer">{cache.log.join("\n")}</pre> : null}
+    </div>
+  );
+}
+
 function AiList({ title, items, tone }: { title: string; items: string[]; tone: "ok" | "fail" | "warn" }) {
   if (items.length === 0) return null;
   return (
@@ -695,12 +761,36 @@ function DocList({
       ) : prose ? (
         <div className="sd-plain">{items.map((item, i) => <p key={i} className="sd-prose">{item}</p>)}</div>
       ) : numbered ? (
-        <ol className="sd-plain">{items.map((item, i) => <li key={i}>{item}</li>)}</ol>
+        <ol className="sd-plain">
+          {withExpectations(items).map((step, i) => (
+            <li key={i}>
+              {step.text}
+              {step.expected.map((line, k) => (
+                <p key={k} className="sd-step-expect">Beklenen: {line}</p>
+              ))}
+            </li>
+          ))}
+        </ol>
       ) : (
         <ul className="sd-plain">{items.map((item, i) => <li key={i}>{item}</li>)}</ul>
       )}
     </div>
   );
+}
+
+/** Steps with each "Beklenen: …" line folded under the step above it, as docAsText sends them. */
+function withExpectations(items: string[]): { text: string; expected: string[] }[] {
+  const out: { text: string; expected: string[] }[] = [];
+  for (const item of items) {
+    const expected = stepExpectation(item);
+    const last = out[out.length - 1];
+    if (expected !== null && last) {
+      last.expected.push(expected);
+    } else {
+      out.push({ text: item, expected: [] });
+    }
+  }
+  return out;
 }
 
 /** The natural-language fields, editable. Shared by Düzenle and "+ yeni senaryo". */
@@ -748,7 +838,9 @@ export function DocEditor({
                   placeholder="İlgili firma verisi bulunabilmeli"
                   onChange={(items) => set("preconditions", items)} />
       <TextEditor label="Adımlar" items={doc.steps} grow={grow} onGrow={onGrow}
-                  placeholder={"Alıcı Listesi İşlemleri ekranını aç\nİşlemler panelinden Yeni Liste Oluştur'a tıkla"}
+                  placeholder={"\"Fatura İptal Et\" bağlantısına tıkla\nBeklenen: \"Fatura İptal\" ekranı açılır\n\"Geri\" düğmesine tıkla"}
+                  hint={"Bir adımın sonucunu hemen altına \"Beklenen:\" ile başlayan satırla yazın;"
+                    + " o adımdan hemen sonra kontrol edilir."}
                   onChange={(items) => set("steps", items)} />
       <TextEditor label="Beklenen" items={doc.expected} grow={grow} onGrow={onGrow}
                   placeholder={"İşlem Bilgileri ekranı görünür\nDöviz Cinsi: TL"}
@@ -765,6 +857,7 @@ function TextEditor({
   onChange,
   grow,
   onGrow,
+  hint,
 }: {
   label: string;
   items: string[];
@@ -774,10 +867,13 @@ function TextEditor({
    *  rather than given a fixed height to scroll inside. */
   grow?: RefCallback<HTMLTextAreaElement>;
   onGrow?: (box: HTMLTextAreaElement) => void;
+  /** One line under the label: how to write this field. */
+  hint?: string;
 }) {
   return (
     <div className="sd-doc-block">
       <span className="sd-doc-label">{label}</span>
+      {hint ? <p className="sd-note">{hint}</p> : null}
       <textarea
         ref={grow}
         className={grow ? "sd-box" : "search sd-edit sd-edit-medium"}

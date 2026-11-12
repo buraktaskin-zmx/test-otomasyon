@@ -170,6 +170,10 @@ final class AgentPrompts {
               after an earlier step can be in the same call. It stops at the
               first step it cannot do; then do THAT step with the other tools
               and send the rest with do_steps again.
+            - A step with a "Beklenen" line under it is checked RIGHT AFTER
+              that step, on the page you get back, before any later step:
+              do_steps stops there by itself. If the page does not show it,
+              that step is FAILED. Then send the remaining steps.
             - Dates: only with set_date (box + gg/aa/yyyy). Never type into a
               date box or drive the calendar yourself.
             - An amount is TWO boxes: lira on the left, the two kuruş digits on
@@ -196,6 +200,30 @@ final class AgentPrompts {
               screen; never press it again because the answer was slow.
             - If an action fails, look at the page you were given before trying
               anything else; never repeat the same call. No JavaScript.
+            """;
+
+    /**
+     * The system prompt of a CACHED "AI ile çalıştır": code has already done
+     * every step from the scenario's last passed walk (CachedWalk), so the
+     * model is asked one thing in one turn — do the pages show what the
+     * scenario expects. The verdict is never reused from an earlier run.
+     */
+    static final String VERDICT_SYSTEM = """
+            You judge ONE test scenario on a Turkish corporate internet banking
+            screen. Its steps have ALREADY been carried out by code; you are
+            given what was done, the page right after every step that has an
+            expectation ("Beklenen") under it, and the last page.
+
+            - Hold every expectation against the page given for it; the
+              scenario's final "Beklenen" against the last page.
+            - Judge only from the pages given. Do not assume a page you were
+              not shown.
+            - Call report_result ONCE. It is the only tool and it ends the task.
+              succeeded: each step done and each expectation seen, one sentence
+              each. failed: each expectation the page does not show, naming the
+              step and what the page shows instead. passed is true ONLY when
+              every expectation was seen.
+            - Every sentence you pass is in TURKISH.
             """;
 
     /**

@@ -131,8 +131,11 @@ public class ExploreController {
     /** Characters kept of a summarised tool result on "AI ile çalıştır" (LeanResults). */
     private final int pageCap;
 
+    /** "AI ile çalıştır"'s step cache: a passed walk's steps, replayed in code on the next run. */
+    private final AiRunCache cache;
+
     public ExploreController(ChatClient.Builder builder, ToolCallbackProvider tools,
-                             CatalogService catalogs,
+                             CatalogService catalogs, AiRunCache cache,
                              @Value("${uptest.explore.tool-budget:250}") int budget,
                              @Value("${uptest.explore.tape-dir:./runs/mcp}") String tapeDir,
                              @Value("${uptest.explore.settle-ms:1500}") long settleMs,
@@ -143,6 +146,7 @@ public class ExploreController {
         this.client = builder.build();
         this.tools = tools;
         this.catalogs = catalogs;
+        this.cache = cache;
         this.budget = budget;
         this.tapeDir = Paths.get(tapeDir);
         this.settle = Duration.ofMillis(Math.max(0, settleMs));
@@ -200,18 +204,21 @@ public class ExploreController {
      */
     private Object[] toolsFor(CatalogSink sink, String instruction, Set<String> pending,
                               AtomicBoolean aborted, ActionTape tape, RunVerdict verdict) {
-        return toolsFor(sink, instruction, pending, aborted, tape, verdict, null, null, budget);
+        return toolsFor(sink, instruction, pending, aborted, tape, verdict, null, null, budget, null, Map.of());
     }
 
     /**
-     * @param policy  "AI ile çalıştır" only; with it the browser tools are
-     *                narrowed to {@code allowed}
-     * @param allowed the browser tools offered, or null for all but WITHHELD
-     * @param calls   the tool-call ceiling for this walk
+     * @param policy      "AI ile çalıştır" only; with it the browser tools are
+     *                    narrowed to {@code allowed}
+     * @param allowed     the browser tools offered, or null for all but WITHHELD
+     * @param calls       the tool-call ceiling for this walk
+     * @param journal     where do_steps notes its batches for the step cache, or null
+     * @param checkpoints names whose step carries an expectation; do_steps stops after them
      */
     private Object[] toolsFor(CatalogSink sink, String instruction, Set<String> pending,
                               AtomicBoolean aborted, ActionTape tape, RunVerdict verdict,
-                              AiRunPolicy policy, Set<String> allowed, int calls) {
+                              AiRunPolicy policy, Set<String> allowed, int calls,
+                              StepJournal journal, Map<String, String> checkpoints) {
         List<ToolCallback> usable = new ArrayList<>(Arrays.stream(tools.getToolCallbacks())
                 .filter(callback -> !WITHHELD.contains(callback.getToolDefinition().name()))
                 .filter(callback -> allowed == null || allowed.contains(callback.getToolDefinition().name()))
@@ -249,7 +256,7 @@ public class ExploreController {
         // "AI ile çalıştır" only: several named steps per turn. Inside the
         // wrap, so the batch is guarded and recorded; bound to the wrapped
         // tools afterwards, so each of its steps is too.
-        StepRunner runner = policy == null ? null : new StepRunner();
+        StepRunner runner = policy == null ? null : new StepRunner().journal(journal).checkpoints(checkpoints);
         if (runner != null) {
             usable.add(runner);
         }
@@ -400,7 +407,7 @@ public class ExploreController {
                               String password, String smsCode, String mainMenu,
                               List<String> expected,
                               String source, String app, String product, String flow,
-                              String scenarioPath, String screen) {
+                              String scenarioPath, String screen, Boolean ignoreCache) {
     }
 
     /**
@@ -530,7 +537,7 @@ public class ExploreController {
      * closed on every path out of here, the prelude's included.
      */
     private String runScenario(Instruction body, String composed, AtomicBoolean aborted, ActionTape tape,
-                               RunVerdict verdict) {
+                               RunVerdict verdict, AiRunCache.Visit visit, StepJournal journal) {
         AiRunPrelude.Outcome opened = new AiRunPrelude(tools.getToolCallbacks(), tape, settle).run(
                 new AiRunPrelude.Login(body.app(), body.url(), body.cif(), body.userId(),
                         body.password(), body.smsCode()),
@@ -547,30 +554,50 @@ public class ExploreController {
                     + " — ekran açılamadığı için senaryo denenemezdi ve token harcanmadı.");
         }
         PageChrome chrome = PageChrome.forRun(opened, body.mainMenu(), body.screen(), body.text());
-        String userTurn = AiRunPrelude.instruction(chrome.shown(opened, body.text(), pageCap), body.text(),
-                composed, body.mainMenu(),
-                body.screen(), BudgetedTool.LARGEST_RESULT);
-        Set<String> allowed = new java.util.HashSet<>(AI_RUN_TOOLS);
-        if (opened.reached() == AiRunPrelude.Reached.NOTHING) {
-            allowed.add("browser_navigate");
+        Map<String, String> checkpoints = StepExpectations.checkpoints(body.text());
+        String task = body.text();
+        String answer = null;
+        if (visit.hit() && opened.reached() != AiRunPrelude.Reached.ON_SCREEN) {
+            visit.state = AiRunCache.State.MISS;
+            visit.note = "ekran koddan açılamadı, kayıtlı akış oynatılmadı";
+            System.out.println("[uptest] ai-cache MISS: " + visit.note);
         }
-        AiRunPolicy policy = new AiRunPolicy(raw("browser_snapshot"), settle, runTokenBudget, describeCap, pageCap);
-        policy.chrome(chrome);
-        policy.busyProbe(raw("browser_evaluate"));
-        System.out.println("[uptest] ai-run: prelude=" + opened.reached()
-                + (opened.note() == null ? "" : " (" + opened.note() + ")")
-                + ", " + allowed.size() + " tarayici araci, talimat " + userTurn.length()
-                + " karakter, token butcesi " + runTokenBudget);
-        // The SAME client Ekran Keşfi uses — Spring's, configured. The only
-        // difference is an advisor that cuts the old pages out of each turn.
-        String answer = client.prompt()
-                .system(RUN_SYSTEM + RESULT_RULES)
-                .user(userTurn)
-                .advisors(new CompactingAdvisor())
-                .tools(toolsFor(null, userTurn, new LinkedHashSet<>(), aborted, tape, verdict,
-                        policy, allowed, runToolBudget))
-                .call()
-                .content();
+        if (visit.hit()) {
+            CachedWalk.Result walk = replay(body, composed, aborted, tape, verdict, visit, journal, chrome);
+            if (walk.complete()) {
+                answer = judge(body, composed, aborted, tape, verdict, walk, chrome, visit.steps);
+            } else {
+                // The agent goes on from the page the cached walk stopped on.
+                opened = new AiRunPrelude.Outcome(AiRunPrelude.Reached.ON_SCREEN, walk.lastPage(), null);
+                task = CachedWalk.takeoverNote(walk) + "\n" + AiRunPrelude.withoutGoTo(body.text());
+                verdict.warn("Kayıtlı akış " + walk.stoppedAt() + ". adımda durdu (" + walk.reason()
+                        + "); ajan oradan devraldı.");
+            }
+        }
+        if (answer == null) {
+            String userTurn = AiRunPrelude.instruction(chrome.shown(opened, body.text(), pageCap), task,
+                    composed, body.mainMenu(),
+                    body.screen(), BudgetedTool.LARGEST_RESULT);
+            Set<String> allowed = new java.util.HashSet<>(AI_RUN_TOOLS);
+            if (opened.reached() == AiRunPrelude.Reached.NOTHING) {
+                allowed.add("browser_navigate");
+            }
+            AiRunPolicy policy = policyFor(chrome);
+            System.out.println("[uptest] ai-run: prelude=" + opened.reached()
+                    + (opened.note() == null ? "" : " (" + opened.note() + ")")
+                    + ", " + allowed.size() + " tarayici araci, talimat " + userTurn.length()
+                    + " karakter, token butcesi " + runTokenBudget + ", cache " + visit.state);
+            // The SAME client Ekran Keşfi uses — Spring's, configured. The only
+            // difference is an advisor that cuts the old pages out of each turn.
+            answer = client.prompt()
+                    .system(RUN_SYSTEM + RESULT_RULES)
+                    .user(userTurn)
+                    .advisors(new CompactingAdvisor())
+                    .tools(toolsFor(null, userTurn, new LinkedHashSet<>(), aborted, tape, verdict,
+                            policy, allowed, runToolBudget, journal, checkpoints))
+                    .call()
+                    .content();
+        }
         long used = AiTraces.currentTokens();
         System.out.println("[uptest] ai-run: bitti — " + used + " token, sonuc bildirildi="
                 + verdict.isClosed());
@@ -584,6 +611,64 @@ public class ExploreController {
                     "%,d / %,d", used, runTokenBudget) + ".");
         }
         return answer;
+    }
+
+    private AiRunPolicy policyFor(PageChrome chrome) {
+        AiRunPolicy policy = new AiRunPolicy(raw("browser_snapshot"), settle, runTokenBudget, describeCap, pageCap);
+        policy.chrome(chrome);
+        policy.busyProbe(raw("browser_evaluate"));
+        return policy;
+    }
+
+    /**
+     * The cached steps, in code: no model. Through the same wrapped tools the
+     * agent gets, so every guard holds and the tape records them alike.
+     */
+    private CachedWalk.Result replay(Instruction body, String composed, AtomicBoolean aborted, ActionTape tape,
+                                     RunVerdict verdict, AiRunCache.Visit visit, StepJournal journal,
+                                     PageChrome chrome) {
+        Object[] wrapped = toolsFor(null, composed, new LinkedHashSet<>(), aborted, tape, verdict,
+                policyFor(chrome), AI_RUN_TOOLS, runToolBudget, null, Map.of());
+        StepRunner runner = new StepRunner().journal(journal);
+        runner.bind(wrapped, tape);
+        CachedWalk.Result walk = new CachedWalk(runner).run(visit.steps, java.time.LocalDate.now(),
+                raw -> summarised(chrome, raw, body.text()));
+        visit.log = walk.log();
+        visit.stoppedAt = walk.stoppedAt();
+        if (!walk.complete()) {
+            visit.state = AiRunCache.State.TAKEOVER;
+            visit.note = walk.reason();
+        }
+        return walk;
+    }
+
+    /**
+     * The one model turn of a fully cached run: the expectations held against
+     * the pages the walk kept. Only report_result is offered — nothing to click.
+     */
+    private String judge(Instruction body, String composed, AtomicBoolean aborted, ActionTape tape,
+                         RunVerdict verdict, CachedWalk.Result walk, PageChrome chrome,
+                         List<CachedSteps.CachedStep> steps) {
+        Set<String> attached = new java.util.HashSet<>();
+        steps.forEach(step -> attached.add(step.expected()));
+        List<String> unmatched = StepExpectations.withExpectation(body.text()).stream()
+                .map(StepExpectations.Step::expected).filter(e -> !attached.contains(e)).toList();
+        Object[] reportOnly = Arrays.stream(toolsFor(null, composed, new LinkedHashSet<>(), aborted, tape, verdict,
+                        null, Set.of(), 3, null, Map.of()))
+                .filter(t -> t instanceof ToolCallback cb && RunVerdict.TOOL.equals(cb.getToolDefinition().name()))
+                .toArray();
+        String turn = CachedWalk.verdictTurn(AiRunPrelude.withoutGoTo(body.text()), walk, unmatched,
+                summarised(chrome, walk.lastPage(), body.text()));
+        System.out.println("[uptest] ai-cache karar turu: tek AI cagrisi, talimat " + turn.length() + " karakter");
+        return client.prompt().system(VERDICT_SYSTEM).user(turn).tools(reportOnly).call().content();
+    }
+
+    private String summarised(PageChrome chrome, String raw, String scenario) {
+        if (raw == null) {
+            return null;
+        }
+        return chrome.shown(new AiRunPrelude.Outcome(AiRunPrelude.Reached.ON_SCREEN, raw, null), scenario, pageCap)
+                .page();
     }
 
     @PostMapping
@@ -602,10 +687,15 @@ public class ExploreController {
         // A saved scenario's run ends in a structured result (RunVerdict);
         // Serbest Gözlem is an observation, not a test, and keeps its prose.
         RunVerdict verdict = aiRun ? new RunVerdict() : null;
+        StepJournal journal = new StepJournal();
+        AiRunCache.Visit visit = aiRun
+                ? cache.lookup(body.app(), body.product(), body.scenarioPath(), body.text(), body.cif(),
+                        Boolean.TRUE.equals(body.ignoreCache()))
+                : null;
         try {
             String answer;
             if (aiRun) {
-                answer = runScenario(body, instruction, aborted, tape, verdict);
+                answer = runScenario(body, instruction, aborted, tape, verdict, visit, journal);
             } else {
                 answer = client.prompt()
                         .system(SYSTEM + ANSWER_RULES)
@@ -628,7 +718,12 @@ public class ExploreController {
                     TapeRenderer.render(tape.calls(), body.mainMenu(), body.expected());
             // The agent's "done" is held against the tape before anyone sees it.
             ClaimCheck.apply(verdict, body.text(), tape.calls(), rendered.steps());
+            // After ClaimCheck: only a walk whose verdict survived it is cached.
+            cache.settle(visit, verdict, tape, journal, body.text());
             Map<String, Object> reply = new LinkedHashMap<>();
+            if (visit != null) {
+                reply.put("cache", visit.toJson());
+            }
             // With a result the tool's own return line ("Sonuç kaydedildi")
             // is what came back as content; the prose every older reader
             // shows is rebuilt from the result instead.

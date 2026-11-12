@@ -279,7 +279,14 @@ Elsewhere:
   `LeanTools` shortens the tool definitions; `StepRunner` is `do_steps`,
   several named steps in one turn; `BusyPage` waits out the loading overlay
   and refuses F5; `TargetCaption` lets the commit guard read what a clicked
-  reference SAYS; `ClaimCheck` holds the agent's "done" against the tape. The
+  reference SAYS; `ClaimCheck` holds the agent's "done" against the tape.
+  A PASSED walk's steps go to `AI_RUN_CACHE` (`AiRunCache`, `CachedSteps`,
+  read by NAME from `StepJournal` and the tape, never by reference); the next
+  run of that scenario replays them in code (`CachedWalk`), one model turn
+  (`VERDICT_SYSTEM`) judges, and a step that does not take hands the walk to
+  the agent from that page. A "Beklenen:" line under a step
+  (`StepExpectations`) is checked right after that step — `do_steps` stops
+  there. Both: `docs/ai-ile-calistir/14-adim-cache.md`. The
   whole path: `docs/ai-ile-calistir/`. The draft
   checks (`problems()`) are in
   `CatalogDraftChecks`; a lesson below that says `ExploreController.SYSTEM`
