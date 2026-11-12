@@ -266,13 +266,7 @@ Elsewhere:
   opens the menu in code, `CompactingAdvisor` sends only the latest tool
   result whole, `AiRunPolicy` hands back the page after every action and
   notes the token budget, `ExploreController.AI_RUN_TOOLS` narrows the
-  toolbox and `RUN_SYSTEM` replaces `SYSTEM`. Since 12.11.2026 the page
-  itself is rewritten rather than filtered — `LeanPage` turns the snapshot
-  tree into one flat line per thing, built on `AriaSnapshot` (whose
-  `ofAll` keeps the reference-less lines a validation message arrives on)
-  — and `StepRunner`'s `do_steps` carries several decided steps in ONE
-  turn, driving them through the same BudgetedTool-wrapped callbacks the
-  model would have called, so every guard still applies. The draft
+  toolbox and `RUN_SYSTEM` replaces `SYSTEM`. The draft
   checks (`problems()`) are in
   `CatalogDraftChecks`; a lesson below that says `ExploreController.SYSTEM`
   means `AgentPrompts.SYSTEM`. The walk-to-Gherkin renderer is `TapeRenderer`
@@ -1204,40 +1198,6 @@ and leave each independently runnable.
   SCENARIO names it. Note the shape of that test — not "is this word
   dangerous" but "did the analyst ask for it" — which is what lets a scenario
   that really does mean to confirm go through untouched.
-- **A page snapshot is mostly punctuation, and a tree cannot be filtered into
-  a list.** Tool results were half of a walk that got cut off at 100.000
-  tokens, and nearly all of that half was ONE thing: the current page, resent
-  every turn as 6.000 characters of YAML. Three quarters of those characters
-  carried nothing — twenty leading spaces on a button ten levels deep, six
-  characters of `[ref=e8]` around the two that matter, and a twenty-row grid
-  arriving as a hundred and sixty lines of `cell` and `generic`. The first
-  attempt (`LeanResults`) kept or dropped each line AS IT STOOD and could
-  therefore never touch any of it; `LeanPage` parses the tree and writes a
-  list instead, measured at 7.187 → 1.665 characters on a real grid. Two
-  things worth keeping. It came out **more** informative, not less: these
-  screens give form controls no accessible name, so the tree made the model
-  pair a label and a box by adjacency, and the list writes the label beside
-  the box it belongs to. And only the FENCED TREE is rewritten — the modal
-  state, the console messages and the page title pass through untouched,
-  because a page that is smaller but no longer mentions the open dialog is
-  worse than a page that is big.
-- **Hiding a tool from the model is not a safety boundary; the guards are.**
-  `do_steps` carries several steps in one turn, and the obvious way to build
-  it was to call the raw MCP callbacks in a loop — which would have made the
-  batch the one call in the walk that nothing checked. It drives the
-  BudgetedTool-WRAPPED callbacks instead, so the off-limits list, the
-  unasked-confirmation refusal, the closed browser, the token wall and the
-  tape entry all behave exactly as they do for a single call. The first
-  version of its test proved the point by accident: two cases failed because
-  a step clicking "Kaydet" was refused for a scenario that never named it —
-  the guard reaching inside the batch, which is what it is for. The other
-  half is that a batch must not be able to walk past a refusal it caused: it
-  stops at the first step that did not happen, and it reads the page between
-  steps (an MCP call, no tokens) to stop the moment the application starts
-  saying something it was not saying before the batch began. That last test
-  is "did something NEW appear", not "is there an alert anywhere" — a screen
-  with a permanent status line would otherwise have made the tool useless,
-  silently.
 - **An agent's cost is turns × everything it has seen, not what it reads.**
   The first measured "AI ile çalıştır" took 52 turns and 1.48 million input
   tokens for a scenario whose results were small — a snapshot ~2,200 tokens,

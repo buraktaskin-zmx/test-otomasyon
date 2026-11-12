@@ -46,28 +46,6 @@ final class AiRunPolicy {
     private final int pageCap;
 
     /**
-     * Whether the header, the menu and the footer may be cut out of the page
-     * ({@link LeanPage}).
-     *
-     * Set by ExploreController once the prelude has reported: true when code
-     * opened the screen, because then the agent has no navigate tool and the
-     * menu is the largest subtree it will never use; false when the prelude
-     * failed and the agent has to find its own way.
-     */
-    private boolean dropChrome;
-
-    /**
-     * While true, an action's result does NOT get the page appended.
-     *
-     * {@link StepRunner} drives several actions through these same wrapped
-     * tools in one turn, and a page after each of them would send the model
-     * five pages where it asked for one — the opposite of why the batch tool
-     * exists. The runner takes the page itself, once, at the end; it still
-     * LOOKS at the page between steps, which costs an MCP call and no tokens.
-     */
-    private boolean quiet;
-
-    /**
      * @param snapshot the RAW snapshot tool — not a BudgetedTool, so taking the
      *                 page costs no budget and is not mistaken for the model's move
      * @param budget   tokens; 0 or less switches the note off
@@ -113,14 +91,6 @@ final class AiRunPolicy {
         return pageCap;
     }
 
-    void dropChrome(boolean dropped) {
-        this.dropChrome = dropped;
-    }
-
-    boolean dropChrome() {
-        return dropChrome;
-    }
-
     /**
      * What the model gets back from a successful call: the answer, the page as
      * it stands after an action, and the budget note when it is due.
@@ -129,14 +99,10 @@ final class AiRunPolicy {
      * @param tape  the page is recorded as its own snapshot entry, so the tape
      *              renderer resolves the next click's reference against it
      */
-    void quiet(boolean quiet) {
-        this.quiet = quiet;
-    }
-
     String after(String tool, String answer, UnaryOperator<String> trim, ActionTape tape) {
         String out = answer == null ? "" : answer;
-        if (!quiet && ACTING.contains(tool) && snapshot != null && !out.contains(HAS_PAGE)) {
-            String page = pageNow(tape);
+        if (ACTING.contains(tool) && snapshot != null && !out.contains(HAS_PAGE)) {
+            String page = page(tape);
             if (page != null) {
                 out = out + "\n\n### Sayfa (işlemden sonra, kendiliğinden alındı)\n" + trim.apply(page);
             }
@@ -144,14 +110,8 @@ final class AiRunPolicy {
         return out + budgetNote();
     }
 
-    /**
-     * The page after the action has settled, or null when it could not be read.
-     *
-     * Package-private because {@link StepRunner} needs the same thing: wait,
-     * read, record. One settle, one snapshot, one tape entry — written once
-     * so a batch's pages and a single action's page are the same thing.
-     */
-    String pageNow(ActionTape tape) {
+    /** The page after the action has settled, or null when it could not be read. */
+    private String page(ActionTape tape) {
         try {
             if (!settle.isZero() && !settle.isNegative()) {
                 Thread.sleep(settle.toMillis());

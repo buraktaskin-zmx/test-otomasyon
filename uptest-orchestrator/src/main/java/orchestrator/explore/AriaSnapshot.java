@@ -53,9 +53,7 @@ public final class AriaSnapshot {
     /**
      * One line of the tree.
      *
-     * @param ref    the snapshot reference, e.g. {@code e42} or {@code f1e719};
-     *               blank only on a line carrying none, which the ordinary
-     *               parse drops and {@link #ofAll} keeps
+     * @param ref    the snapshot reference, e.g. {@code e42} or {@code f1e719}
      * @param role   button, link, cell, generic, textbox, row, …
      * @param name   the accessible name, blank when the element has none
      * @param text   a generic's own text, i.e. what follows the colon
@@ -127,24 +125,6 @@ public final class AriaSnapshot {
      * unparseable result would lose a whole walk over one odd entry.
      */
     public static AriaSnapshot of(String toolResult) {
-        return of(toolResult, false);
-    }
-
-    /**
-     * The same tree, with the lines that carry NO reference kept as well.
-     *
-     * A validation message is one of those: Playwright hands out a reference
-     * for things you can act on, and {@code - text "Toplam tutar giriniz"} is
-     * not one — so the ordinary parse drops it, which is right for a renderer
-     * resolving a click and wrong for anything summarising a page FOR the
-     * model. {@link LeanPage} needs them; nobody else does, and every existing
-     * caller sees exactly the tree it saw before.
-     */
-    static AriaSnapshot ofAll(String toolResult) {
-        return of(toolResult, true);
-    }
-
-    private static AriaSnapshot of(String toolResult, boolean keepUnreferenced) {
         List<Node> nodes = new ArrayList<>();
         Map<String, Integer> byRef = new LinkedHashMap<>();
         if (toolResult == null || toolResult.isBlank()) {
@@ -161,8 +141,7 @@ public final class AriaSnapshot {
                 continue;
             }
             Matcher ref = REF.matcher(match.group(4) == null ? "" : match.group(4));
-            String reference = ref.find() ? ref.group(1) : "";
-            if (reference.isEmpty() && !keepUnreferenced) {
+            if (!ref.find()) {
                 continue;
             }
 
@@ -172,11 +151,9 @@ public final class AriaSnapshot {
             }
             int parent = stack.isEmpty() ? -1 : stack.get(stack.size() - 1);
 
-            Node node = new Node(reference, match.group(2),
+            Node node = new Node(ref.group(1), match.group(2),
                     unescape(match.group(3)), unquote(unescape(match.group(5))), indent, parent);
-            if (!reference.isEmpty()) {
-                byRef.putIfAbsent(node.ref(), nodes.size());
-            }
+            byRef.putIfAbsent(node.ref(), nodes.size());
             stack.add(nodes.size());
             nodes.add(node);
         }
@@ -285,28 +262,6 @@ public final class AriaSnapshot {
         if (start == null) {
             return "";
         }
-        int source = labelSourceOf(ref);
-        if (source >= 0) {
-            Node label = nodes.get(source);
-            return !label.text().isBlank() ? label.text() : label.name();
-        }
-        return nodes.get(start).caption();
-    }
-
-    /**
-     * WHICH node {@link #labelOf} read the label off, or -1 when it fell back
-     * to the control's own caption.
-     *
-     * {@link LeanPage} writes the label beside the control it belongs to, and
-     * then must not print the label's own line as well — so it needs the node,
-     * not just the text. Same walk as {@code labelOf}, which now goes through
-     * it: one answer, one place.
-     */
-    int labelSourceOf(String ref) {
-        Integer start = byRef.get(ref);
-        if (start == null) {
-            return -1;
-        }
         // Climbing, because the control is not always a direct sibling of its
         // label: a Select2 renders as combobox > textbox, so the textbox's
         // only sibling is nothing at all and the label sits one level up,
@@ -315,31 +270,34 @@ public final class AriaSnapshot {
         // anything is a menu item.
         int index = start;
         for (int level = 0; level < 3 && index >= 0; level++) {
-            int source = precedingTextIndex(index);
-            if (source >= 0) {
-                return source;
+            String label = precedingText(index);
+            if (!label.isBlank()) {
+                return label;
             }
             index = nodes.get(index).parent();
         }
-        return -1;
+        return nodes.get(start).caption();
     }
 
-    /** The nearest earlier sibling carrying text, or -1. */
-    private int precedingTextIndex(int index) {
+    /** The nearest earlier sibling carrying text, or blank. */
+    private String precedingText(int index) {
         Node target = nodes.get(index);
         for (int i = index - 1; i >= 0; i--) {
             Node candidate = nodes.get(i);
             if (candidate.parent() != target.parent()) {
                 if (candidate.indent() < target.indent()) {
-                    return -1;
+                    return "";
                 }
                 continue;
             }
-            if (!candidate.text().isBlank() || !candidate.name().isBlank()) {
-                return i;
+            if (!candidate.text().isBlank()) {
+                return candidate.text();
+            }
+            if (!candidate.name().isBlank()) {
+                return candidate.name();
             }
         }
-        return -1;
+        return "";
     }
 
     /**

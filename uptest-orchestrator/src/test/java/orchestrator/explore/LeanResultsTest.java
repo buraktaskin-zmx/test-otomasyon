@@ -6,15 +6,8 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What is left of this class once {@link LeanPage} took the page over: the cap,
- * the echo of the agent's own call, and the LINE FILTER that still catches a
- * snapshot LeanPage could not parse.
- *
- * <p>The filter's guarantees are tested here directly, through
- * {@code dropScaffold}, rather than through {@code summarise} — because a
- * result with a parseable tree in it no longer reaches the filter at all, and
- * a test that went in the front door would be testing LeanPage twice and the
- * fallback never. {@link LeanPageTest} owns the front door.
+ * Tool results were 26% of a measured walk, nearly all of it one page per
+ * turn. The page may shrink; what the agent can act on may not.
  */
 class LeanResultsTest {
 
@@ -46,9 +39,9 @@ class LeanResultsTest {
             ```""";
 
     @Test
-    @DisplayName("the line filter keeps everything the agent can act on")
+    @DisplayName("everything the agent can act on keeps its line and its reference")
     void actionableNodesSurvive() {
-        String lean = LeanResults.dropScaffold(RESULT);
+        String lean = LeanResults.summarise(RESULT, 10_000);
 
         assertThat(lean)
                 .contains("link \"Firma Fatura İşlemleri\" [ref=e4]")
@@ -65,24 +58,19 @@ class LeanResultsTest {
     }
 
     @Test
-    @DisplayName("the line filter drops the scaffolding")
-    void scaffoldGoes() {
-        String lean = LeanResults.dropScaffold(RESULT);
+    @DisplayName("the scaffolding and the echo of the agent's own call go")
+    void scaffoldAndEchoGo() {
+        String lean = LeanResults.summarise(RESULT, 10_000);
 
         assertThat(lean)
+                .doesNotContain("Ran Playwright code")
+                .doesNotContain("getByRole")
                 .doesNotContain("generic [ref=e1]")
                 .doesNotContain("generic [ref=e14]")
                 .doesNotContain("list [ref=e6]")
                 .doesNotContain("listitem [ref=e7]")
                 .doesNotContain("rowgroup [ref=e9]");
-    }
-
-    @Test
-    @DisplayName("the echo of the agent's own call goes, whichever path the page takes")
-    void echoGoes() {
-        assertThat(LeanResults.summarise(RESULT, 10_000))
-                .doesNotContain("Ran Playwright code")
-                .doesNotContain("getByRole");
+        assertThat(lean.length()).isLessThan(RESULT.length() * 2 / 3);
     }
 
     @Test

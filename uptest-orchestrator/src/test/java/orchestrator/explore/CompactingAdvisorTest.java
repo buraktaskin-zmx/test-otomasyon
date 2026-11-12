@@ -116,14 +116,10 @@ class CompactingAdvisorTest {
     }
 
     @Test
-    @DisplayName("a short result is kept as it is; a long one with no code says where the page went")
+    @DisplayName("a short result is kept as it is; a long one with no code keeps its first line")
     void stubRules() {
         assertThat(CompactingAdvisor.stub("Clicked")).isEqualTo("Clicked");
-        // No Playwright echo, because LeanResults cuts it out of what the
-        // model is handed. Keeping the first line of a page ("### Page state")
-        // said nothing; the call itself is in the assistant message above it.
-        String long_ = "### Page state\n" + "x".repeat(500);
-        assertThat(CompactingAdvisor.stub(long_))
-                .isEqualTo("[eski ekran kısaltıldı — güncel ekran son araç sonucunda]");
+        String long_ = "Sonuç satırı\n" + "x".repeat(500);
+        assertThat(CompactingAdvisor.stub(long_)).startsWith("Sonuç satırı").contains("kısaltıldı");
     }
 }

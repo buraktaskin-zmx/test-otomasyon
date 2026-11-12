@@ -38,21 +38,6 @@ Bir oturum orchestrator çalışırken yarıda kalırsa (yeniden başlatma) aç�
 | Girdinin kırılımı: system / tool tanımları / kullanıcı / tool sonuçları / model geçmişi | Her mesaj modelin kendi tokenizer'ıyla sayılır (vLLM `POST /tokenize`) | **Kesin** — tokenizer'a ulaşılabiliyorsa |
 | Aynı kırılım, tokenizer'a ulaşılamıyorsa | Oturumun **kendi** ilk turundan ölçülen karakter/token oranıyla tahmin | **≈** |
 | Şablon / ek | Sunucunun girdi rakamı **eksi** parçaların toplamı: sohbet şablonunun kendi işaretleri. Tahmin modunda negatif çıkabilir | Kalan |
-
-**"Şablon / ek" nedir, neden kısaltılamaz.** Bu satır bizim gönderdiğimiz bir
-metin değil: model sunucusu, mesajları modele vermeden önce kendi sohbet
-şablonundan geçirir ve o şablon her mesajın başına/sonuna işaret
-(`<|im_start|>rol`, `<|im_end|>`), araç listesinin etrafına bir sarmalayıcı,
-her araç çağrısının etrafına `<tool_call>`, her sonucun etrafına
-`<tool_response>` ekler. Biz yalnız içeriği sayabiliyoruz; sunucunun bildirdiği
-girdi ile parçaların toplamı arasındaki fark bu işaretlerdir.
-
-Dolayısıyla doğrudan kısaltılamaz — **mesaj sayısına ve araç sayısına** bağlı
-olarak düşer. Bir turu ortadan kaldıran her şey (koddan giriş, eylemden sonra
-sayfanın kendiliğinden gelmesi, `do_steps`) bu satırı da düşürür; modele
-sunulan her araç ise onu her turda bir miktar yükseltir. Bir koşuda %20
-görünmesi "bir yerde israf var" demek değil, "22 tur çok fazla mesaj demek"
-anlamına gelir.
 | Tool çağrısının "token"ı | Modelin **geri aldığı** metnin token'ı (BudgetedTool kırptıktan sonra) | Kırılımla aynı |
 | Süreler | Turun ve tool'un kendi duvar saati | Kesin |
 
@@ -159,9 +144,6 @@ istiyordu ("SEARCH, DO NOT SNAPSHOT", "wait a few seconds … READ THE PAGE AGAI
 | 7 | Giriş koddan yapılamazsa ajan **hiç başlatılmaz**; sebep (ağ / sayfa) adıyla söylenir | `AiRunPrelude.diagnose` |
 | 8 | Sayfa modele **özetlenerek** verilir: adı olan ve tıklanabilen her şey kalır, adsız iskelet ve kod yankısı atılır | `LeanResults`, `uptest.explore.ai-run.page-cap` |
 | 9 | Senaryoda geçmeyen bir **onay** (Onayla/Evet/Gönder…) tıklanamaz — banka kaydı geri alınamaz | `BudgetedTool.unaskedCommit` |
-| 10 | Sayfa **düz liste**: girinti, `[ref=]` parantezleri ve ızgara hücreleri gider, her şey tek satıra iner. Ölçüldü: 20 satırlı fatura ızgarası 7.187 → 1.665 karakter (**4,3x**) | `LeanPage`, `uptest.explore.ai-run.page-cap` |
-| 11 | **Birkaç adım tek turda**: `do_steps` adım listesini alır, sarılmış araçlardan sırayla geçirir, ilk hatada ve ekran yeni bir şey söylediğinde durur, sayfayı sonda bir kez döndürür | `StepRunner`, `uptest.explore.ai-run.max-steps` |
-| 12 | `browser_fill_form` kaldırıldı: `do_steps` aynı işi denetimli yapıyordu, şeması yedinin en büyüğüydü ve tanımlar her turda gidiyor | `ExploreController.AI_RUN_TOOLS` |
 
 Gherkin oluştur etkilenmez: bant, koddan yapılan menüyü tek bir `prelude_menu`
 kaydı olarak tutar ve renderer bundan `navigate to` satırını üretir.
@@ -180,39 +162,5 @@ Kalan kalemler aynı ölçümde: system prompt 13.786 (%11, tur başına ~620 �
 `RUN_SYSTEM` öncesi ~1.950'ydi), model geçmişi 12.675 (%10), şablon 10.081
 (%8), kullanıcı mesajı 6.484 (%5).
 
-**İkinci ölçüm (12.11.2026):** tanımlar kısaldıktan sonra koşu yine 100 bini
-aştı ve senaryonun adını verdiği düğmeye **varmadan kesildi**. Dağılımda tool
-sonuçları **%50**, şablon/ek **%20**. Tool sonuçlarının neredeyse tamamı tek
-bir şey: her turda gönderilen güncel sayfa, 6.000 karakterlik YAML ağaç. O
-ağacın karakterlerinin dörtte üçü bilgi değildi — on seviye derindeki bir
-düğmenin satır başındaki yirmi boşluğu, `[ref=e8]`'in iki işe yarar karakteri
-etrafındaki altı tanesi, ve yirmi satırlık bir ızgaranın yüz altmış satırlık
-`cell`/`generic` sargısı. Bu yüzden ağaç artık **düz listeye** yazılıyor
-(`LeanPage`, 10. satır) ve kararı verilmiş adımlar **tek turda** yürüyor
-(`StepRunner`, 11. satır).
-
-Düz listenin ağaçtan **daha** bilgili olduğu bir yer var: bu ekranlarda form
-kontrollerinin erişilebilir adı yoktur, etiket kardeş bir `generic`'tir — ağaçta
-model iki satırı komşuluktan eşleştirmek zorundaydı, şimdi etiket kontrolün
-yanında köşeli parantez içinde duruyor (`e15 textbox [Fatura No]`).
-
-Hiçbir koşulda atılmayanlar: ref'i olup tıklanabilen her şey (ızgara hücresinin
-içindekiler dâhil), adı ya da metni olan her düğüm, her `alert`/`status`/`dialog`,
-ve snapshot bloğunun **dışındaki** her şey (`### Modal state`, konsol mesajları,
-sayfa başlığı, hata metni) — o blok dışına hiç dokunulmaz. `LeanPageTest` ham
-snapshot'taki her kontrol ref'inin düz listede de bulunduğunu çiviliyor.
-
-`do_steps` körlemesine bir plan değil, üç şey yüzünden: her adım modelin
-çağıracağı **aynı sarılmış araçlardan** geçer (yasak kontrol, senaryoda geçmeyen
-onay, kapanmış tarayıcı, token duvarı, bant kaydı aynen işler — aracı modelden
-saklamak hiçbir zaman güvenlik sınırı değildi, kontroller sınırdır); yapılmayan
-ilk adımda durur; ve her adımdan sonra sayfa okunur (bir MCP çağrısı, sıfır
-token), ekran batch başlamadan söylemediği bir şeyi söylemeye başlarsa durur.
-Bant alt adımları gerçek araç adlarıyla tutar, `do_steps` kaydı TapeRenderer'ın
-sessiz listesindedir — Gherkin, ajan beş tur da harcasa bir tur da harcasa aynı.
-
 Token Takibi'nde oturumun "Bütçe" kartı ve listede "bütçe aşıldı" işareti
-hedefe göre durumu gösterir. Araç tanımlarının gerçek maliyeti artık her koşunun
-başında loglanıyor (`[uptest] ai-run: N arac tanimi, toplam M karakter`, araç
-araç) — MCP sunucusu yalnız banka ağından görülebildiği için tahmin yerine
-ölçüm koymanın tek yolu bu.
+hedefe göre durumu gösterir.

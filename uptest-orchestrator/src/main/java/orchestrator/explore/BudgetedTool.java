@@ -235,19 +235,10 @@ final class BudgetedTool implements ToolCallback {
     /** "AI ile çalıştır"'s page-after-action and budget note; null on every other walk. */
     private final AiRunPolicy policy;
 
-    /**
-     * The batch tool, when this walk has one.
-     *
-     * Held for the same reason {@link #verdict} is: its arguments are read by
-     * our code instead of by Spring's reflection, so a shape we did not ask
-     * for cannot kill the call. See {@link #invoke}.
-     */
-    private final StepRunner runner;
-
     private BudgetedTool(ToolCallback delegate, AtomicInteger remaining, Set<String> visited,
                          CatalogSink sink, List<String> forbidden, AtomicBoolean aborted,
                          Set<String> pending, String instruction, ActionTape tape, RunVerdict verdict,
-                         AiRunPolicy policy, StepRunner runner) {
+                         AiRunPolicy policy) {
         this.delegate = delegate;
         this.remaining = remaining;
         this.visited = visited;
@@ -259,7 +250,6 @@ final class BudgetedTool implements ToolCallback {
         this.tape = tape;
         this.verdict = verdict;
         this.policy = policy;
-        this.runner = runner;
     }
 
     /**
@@ -291,18 +281,6 @@ final class BudgetedTool implements ToolCallback {
                          List<String> forbidden, Set<String> pending, String instruction,
                          AtomicBoolean aborted, ActionTape tape, RunVerdict verdict,
                          AiRunPolicy policy) {
-        return wrap(callbacks, budget, sink, forbidden, pending, instruction, aborted, tape,
-                verdict, policy, null);
-    }
-
-    /**
-     * @param runner the batch tool, whose own arguments this reads rather than
-     *               letting Spring bind them; null on every walk without one
-     */
-    static Object[] wrap(List<ToolCallback> callbacks, int budget, CatalogSink sink,
-                         List<String> forbidden, Set<String> pending, String instruction,
-                         AtomicBoolean aborted, ActionTape tape, RunVerdict verdict,
-                         AiRunPolicy policy, StepRunner runner) {
         AtomicInteger remaining = new AtomicInteger(budget);
         Set<String> visited = new HashSet<>();
         List<String> lowered = forbidden.stream().map(BudgetedTool::fold).toList();
@@ -310,7 +288,7 @@ final class BudgetedTool implements ToolCallback {
         return callbacks.stream()
                 .map(callback -> (Object) new BudgetedTool(
                         callback, remaining, visited, sink, lowered, aborted, pending, folded, tape,
-                        verdict, policy, runner))
+                        verdict, policy))
                 .toArray();
     }
 
@@ -373,13 +351,6 @@ final class BudgetedTool implements ToolCallback {
         if (verdict != null && RunVerdict.TOOL.equals(name())) {
             return verdict.acceptJson(input);
         }
-        // Same reasoning for the batch tool, and the same shape of failure to
-        // avoid: its argument is a LIST OF OBJECTS, which is the one thing a
-        // model gets wrong most often — written out as a string, wrapped in an
-        // extra key, or sent as one object instead of a list of one.
-        if (runner != null && StepRunner.TOOL.equals(name())) {
-            return runner.acceptJson(input);
-        }
         return context == null ? delegate.call(input) : delegate.call(input, context);
     }
 
@@ -427,17 +398,14 @@ final class BudgetedTool implements ToolCallback {
     private String guarded(String input, Supplier<String> invoke) {
         long began = System.nanoTime();
         trace(input);
-        refused = false;
         String refusal = refuse(input);
         if (refusal != null) {
-            refused = true;
             // A refused call is a fact about the walk, not a non-event: it is
             // what the model tried to do, and the sentence it got back is why
             // the next call looks the way it does.
             record(input, ActionTape.Outcome.REFUSED, refusal, refusal, began);
             return refusal;
         }
-
         String result;
         try {
             result = watch(invoke.get());
@@ -503,26 +471,6 @@ final class BudgetedTool implements ToolCallback {
     }
 
     /** This tool's own name, which is what the tape and the guards key on. */
-    /**
-     * Whether the last call through THIS callback was turned away by a guard
-     * instead of reaching the browser.
-     *
-     * Exists for {@link StepRunner}, which drives a batch of steps through
-     * these same wrapped callbacks and has to stop at the first one that did
-     * not happen. The alternative was matching on the refusal sentences, and
-     * those are written for the model to read — they get reworded whenever the
-     * wording can be improved, which would silently break the batch.
-     *
-     * Not volatile, and valid only immediately after a call on the same
-     * thread. That is exactly how it is used: a walk's tool calls are
-     * sequential and the batch loop does the call and the check in one breath.
-     */
-    private boolean refused;
-
-    boolean refusedLastCall() {
-        return refused;
-    }
-
     private String name() {
         return getToolDefinition().name();
     }
@@ -594,7 +542,7 @@ final class BudgetedTool implements ToolCallback {
         // results were still 26% of a measured walk and nearly all of it was
         // layout scaffolding. See LeanResults; the tape keeps the full text.
         if (policy != null) {
-            String lean = LeanResults.summarise(result, policy.pageCap(), policy.dropChrome());
+            String lean = LeanResults.summarise(result, policy.pageCap());
             if (result != null && lean.length() < result.length()) {
                 System.out.println("[uptest] explore: " + getToolDefinition().name() + " sonucu "
                         + result.length() + " -> " + lean.length() + " karakter");

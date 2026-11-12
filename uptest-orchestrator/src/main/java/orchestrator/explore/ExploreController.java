@@ -131,9 +131,6 @@ public class ExploreController {
     /** Characters kept of a summarised tool result on "AI ile çalıştır" (LeanResults). */
     private final int pageCap;
 
-    /** How many steps one {@code do_steps} call may carry (StepRunner). */
-    private final int maxSteps;
-
     public ExploreController(ChatClient.Builder builder, ToolCallbackProvider tools,
                              CatalogService catalogs,
                              @Value("${uptest.explore.tool-budget:250}") int budget,
@@ -142,8 +139,7 @@ public class ExploreController {
                              @Value("${uptest.explore.ai-run.token-budget:100000}") long runTokenBudget,
                              @Value("${uptest.explore.ai-run.tool-budget:40}") int runToolBudget,
                              @Value("${uptest.explore.ai-run.describe-cap:220}") int describeCap,
-                             @Value("${uptest.explore.ai-run.page-cap:2500}") int pageCap,
-                             @Value("${uptest.explore.ai-run.max-steps:8}") int maxSteps) {
+                             @Value("${uptest.explore.ai-run.page-cap:6000}") int pageCap) {
         this.client = builder.build();
         this.tools = tools;
         this.catalogs = catalogs;
@@ -154,7 +150,6 @@ public class ExploreController {
         this.runToolBudget = runToolBudget;
         this.describeCap = describeCap;
         this.pageCap = pageCap;
-        this.maxSteps = maxSteps;
     }
 
     /**
@@ -163,16 +158,9 @@ public class ExploreController {
      * walk spent 25 of its 52 turns on them, and the page now arrives with
      * every action's result (AiRunPolicy). Navigating is added back only when
      * the code could not log in and the agent has to.
-     *
-     * <p>{@code browser_fill_form} went too, 12.11.2026: {@link StepRunner}'s
-     * {@code do_steps} fills several fields in one call and does it through
-     * the guarded tools, step by step, stopping the moment the screen
-     * complains — everything fill_form did and the checks besides. Its schema
-     * was also the largest of the seven, an array of objects described twice
-     * over, and a definition is paid for on every single turn.
      */
     static final Set<String> AI_RUN_TOOLS = Set.of(
-            "browser_snapshot", "browser_click", "browser_type",
+            "browser_snapshot", "browser_click", "browser_type", "browser_fill_form",
             "browser_select_option", "browser_press_key", "browser_handle_dialog");
 
     private ToolCallback raw(String name) {
@@ -218,10 +206,6 @@ public class ExploreController {
     private Object[] toolsFor(CatalogSink sink, String instruction, Set<String> pending,
                               AtomicBoolean aborted, ActionTape tape, RunVerdict verdict,
                               AiRunPolicy policy, Set<String> allowed, int calls) {
-        // "AI ile çalıştır" only: the walk that has decided steps to batch.
-        // Ekran Keşfi looks at what came back before choosing the next move,
-        // so there is nothing there a batch could save.
-        StepRunner runner = policy == null ? null : new StepRunner(maxSteps);
         List<ToolCallback> usable = new ArrayList<>(Arrays.stream(tools.getToolCallbacks())
                 .filter(callback -> !WITHHELD.contains(callback.getToolDefinition().name()))
                 .filter(callback -> allowed == null || allowed.contains(callback.getToolDefinition().name()))
@@ -252,62 +236,13 @@ public class ExploreController {
         if (verdict != null) {
             ours.add(verdict);
         }
-        if (runner != null) {
-            ours.add(runner);
-        }
         if (!ours.isEmpty()) {
             usable.addAll(List.of(MethodToolCallbackProvider.builder()
                     .toolObjects(ours.toArray()).build().getToolCallbacks()));
         }
 
-        Object[] wrapped = BudgetedTool.wrap(usable, calls, sink, forbidden(instruction), pending,
-                instruction, aborted, tape, verdict, policy, runner);
-
-        // The runner drives the WRAPPED tools, so each of its steps meets the
-        // same guards, the same budget and the same tape entry a call from the
-        // model would have met. It cannot be given them any earlier: it has to
-        // be inside the wrap itself, or the batch would be the one call in the
-        // walk that nothing checks.
-        if (runner != null) {
-            Map<String, ToolCallback> byName = new LinkedHashMap<>();
-            for (Object one : wrapped) {
-                if (one instanceof ToolCallback callback) {
-                    byName.put(callback.getToolDefinition().name(), callback);
-                }
-            }
-            runner.use(byName, policy, tape);
-            describe(byName.values());
-        }
-        return wrapped;
-    }
-
-    /**
-     * What each tool's definition costs, per tool, once per walk.
-     *
-     * The definitions are sent on EVERY turn, so they are paid for as many
-     * times as the walk takes turns — which made them 40% of a measured run
-     * before LeanTools cut them down. What LeanTools left is not known: the
-     * only way to see it is to read the definitions the MCP server actually
-     * handed us, and that server is only reachable from the bank network. So
-     * the walk prints them, biggest first, and the next real run answers the
-     * question instead of an estimate standing in for it. Characters, because
-     * tokens are the model server's to count — roughly three to one here.
-     */
-    private static void describe(java.util.Collection<ToolCallback> tools) {
-        List<String> sizes = new ArrayList<>();
-        int total = 0;
-        for (ToolCallback tool : tools) {
-            var definition = tool.getToolDefinition();
-            int size = (definition.description() == null ? 0 : definition.description().length())
-                    + (definition.inputSchema() == null ? 0 : definition.inputSchema().length());
-            total += size;
-            sizes.add(definition.name() + "=" + size);
-        }
-        sizes.sort((a, b) -> Integer.compare(
-                Integer.parseInt(b.substring(b.indexOf('=') + 1)),
-                Integer.parseInt(a.substring(a.indexOf('=') + 1))));
-        System.out.println("[uptest] ai-run: " + tools.size() + " arac tanimi, toplam " + total
-                + " karakter (her turda yeniden gider) — " + String.join(" ", sizes));
+        return BudgetedTool.wrap(usable, calls, sink, forbidden(instruction), pending, instruction,
+                aborted, tape, verdict, policy);
     }
 
     /**
@@ -602,11 +537,6 @@ public class ExploreController {
             allowed.add("browser_navigate");
         }
         AiRunPolicy policy = new AiRunPolicy(raw("browser_snapshot"), settle, runTokenBudget, describeCap, pageCap);
-        // The header, the menu and the footer are the largest subtree on these
-        // pages and the agent has no navigate tool when code opened the screen
-        // — so they are cut out of every page it is handed. When the prelude
-        // failed it navigates itself, and then it needs them.
-        policy.dropChrome(opened.reached() != AiRunPrelude.Reached.NOTHING);
         System.out.println("[uptest] ai-run: prelude=" + opened.reached()
                 + (opened.note() == null ? "" : " (" + opened.note() + ")")
                 + ", " + allowed.size() + " tarayici araci, talimat " + userTurn.length()
