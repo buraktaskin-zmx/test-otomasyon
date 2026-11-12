@@ -1277,6 +1277,8 @@ export interface AiMessage {
   isNew: boolean;
   tokens: number | null;
   exact: boolean | null;
+  /** The text's opening, so the list reads without a click on each row. */
+  preview: string | null;
 }
 
 export interface AiTurnMessages {

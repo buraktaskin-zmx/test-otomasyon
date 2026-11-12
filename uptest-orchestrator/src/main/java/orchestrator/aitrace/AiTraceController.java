@@ -55,6 +55,23 @@ public class AiTraceController {
                         "error", "Bu turun kaydı diskte yok: " + seq)));
     }
 
+    /**
+     * The same turn as ONE text: every message in the order the model read it,
+     * then its answer. Plain text so it can be read top to bottom, copied and
+     * diffed against another turn.
+     */
+    @GetMapping("/{id}/turns/{seq}/transcript")
+    public ResponseEntity<?> transcript(@PathVariable String id, @PathVariable int seq) {
+        UUID session = uuid(id);
+        if (session == null) {
+            return notFound(id);
+        }
+        return traces.transcript(session, seq)
+                .<ResponseEntity<?>>map(AiTraceController::plainText)
+                .orElseGet(() -> ResponseEntity.status(404).body(Map.of(
+                        "error", "Bu turun kaydı diskte yok: " + seq)));
+    }
+
     /** One stored text, whole. Already masked when it was written. */
     @GetMapping("/{id}/content/{sha}")
     public ResponseEntity<?> content(@PathVariable String id, @PathVariable String sha) {
@@ -63,10 +80,15 @@ public class AiTraceController {
             return notFound(id);
         }
         return traces.content(session, sha)
-                .<ResponseEntity<?>>map(text -> ResponseEntity.ok()
-                        .contentType(new MediaType(MediaType.TEXT_PLAIN, StandardCharsets.UTF_8))
-                        .body(text))
+                .<ResponseEntity<?>>map(AiTraceController::plainText)
                 .orElseGet(() -> ResponseEntity.status(404).body(Map.of("error", "Metin bulunamadı")));
+    }
+
+    /** UTF-8 is stated, or a Turkish page snapshot arrives as mojibake. */
+    private static ResponseEntity<?> plainText(String text) {
+        return ResponseEntity.ok()
+                .contentType(new MediaType(MediaType.TEXT_PLAIN, StandardCharsets.UTF_8))
+                .body(text);
     }
 
     private static UUID uuid(String value) {

@@ -62,13 +62,65 @@ günlük girdi/çıktı grafiği; türe göre dağılım; oturum tablosu.
 - **Zaman çizelgesi** — tur tur: girdi (↑), bir önceki tura göre artış, çıktı (↓),
   önbellek (⟲), süre, istenen tool'lar. Açılınca: modelin cevabı, düşüncesi
   (reasoning), istediği her tool çağrısı (argüman, tam sonuç, sonuç tipi, süre) ve
-  **"bu turun tam girdisi"**: modele giden her mesaj, token'ıyla. Varsayılan
-  olarak yalnızca o turda **yeni** olan mesajlar gösterilir; geri kalanı önceki
-  turlardan aynen yeniden gönderilmiştir.
+  **"bu turun tam girdisi"** — aşağıdaki iki görünüm.
 
 **Canlı:** bir oturum çalışırken panel 2 saniyede bir yenilenir; bitince durur.
 Kayıtlı Senaryolar'da ajan çalışırken **"Canlı izle →"**, bitince **"Token ayrıntısı →"**
 o oturumu doğrudan açar.
+
+---
+
+## 3b. Bir turun tam girdisi — iki görünüm
+
+Bir tur = modele giden **bir istek**. "Bu turun tam girdisini göster" düğmesi
+o isteğin tamamını açar, ve iki şekilde okunabilir; ikisi farklı soruya cevap
+verdiği için ikisi de var.
+
+**mesaj mesaj** — *hangi parça pahalı?* Her mesaj kendi satırında: rolü
+(system · kullanıcı · model · tool sonucu · tool tanımları · cevap · düşünce),
+karakter ve token sayısı, ve metninin ilk 400 karakteri (`MESSAGE_PREVIEW`)
+tıklanmadan görünür. "Tamamını göster" gerisini getirir, "Kopyala" o parçayı
+kopyalar. Altta **"Bu turdan çıkan"**: modelin cevabı, düşüncesi ve istediği
+tool çağrıları.
+
+> **Varsayılan olarak hiçbir mesaj gizli değil.** Eskiden yalnız o turda
+> **yeni** olanlar gösteriliyordu; system prompt ve talimat ise yalnızca 1.
+> turda "yeni" olduğu için, bu görünümün açılma sebebi olan iki metin 2. turdan
+> sonra hep gizliydi. Onay kutusu ("yalnız bu turda yeni olanlar") ters soru
+> için duruyor: *bu tur neyi ekledi?*
+
+**tek metin** — *model ne okudu?* İsteğin tamamı, modelin okuduğu sırayla, tek
+bir döküm olarak (`TurnTranscript`). Tek HTTP çağrısı, mesaj başına bir tane
+değil. **Tamamını kopyala** ve **İndir (.txt)** düğmeleri, iki turu bir
+editörde karşılaştırmak için. Dökümün bölümleri:
+
+```
+# TUR 3 · <saat> · <süre> · model …          ← başlık: girdi/çıktı/bitiş/mesaj sayısı
+===== [1] SYSTEM · 4.102 karakter · 1.148 token · YENİ =====
+===== TOOL TANIMLARI (9 araç) · … =====
+===== [2] KULLANICI · … =====
+===== [3] MODEL · … =====
+===== [4] TOOL SONUCU: browser_click · … =====
+#################### BU TURDAN ÇIKAN ####################
+===== MODELİN CEVABI · … =====
+===== MODELİN DÜŞÜNCESİ (reasoning) · … =====
+===== İSTEDİĞİ TOOL ÇAĞRILARI (1) =====
+```
+
+Bilmeye değer üç şey:
+
+- **Tool tanımları system'den hemen sonra basılır, çünkü şablon onu oraya
+  koyuyor.** Mesaj değildir: isteğin kendi `tools` alanında gider. Dökümdeki
+  parantezli not bunu söyler. Token'ı yine her turda ödenir (§8, "Şablon / ek").
+- **Hiçbir metin kırpılmaz.** Bir sayfa snapshot'ı on binlerce karakter ve asıl
+  soru zaten odur; kırpılmış bir döküm "ajan niye böyle yaptı" sorusuna cevap
+  veremez. Tarayıcı kaydırır, uzun olan indirilir.
+- **Maskeleme burada yapılmaz.** Her metin diske yazılırken `SecretMask`'ten
+  geçti (§5), yani panele şifre hiç ulaşmıyor — iki ayrı yerde iki kural
+  tutmak gerekmiyor.
+
+Eski oturumlar da açılır: yeni hiçbir şey saklanmıyor, ikisi de `turns/<n>.json`
+ve `msg/<sha>.txt`'yi okuyor (§5).
 
 ---
 
@@ -115,6 +167,7 @@ ilk cevabında `/tokenize calisiyor` ya da `/tokenize kullanilamiyor … (≈)` 
 GET /api/v1/ai-traces?period=7d&kind=ai-run,gherkin
 GET /api/v1/ai-traces/{id}
 GET /api/v1/ai-traces/{id}/turns/{seq}/messages
+GET /api/v1/ai-traces/{id}/turns/{seq}/transcript  → text/plain, turun tamamı (§3b)
 GET /api/v1/ai-traces/{id}/content/{sha}      → text/plain, maskelenmiş
 ```
 

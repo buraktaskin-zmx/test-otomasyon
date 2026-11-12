@@ -382,17 +382,24 @@ export const getAiTrace = (id: string) =>
 export const getAiTurnMessages = (id: string, seq: number) =>
   api<AiTurnMessages>("GET", "/api/v1/ai-traces/" + encodeURIComponent(id) + "/turns/" + seq + "/messages");
 
+/** One stored text, whole, as TEXT. */
+export const getAiContent = (id: string, sha: string) =>
+  plainText("/api/v1/ai-traces/" + encodeURIComponent(id) + "/content/" + encodeURIComponent(sha));
+
+/** One turn as ONE text: every message in the order the model read it, then its answer. */
+export const getAiTurnTranscript = (id: string, seq: number) =>
+  plainText("/api/v1/ai-traces/" + encodeURIComponent(id) + "/turns/" + seq + "/transcript");
+
 /**
- * One stored text, whole, as TEXT.
+ * A response read as text and NOT through api().
  *
- * Not through api(): that parses any body that happens to be JSON, and a tool
- * argument or a page snapshot often is -- the panel would then show
- * "[object Object]" for exactly the texts it exists to show verbatim.
+ * api() parses any body that happens to be JSON, and a tool argument or a page
+ * snapshot often is -- the panel would then show "[object Object]" for exactly
+ * the texts it exists to show verbatim.
  */
-export async function getAiContent(id: string, sha: string): Promise<ApiResult<string>> {
+async function plainText(url: string): Promise<ApiResult<string>> {
   try {
-    const response = await fetch(
-      "/api/v1/ai-traces/" + encodeURIComponent(id) + "/content/" + encodeURIComponent(sha));
+    const response = await fetch(url);
     const text = await response.text();
     return response.ok
       ? { ok: true, status: response.status, body: text }

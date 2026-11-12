@@ -38,6 +38,15 @@ public class AiTraceService {
     /** The newest sessions listed; older ones still count in the totals. */
     static final int LIST_LIMIT = 300;
 
+    /**
+     * How much of each message is sent with the list of a turn's messages.
+     *
+     * Enough to recognise a text without opening it: a list of a dozen empty
+     * "Göster" buttons is what the message view looked like before, and
+     * recognising the system prompt should not cost a click and a request.
+     */
+    static final int MESSAGE_PREVIEW = 400;
+
     private final AiTraceStore store;
     private final AiTraceRecorder recorder;
 
@@ -230,6 +239,11 @@ public class AiTraceService {
         });
     }
 
+    /** The same turn as ONE text, in the order the model read it; see {@link TurnTranscript}. */
+    public Optional<String> transcript(UUID id, int seq) {
+        return TurnTranscript.of(recorder.files(), id, seq);
+    }
+
     public Optional<String> content(UUID id, String sha) {
         return recorder.files().read(id, sha);
     }
@@ -241,7 +255,8 @@ public class AiTraceService {
                 str(entry.get("toolCallId")), sha, num(entry.get("chars")),
                 Boolean.TRUE.equals(entry.get("isNew")),
                 count.map(TraceFiles.Count::tokens).orElse(null),
-                count.map(TraceFiles.Count::exact).orElse(null));
+                count.map(TraceFiles.Count::exact).orElse(null),
+                files.preview(id, sha, MESSAGE_PREVIEW).orElse(null));
     }
 
     @SuppressWarnings("unchecked")
@@ -257,7 +272,8 @@ public class AiTraceService {
         Optional<TraceFiles.Count> count = files.count(id, sha);
         return new MessageRow(-1, role, null, null, sha, num(entry.get("chars")), false,
                 count.map(TraceFiles.Count::tokens).orElse(null),
-                count.map(TraceFiles.Count::exact).orElse(null));
+                count.map(TraceFiles.Count::exact).orElse(null),
+                files.preview(id, sha, MESSAGE_PREVIEW).orElse(null));
     }
 
     /* ------------------------------ mapping ----------------------------- */
@@ -383,8 +399,9 @@ public class AiTraceService {
                          Long budget) {
     }
 
+    /** {@code preview}: the first {@link #MESSAGE_PREVIEW} characters, so the list reads without a click. */
     public record MessageRow(int index, String role, String name, String toolCallId, String sha, int chars,
-                             boolean isNew, Integer tokens, Boolean exact) {
+                             boolean isNew, Integer tokens, Boolean exact, String preview) {
     }
 
     public record TurnMessages(int seq, List<MessageRow> messages, MessageRow toolDefs, MessageRow response,

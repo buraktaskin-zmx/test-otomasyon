@@ -247,7 +247,11 @@ Elsewhere:
   `frontend/src/dashboard/`. What every number means is `docs/DASHBOARD.md`;
   runs without a `scenario_id` are matched by title and marked "≈".
 - Token Takibi (orchestrator): `orchestrator/aitrace/` and `frontend/src/tokens/`;
-  what every number means is `docs/TOKEN-TAKIBI.md`. Every model call — each
+  what every number means is `docs/TOKEN-TAKIBI.md`. One turn is one REQUEST,
+  and it is readable two ways (§3b): message by message with each part's token
+  count, or as one document in the order the model read it — `TurnTranscript`
+  renders that from what is already on disk, nothing extra is stored, and
+  nothing is cut. Every model call — each
   turn of the MCP agent's own tool loop included — is caught by an
   `ObservationRegistry` that carries only `AiTraceObservationHandler`
   (`AiTraceConfig`); tool calls come from `BudgetedTool.guarded`; `VisionClient`
@@ -944,6 +948,18 @@ and leave each independently runnable.
   naming any documented key that does not come out the other end. It is
   signature-agnostic on purpose: a contract test you must edit when the contract
   changes is one more thing to forget.
+  **And it reached the UI on 12.11.2026, where it is quieter still.**
+  `LazyText` takes a `preview` so a stored text shows its opening without a
+  fetch; `TurnMessages` never passed one, so "bu turun tam girdisi" — the view
+  whose whole job is showing what the model received — opened as a column of a
+  dozen empty "Göster" buttons, one click and one request each. The same turn's
+  `response`, `reasoning` and `toolCalls` were fetched by the server, typed in
+  `api/types.ts` and printed by nobody, so the outgoing half was simply absent.
+  Nothing errored in either case: an unpassed optional prop and an unread field
+  are both legal, and `tsc --noEmit` is happy. The shape is the same as
+  `entryTab`'s — accepted and discarded — and the check is the same: follow a
+  new field all the way to the pixels, and when a component offers an optional
+  prop, ask at every call site why it is not being given.
 - **Two prompt rules that contradict each other are not settled by a third.**
   Batch drafts intermittently came back as a `Scenario Outline` with
   `select "<Fatura Tipi>" from "Fatura Tipi"` and a one-row `Examples` table —

@@ -3,6 +3,7 @@ package orchestrator.aitrace;
 import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
+import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -112,6 +113,37 @@ final class TraceFiles {
             return Optional.empty();
         }
         return readFile(dir(session).resolve("msg").resolve(sha + ".txt"));
+    }
+
+    /**
+     * The opening of a stored text, so a list of messages is readable without
+     * a click on each one.
+     *
+     * <p>Only the opening is read. A late turn lists dozens of messages and a
+     * page snapshot is tens of kilobytes, so reading each one whole merely to
+     * show its first lines would read the whole walk to draw the list. The cut
+     * is NOT marked here -- the panel knows each text's full length and marks
+     * it itself, and a marker added at both ends prints two.
+     */
+    Optional<String> preview(UUID session, String sha, int max) {
+        if (!isSha(sha) || max <= 0) {
+            return Optional.empty();
+        }
+        Path file = dir(session).resolve("msg").resolve(sha + ".txt");
+        char[] buffer = new char[max];
+        try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+            int read = 0;
+            while (read < max) {
+                int step = reader.read(buffer, read, max - read);
+                if (step < 0) {
+                    break;
+                }
+                read += step;
+            }
+            return read == 0 ? Optional.empty() : Optional.of(new String(buffer, 0, read));
+        } catch (IOException | RuntimeException unreadable) {
+            return Optional.empty();
+        }
     }
 
     /** The stored count of a text: tokens, and whether they were counted or estimated. */
