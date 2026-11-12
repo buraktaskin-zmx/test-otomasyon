@@ -29,6 +29,13 @@ import java.util.regex.Pattern;
  * reference exactly as the browser reported it; what goes is the box that was
  * holding it.
  *
+ * <p><b>Since 12.11.2026 the page itself is rewritten, not just filtered</b>
+ * ({@link LeanPage}): the tree becomes one flat line per thing, which the line
+ * filter below could never do because it can only keep or drop a line as it
+ * stands. This class is what is left for everything that is NOT a tree — a
+ * click's "Clicked", an error, a refusal — plus the fallback for a snapshot
+ * LeanPage could not parse.
+ *
  * <p>The ACTION TAPE keeps the untouched result (BudgetedTool records before
  * it trims), so "Gherkin oluştur", TapeRenderer and TapeEvidence still read
  * every word the browser sent.
@@ -62,11 +69,24 @@ final class LeanResults {
      *            words BudgetedTool has always used for a page too big to send
      */
     static String summarise(String result, int cap) {
+        return summarise(result, cap, false);
+    }
+
+    /**
+     * @param dropChrome passed to {@link LeanPage}: whether the header, the
+     *                   menu and the footer may go, which is true only when
+     *                   code opened the screen
+     */
+    static String summarise(String result, int cap, boolean dropChrome) {
         if (result == null) {
             return null;
         }
         String out = RAN_CODE.matcher(result).replaceAll("");
-        out = dropScaffold(out);
+        String flat = LeanPage.of(out, dropChrome);
+        // A result with no tree in it, or a tree that would not parse, falls
+        // back to the line filter — which is also the only thing that touches
+        // a click's one-word answer.
+        out = flat != null ? flat : dropScaffold(out);
         if (out.length() <= cap) {
             return out;
         }

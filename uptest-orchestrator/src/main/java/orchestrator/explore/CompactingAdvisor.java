@@ -171,8 +171,18 @@ final class CompactingAdvisor implements CallAdvisor {
     }
 
     /**
-     * What an old result becomes: the Playwright line it ran, or its first
-     * line, and a note saying the page itself is gone.
+     * What an old result becomes: a note saying the page is gone.
+     *
+     * It used to keep the result's FIRST LINE when there was no Playwright
+     * echo to keep, and that stopped meaning anything once LeanResults began
+     * cutting the echo out of what the model is handed: the first line of a
+     * page is now "### Page state", which says nothing about which call it
+     * belonged to. It does not need to — the assistant message directly above
+     * the result IS the tool call, with its arguments. So the stub says the
+     * one thing written nowhere else: the page it stands for is gone, and
+     * where the current one is.
+     *
+     * The echo branch stays for results that still carry one.
      */
     static String stub(String data) {
         if (data == null || data.length() < KEEP_UNDER) {
@@ -182,10 +192,6 @@ final class CompactingAdvisor implements CallAdvisor {
         if (!code.isBlank()) {
             return code + "\n[eski ekran kısaltıldı]";
         }
-        String first = data.strip().lines().findFirst().orElse("");
-        if (first.length() > 200) {
-            first = first.substring(0, 200) + "…";
-        }
-        return first + "\n[eski sonuç kısaltıldı: " + data.length() + " karakter]";
+        return "[eski ekran kısaltıldı — güncel ekran son araç sonucunda]";
     }
 }

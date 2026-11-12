@@ -19,6 +19,35 @@ import static org.assertj.core.api.Assertions.assertThat;
 class TapeRendererTest extends TapeFixture {
 
     @Test
+    @DisplayName("a batch renders exactly as the same steps taken one turn at a time")
+    void aBatchRendersLikeSeparateTurns() {
+        // StepRunner records each sub-step under the tool it really used, so
+        // the only new thing on the tape is the do_steps entry itself — and
+        // that entry must add nothing: no step of its own, and no note
+        // apologising for a tool the vocabulary does not know.
+        login();
+        reachTheScreen();
+        ok("browser_snapshot", "{}", tree("""
+                - generic [ref=f1e700]:
+                  - generic [ref=f1e701]: Fatura No
+                  - textbox [ref=f1e702]
+                - button "Sorgula" [ref=f1e710]"""));
+        ok("browser_type", "{\"target\": \"f1e702\", \"text\": \"955231\"}",
+                ran("await page.getByRole('textbox', { name: 'Fatura No' }).fill('955231');"));
+        ok("browser_click", "{\"target\": \"f1e710\"}",
+                ran("await page.getByRole('button', { name: 'Sorgula' }).click();"));
+
+        List<String> oneTurnEach = TapeRenderer.render(calls, MAIN_MENU, List.of()).steps();
+
+        // The same walk, with the batch's own entry where StepRunner leaves it.
+        ok(StepRunner.TOOL, "{\"steps\": []}", "1. type f1e702 → tamam");
+        TapeRenderer.Rendered batched = TapeRenderer.render(calls, MAIN_MENU, List.of());
+
+        assertThat(batched.steps()).isEqualTo(oneTurnEach);
+        assertThat(batched.notes()).noneMatch(note -> note.contains(StepRunner.TOOL));
+    }
+
+    @Test
     @DisplayName("a walk becomes the steps an analyst reads, login left to LoginStep")
     void rendersTheWalk() {
         login();

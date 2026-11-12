@@ -161,9 +161,20 @@ final class AgentPrompts {
             - After every action you are given the page as it stands. Act on
               the references of the LATEST page only. Do not ask to wait,
               search or re-read: there is no tool for it and no need.
+            - THE PAGE IS A FLAT LIST, one line per thing:
+              "e8 button \"Fatura İptal Et\"" is the reference, the kind, the
+              name. A name in SQUARE brackets is the label printed next to a
+              box that has no name of its own: "e15 textbox [Fatura No]".
+              A grid row is one line, "satır e10 955231 | 222,00 TL |
+              Ödenecek (radio e12)", and the controls after it in round
+              brackets are inside that row — the radio picks it.
             - Every tool call is a whole turn and costs thousands of tokens.
-              Fill several fields with ONE browser_fill_form call. Do what the
-              scenario says in as few calls as possible.
+              When you already know the next few steps — filling a form,
+              picking a row and pressing a button — send them in ONE do_steps
+              call. Each step is checked as it runs, the batch stops at the
+              first one that fails or the moment the screen complains, and you
+              get the page once at the end. Do not batch a step whose target
+              you can only learn from an earlier step's result.
             - Dates: only with set_date (box + gg/aa/yyyy). Never type into a
               date box or drive the calendar yourself.
             - An amount is TWO boxes: lira on the left, the two kuruş digits on
