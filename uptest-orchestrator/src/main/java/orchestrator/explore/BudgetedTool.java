@@ -452,7 +452,7 @@ final class BudgetedTool implements ToolCallback {
         }
         String result;
         try {
-            result = watch(invoke.get());
+            result = watch(policy == null ? invoke.get() : BusyPage.waitOut(name(), invoke));
         } catch (BrowserClosed closed) {
             record(input, ActionTape.Outcome.ERROR, closed.getMessage(), null, began);
             throw closed;
@@ -719,6 +719,11 @@ final class BudgetedTool implements ToolCallback {
         if (banned != null) {
             System.out.println("[uptest] explore: yasakli kontrol '" + banned + "' — reddedildi");
             return FORBIDDEN.formatted(banned);
+        }
+        String reload = BusyPage.reload(name(), input);
+        if (reload != null) {
+            System.out.println("[uptest] explore: sayfayi yenileme (" + input + ") — reddedildi");
+            return reload;
         }
         String commit = unaskedCommit(input);
         if (commit != null) {

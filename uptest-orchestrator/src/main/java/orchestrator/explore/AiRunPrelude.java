@@ -416,6 +416,7 @@ final class AiRunPrelude {
         String page = null;
         for (int poll = 1; poll <= LOAD_POLLS; poll++) {
             pause();
+            BusyPage.waitWhileBusy(tools.get("browser_evaluate"), settle);
             page = page();
             if (page != null && !stillLoading(page)) {
                 if (poll > 1) {

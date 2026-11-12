@@ -556,6 +556,7 @@ public class ExploreController {
         }
         AiRunPolicy policy = new AiRunPolicy(raw("browser_snapshot"), settle, runTokenBudget, describeCap, pageCap);
         policy.chrome(chrome);
+        policy.busyProbe(raw("browser_evaluate"));
         System.out.println("[uptest] ai-run: prelude=" + opened.reached()
                 + (opened.note() == null ? "" : " (" + opened.note() + ")")
                 + ", " + allowed.size() + " tarayici araci, talimat " + userTurn.length()

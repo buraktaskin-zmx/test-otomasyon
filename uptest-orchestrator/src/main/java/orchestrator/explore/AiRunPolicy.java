@@ -76,6 +76,13 @@ final class AiRunPolicy {
     /** The bank's frame around the screen; see PageChrome. Set once the screen is open. */
     private volatile PageChrome chrome = PageChrome.NONE;
 
+    /** The RAW browser_evaluate, for BusyPage's check only; null leaves it off. */
+    private volatile ToolCallback probe;
+
+    void busyProbe(ToolCallback evaluate) {
+        this.probe = evaluate;
+    }
+
     void chrome(PageChrome learnt) {
         this.chrome = learnt == null ? PageChrome.NONE : learnt;
     }
@@ -136,6 +143,7 @@ final class AiRunPolicy {
             Thread.currentThread().interrupt();
             return null;
         }
+        BusyPage.waitWhileBusy(probe, settle);
         long began = System.nanoTime();
         try {
             String page = snapshot.call("{}");

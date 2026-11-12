@@ -220,7 +220,8 @@ class RunVerdictTest {
             @Override
             public String call(String input) {
                 reached.add("browser_click");
-                return "### Error\nTimeout 5000ms exceeded: element intercepts pointer events";
+                // Not an overlay error: those are waited out first (BusyPageTest).
+                return "### Error\nTimeout 5000ms exceeded: element is not visible";
             }
         };
         Object[] tools = BudgetedTool.wrap(
