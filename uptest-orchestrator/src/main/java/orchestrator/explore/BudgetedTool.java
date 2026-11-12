@@ -69,6 +69,14 @@ final class BudgetedTool implements ToolCallback {
             out in succeeded, and every step you did not reach in failed.
             """;
 
+    private static final String STUCK = """
+            STOP. Your last actions all failed or were refused one after another,
+            so the screen is not letting this walk go on. You may not touch the
+            page again. Call report_result NOW — the steps you did carry out in
+            succeeded, every other step in failed, and say in failed what the
+            screen showed.
+            """;
+
     private static final String FORBIDDEN = """
             The instruction explicitly said NOT to touch this control: %s.
             That was not an oversight — pressing it changes what the
@@ -437,6 +445,9 @@ final class BudgetedTool implements ToolCallback {
             // what the model tried to do, and the sentence it got back is why
             // the next call looks the way it does.
             record(input, ActionTape.Outcome.REFUSED, refusal, refusal, began);
+            if (policy != null) {
+                policy.missed(name());
+            }
             return refusal;
         }
         String result;
@@ -696,6 +707,13 @@ final class BudgetedTool implements ToolCallback {
             System.out.println("[uptest] explore: token butcesi doldu (" + policy.used() + "/"
                     + policy.budget() + ") — " + name() + " reddedildi");
             return SPENT.formatted(policy.used());
+        }
+        // Same exemption and the same shape as the budget wall: a walk whose
+        // actions keep failing ends with a result, not with the budget.
+        if (policy != null && policy.stuck()) {
+            System.out.println("[uptest] explore: " + AiRunPolicy.STUCK_AFTER
+                    + " islem ust uste olmadi — " + name() + " reddedildi, sonuc isteniyor");
+            return STUCK;
         }
         String banned = banned(input);
         if (banned != null) {

@@ -543,7 +543,7 @@ public class ExploreController {
         // the user is locked) and a model will not find its way round that. It
         // stops here, with the reason, before a single token is spent.
         if (opened.reached() == AiRunPrelude.Reached.NOTHING && present(body.cif())) {
-            throw new IllegalStateException("Giriş yapılamadı, ajan başlatılmadı: " + opened.note()
+            throw new IllegalStateException("Ajan başlatılmadı: " + opened.note()
                     + " — ekran açılamadığı için senaryo denenemezdi ve token harcanmadı.");
         }
         PageChrome chrome = PageChrome.forRun(opened, body.mainMenu(), body.screen(), body.text());

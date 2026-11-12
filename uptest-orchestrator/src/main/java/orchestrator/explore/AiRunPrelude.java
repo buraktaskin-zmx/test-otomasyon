@@ -161,8 +161,7 @@ final class AiRunPrelude {
                 call("browser_click", target(parent));
                 call("browser_click", target(child));
                 record(MENU_TOOL, menuArgs, true, mainMenu + " › " + screen + " açıldı", menuBegan);
-                pause();
-                return new Outcome(Reached.ON_SCREEN, page(), null);
+                return loaded(screen);
             } catch (RuntimeException notOpen) {
                 lastError = oneLine(notOpen.getMessage());
                 System.out.println("[uptest] prelude: menu " + attempt + ". denemede acilmadi — " + lastError);
@@ -391,6 +390,53 @@ final class AiRunPrelude {
             throw new IllegalStateException(tool + ": " + oneLine(result.substring(result.indexOf("### Error"))));
         }
         return result;
+    }
+
+    /** How many settle pauses the screen gets to finish loading after its menu link is clicked. */
+    static final int LOAD_POLLS = 20;
+
+    /**
+     * The screen once it has finished LOADING — or NOTHING, so that no agent
+     * is started on a page it cannot use.
+     *
+     * <p><b>Measured 12.11.2026</b>, Mac, session d88e4b14: the menu click went
+     * through, the screen stayed on "Yükleniyor, lütfen bekleyiniz", and the
+     * code declared it open after one fixed pause anyway. The agent's first
+     * move was to click the main menu (5 s, error — the overlay takes the
+     * click), then it alternated click / refused / snapshot for 23 turns and
+     * spent 100.901 tokens on a screen that never arrived. A screen that
+     * does not load is the environment, exactly as a login that does not
+     * work is, and no model finds its way round it.
+     *
+     * <p>Judged by the overlay's own words. None of the fifteen pages of
+     * tape 2628c4fd — a loaded screen, a list open, a row picked — carries
+     * them, so a loaded page is never mistaken for a loading one.
+     */
+    private Outcome loaded(String screen) {
+        String page = null;
+        for (int poll = 1; poll <= LOAD_POLLS; poll++) {
+            pause();
+            page = page();
+            if (page != null && !stillLoading(page)) {
+                if (poll > 1) {
+                    System.out.println("[uptest] prelude: ekran " + poll + ". bakista yuklendi");
+                }
+                return new Outcome(Reached.ON_SCREEN, page, null);
+            }
+        }
+        long seconds = settle.multipliedBy(LOAD_POLLS).toSeconds();
+        System.out.println("[uptest] prelude: \"" + screen + "\" " + seconds
+                + " sn sonra hala yukleniyor — ajan baslatilmiyor");
+        return new Outcome(Reached.NOTHING, page, "\"" + screen + "\" ekranı " + seconds
+                + " saniyede yüklenmedi (sayfada hâlâ \"Lütfen bekleyiniz\" yazıyor). Uygulama ya da"
+                + " bağlantı yavaş; deterministik koşu bu ekranı yüklüyorsa birkaç dakika sonra tekrar"
+                + " deneyin");
+    }
+
+    /** The bank's loading overlay is on the page. */
+    static boolean stillLoading(String page) {
+        String text = TapeRenderer.fold(LeanResults.unwrap(page));
+        return text.contains("lutfen bekleyiniz") || text.contains("yukleniyor");
     }
 
     /** The page as it stands, recorded on the tape so the next click's reference resolves. */

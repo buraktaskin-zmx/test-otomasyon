@@ -204,6 +204,59 @@ class RunVerdictTest {
         assertThat(reached).containsExactly("browser_click", "browser_click");
     }
 
+    @Test
+    @DisplayName("12.11.2026, d88e4b14: click failed, refused, refused… — after four the walk is told to report")
+    void stuckWalkIsStopped() {
+        RunVerdict verdict = new RunVerdict();
+        List<String> reached = new ArrayList<>();
+        ActionTape tape = ActionTape.open(dir, "explore", "x", "", "", List.of());
+        AiRunPolicy policy = new AiRunPolicy(null, java.time.Duration.ZERO, 0, 220, 6000, () -> 0L);
+        ToolCallback failing = new ToolCallback() {
+            @Override
+            public ToolDefinition getToolDefinition() {
+                return ToolDefinition.builder().name("browser_click").description("c").inputSchema("{}").build();
+            }
+
+            @Override
+            public String call(String input) {
+                reached.add("browser_click");
+                return "### Error\nTimeout 5000ms exceeded: element intercepts pointer events";
+            }
+        };
+        Object[] tools = BudgetedTool.wrap(
+                List.of(failing, fake("browser_snapshot", reached), fake(RunVerdict.TOOL, reached)),
+                99, null, List.of(), new LinkedHashSet<>(), "x", new AtomicBoolean(), tape, verdict, policy);
+        ToolCallback click = (ToolCallback) tools[0];
+        ToolCallback look = (ToolCallback) tools[1];
+
+        // The measured shape: the same click, a look, the same click again.
+        click.call("{\"target\": \"f1e204\"}");                    // failed
+        look.call("{}");
+        assertThat(click.call("{\"target\": \"f1e204\"}")).contains("REFUSED"); // same failure
+        look.call("{}");
+        click.call("{\"target\": \"f1e204\"}");
+        click.call("{\"target\": \"f1e204\"}");
+
+        assertThat(look.call("{}")).contains("STOP").contains("report_result");
+        assertThat(click.call("{\"target\": \"f1e999\"}")).contains("STOP");
+        assertThat(reached).containsExactly("browser_click", "browser_snapshot", "browser_snapshot");
+
+        ((ToolCallback) tools[2]).call("{\"succeeded\":[],\"failed\":[\"Ekran yüklenmedi.\"],\"passed\":false}");
+        assertThat(verdict.isClosed()).isTrue();
+    }
+
+    @Test
+    @DisplayName("an action that works resets the count")
+    void successResetsTheCount() {
+        AiRunPolicy policy = new AiRunPolicy(null, java.time.Duration.ZERO, 0, 220, 6000, () -> 0L);
+        for (int i = 0; i < AiRunPolicy.STUCK_AFTER - 1; i++) {
+            policy.missed("browser_click");
+        }
+        policy.outcome("browser_click", "{}", "ok", false);
+        policy.missed("browser_click");
+        assertThat(policy.stuck()).isFalse();
+    }
+
     /** BudgetedTool folds the instruction before storing it; the test must match. */
     private static String fold(String text) {
         return text.replaceAll("\s+", " ").trim().toLowerCase(java.util.Locale.forLanguageTag("tr-TR"));

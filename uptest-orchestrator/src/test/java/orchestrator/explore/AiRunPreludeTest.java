@@ -27,6 +27,35 @@ class AiRunPreludeTest {
     /** What a failing call answers; a test about network errors replaces it. */
     private String errorText = "### Error\nTimeout 5000ms exceeded";
 
+    private static final String LOADED = "- heading \"Firma Fatura İşlemleri\" [ref=e9]";
+    private static final String LOADING = "- generic [ref=e3]: Yükleniyor, lütfen bekleyiniz...";
+
+    /** What browser_snapshot answers; a test may make the screen slow. */
+    private java.util.function.Supplier<String> snapshot = () -> LOADED;
+
+    @Test
+    @DisplayName("12.11.2026: a screen still loading is waited for")
+    void slowScreenIsWaitedFor() {
+        int[] polls = {0};
+        snapshot = () -> ++polls[0] <= 3 ? LOADING : LOADED;
+        AiRunPrelude.Outcome outcome = run(line -> false, NGC, tape());
+
+        assertThat(outcome.reached()).isEqualTo(AiRunPrelude.Reached.ON_SCREEN);
+        assertThat(outcome.page()).isEqualTo(LOADED);
+    }
+
+    @Test
+    @DisplayName("12.11.2026: a screen that never loads starts NO agent — session d88e4b14 spent 100.901 tokens on one")
+    void screenThatNeverLoadsStopsBeforeTheAgent() {
+        snapshot = () -> LOADING;
+        AiRunPrelude.Outcome outcome = run(line -> false, NGC, tape());
+
+        assertThat(outcome.reached()).isEqualTo(AiRunPrelude.Reached.NOTHING);
+        assertThat(outcome.note()).contains("yüklenmedi").contains("Lütfen bekleyiniz");
+        assertThat(calls.stream().filter(line -> line.startsWith("browser_snapshot")).count())
+                .isEqualTo(AiRunPrelude.LOAD_POLLS);
+    }
+
     private static final AiRunPrelude.Login NGC = new AiRunPrelude.Login(
             "ngc", "https://x/indexNgc.do", "QZ06395288", "3014", "pw987654", "34020");
 
@@ -47,7 +76,7 @@ class AiRunPreludeTest {
                     if (fails.test(line)) {
                         return errorText;
                     }
-                    return name.equals("browser_snapshot") ? "- heading \"Firma Fatura İşlemleri\" [ref=e9]" : "ok";
+                    return name.equals("browser_snapshot") ? snapshot.get() : "ok";
                 }
             });
         }

@@ -197,9 +197,37 @@ final class AiRunPolicy {
     void outcome(String tool, String input, String result, boolean threw) {
         if (threw || (result != null && result.contains("### Error"))) {
             failures.put(key(tool, input), oneLine(result));
+            missed(tool);
         } else if (ACTING.contains(tool)) {
             failures.clear();
+            misses.set(0);
         }
+    }
+
+    /**
+     * Actions in a row that did not happen — failed or refused. A look at the
+     * page in between neither counts nor resets: the measured loop was exactly
+     * click, refused, snapshot, click, refused, snapshot.
+     */
+    private final java.util.concurrent.atomic.AtomicInteger misses = new java.util.concurrent.atomic.AtomicInteger();
+
+    /**
+     * After this many, the walk is stuck. Measured 12.11.2026, session
+     * d88e4b14: 13 clicks, 11 refused and 2 failed, one after another, on a
+     * screen that never loaded — 25 turns and 100.901 tokens. The
+     * same-call refusal (failedBefore) told the model each time to do
+     * something different; it did not, and nothing else said stop.
+     */
+    static final int STUCK_AFTER = 4;
+
+    void missed(String tool) {
+        if (ACTING.contains(tool)) {
+            misses.incrementAndGet();
+        }
+    }
+
+    boolean stuck() {
+        return misses.get() >= STUCK_AFTER;
     }
 
     /** The error this exact call already got on this page, or null. */
