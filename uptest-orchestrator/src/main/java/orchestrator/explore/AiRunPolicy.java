@@ -33,7 +33,10 @@ final class AiRunPolicy {
     /** Tools that change the page, after which the agent needs to see it. */
     static final Set<String> ACTING = Set.of(
             "browser_click", "browser_type", "browser_fill_form", "browser_select_option",
-            "browser_press_key", "browser_handle_dialog", "set_date");
+            "browser_press_key", "browser_handle_dialog", "set_date",
+            // Typing a dropdown's search narrows the list: the agent has to see
+            // which options are left before it can pick one.
+            "browser_press_sequentially");
 
     /** How the page appears in a result: MCP's own heading for it. */
     private static final String HAS_PAGE = "Page Snapshot";

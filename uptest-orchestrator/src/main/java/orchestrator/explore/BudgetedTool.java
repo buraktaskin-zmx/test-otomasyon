@@ -391,8 +391,41 @@ final class BudgetedTool implements ToolCallback {
                 + " to open the list. Its search box then opens at the END of the page, OUTSIDE"
                 + " the dropdown, and already has the keyboard focus. A snapshot of the dropdown"
                 + " alone does not contain it: take a snapshot WITHOUT a target, or find the"
-                + " element with role searchbox, and type into THAT. Do not type into this"
-                + " display again.";
+                + " element with role searchbox, and type into THAT. Easiest of all: since the"
+                + " search box already has the focus, browser_press_sequentially with just the"
+                + " text needs no target. Do not type into this display again.";
+    }
+
+    /**
+     * What to do instead, when the agent named its target with words.
+     *
+     * <p><b>Measured 12.11.2026</b>, the same "san" search on Firma Fatura
+     * İşlemleri. After Firma Seçimi opened, the page was 20.192 characters and
+     * the cap kept 6.000 — so the search box, which this application renders
+     * at the END of the page, was never in what the model saw. With no
+     * reference to copy it invented one: {@code textbox \"Seçiniz\"} (parsed
+     * as CSS and refused), then {@code textbox} (no such element), five times
+     * each, until the token budget ran out and the run ended with the
+     * scenario's one real step undone.
+     *
+     * <p>Neither error says what a target IS, so the model had nothing to
+     * learn from. This does, at the moment of the mistake, and names the tool
+     * that needs no target at all — the open list has already put the focus
+     * in its search box, which is how a walk got through once before by
+     * pressing keys one at a time.
+     *
+     * @return the hint, or null when the failure is anything else
+     */
+    static String targetHint(String failure) {
+        if (failure == null || !(failure.contains("does not match any elements")
+                || failure.contains("while parsing css selector"))) {
+            return null;
+        }
+        return "\n\nTHE TARGET IS WRONG. target must be a reference copied from the latest page,"
+                + " like e42, or a real CSS selector. A role and a name such as textbox \"Seçiniz\""
+                + " is neither, and repeating it fails the same way. To type into a dropdown's"
+                + " SEARCH box: once the dropdown is open its search box already has the keyboard"
+                + " focus, so call browser_press_sequentially with just the text and no target.";
     }
 
     private String guarded(String input, Supplier<String> invoke) {
@@ -422,6 +455,9 @@ final class BudgetedTool implements ToolCallback {
                 return closed();
             }
             String hint = select2DisplayHint(failed.getMessage());
+            if (hint == null) {
+                hint = targetHint(failed.getMessage());
+            }
             if (hint != null) {
                 // Answered, not rethrown: the model reads the error either
                 // way, and this way it reads WHAT TO DO beside it.

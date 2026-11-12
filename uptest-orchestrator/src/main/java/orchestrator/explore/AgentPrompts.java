@@ -172,6 +172,12 @@ final class AgentPrompts {
             - Dropdowns are custom widgets, not <select>: click the control,
               then click the option in the list that opened, copying its text
               exactly as printed.
+            - To SEARCH in a dropdown: click it once. Its search box opens at
+              the END of the page, often beyond what you are shown, and already
+              has the keyboard focus: type with browser_press_sequentially
+              (text only, no target).
+            - target is a reference from the latest page (e42) or a CSS
+              selector. A role and a name, like textbox "Seçiniz", is neither.
             - The scenario is the complete list of what you may touch. Never
               press, fill or tick anything it does not name.
             - THIS IS A BANK. Creating, approving or cancelling a record is

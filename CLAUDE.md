@@ -324,6 +324,22 @@ is the container deployment, which is not live — see *Docker: later* above.
 
 - The VDI also needs `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` on every run config:
   corporate SSL inspection blocks the Chromium download.
+- **The MCP agent's Playwright is PINNED: `@playwright/mcp@0.0.82`** (Playwright
+  `1.64.0-alpha`), on the VDI and on the Mac. It is installed OUTSIDE the repo
+  (`C:/tools/playwright-mcp`; on the Mac beside the checkout), so the version
+  is decided by that install, not by anything committed here — and a plain
+  `npm install` / `npm update` silently moves it to the newest alpha. On
+  12.11.2026 the newest, `0.0.85` (Playwright `1.66.0-alpha`), put "AI ile
+  çalıştır" into `net::ERR_CONNECTION_RESET` on the very first navigation,
+  while the deterministic run entered the same address with the SAME Chromium
+  binary; going back to `0.0.82` fixed it. The floor is fixed by our code:
+  `AiRunPrelude` and `DateTool` send CSS selectors under the parameter name
+  `target`, which exists from `0.0.75` on (`0.0.69` calls it `ref`, `0.0.56`
+  accepts no selector at all). Install with `--save-exact`; change it only
+  deliberately and with several attempts. The full record — versions table,
+  the Mac's `.mcp.json`, every attempt by time, the commands, and the traps
+  (a `pkill -f "Google Chrome for Testing"` kills the MCP SERVER, because its
+  own arguments carry that path) — is `docs/MCP-TARAYICI-SORUNU.md`.
 - `UPTEST_BROWSER_CHANNEL` deliberately does NOT go through the
   blank-means-default helper: *unset* = system Edge, *set-but-empty* = no
   channel, which is the only way to ask for Playwright's bundled Chromium.

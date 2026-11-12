@@ -161,7 +161,13 @@ public class ExploreController {
      */
     static final Set<String> AI_RUN_TOOLS = Set.of(
             "browser_snapshot", "browser_click", "browser_type", "browser_fill_form",
-            "browser_select_option", "browser_press_key", "browser_handle_dialog");
+            "browser_select_option", "browser_press_key", "browser_handle_dialog",
+            // Types into whatever has the focus, with no target. Added
+            // 12.11.2026: a dropdown's search box opens at the END of the page,
+            // past the part of a long page the agent is shown, so it had no
+            // reference to type into and spent seventeen turns inventing one.
+            // Once the list is open the box already has the focus.
+            "browser_press_sequentially");
 
     private ToolCallback raw(String name) {
         for (ToolCallback callback : tools.getToolCallbacks()) {
