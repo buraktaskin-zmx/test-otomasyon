@@ -36,7 +36,7 @@ public final class TapeEvidence {
     private static final Set<String> LOOKING = Set.of(
             "browser_snapshot", "browser_find", "browser_wait_for", "browser_take_screenshot",
             "browser_console_messages", "browser_network_requests", RunVerdict.TOOL,
-            AiRunPrelude.LOGIN_TOOL);
+            AiRunPrelude.LOGIN_TOOL, StepRunner.TOOL);
 
     private static final Pattern CODE = Pattern.compile("await page[^\\\\\\n]*?;");
     private static final int LINE_CAP = 260;

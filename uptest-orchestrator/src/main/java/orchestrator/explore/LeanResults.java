@@ -62,11 +62,20 @@ final class LeanResults {
      *            words BudgetedTool has always used for a page too big to send
      */
     static String summarise(String result, int cap) {
+        return summarise(result, cap, "");
+    }
+
+    /**
+     * @param scenario the scenario text, folded as BudgetedTool folds it: an
+     *                 option it names is never hidden from a long list
+     */
+    static String summarise(String result, int cap, String scenario) {
         if (result == null) {
             return null;
         }
         String out = RAN_CODE.matcher(unwrap(result)).replaceAll("");
         out = dropScaffold(out);
+        out = tidy(out, scenario == null ? "" : scenario);
         if (out.length() <= cap) {
             return out;
         }
@@ -74,6 +83,178 @@ final class LeanResults {
                 + "\n\n[... kesildi. Bu sayfa tek bir cevaba sigmayacak kadar buyuk. "
                 + "Aradigin sey burada yoksa TUM sayfayi yeniden okuma: snapshot'i "
                 + "target/depth ile daralt.]";
+    }
+
+    /** Lines that tell the agent nothing it can act on. */
+    private static final List<Pattern> NOISE = List.of(
+            // Every link carries one, and on this application it is "#" or
+            // javascript:void(0) — the address is never what is clicked.
+            Pattern.compile("^\\s*- /url:.*$"),
+            Pattern.compile("^\\s*- Page Title:.*$"),
+            Pattern.compile("^\\s*- Console:.*$"),
+            Pattern.compile("^\\s*### Events\\s*$"),
+            Pattern.compile("^\\s*- New console entries:.*$"),
+            // The click's own answer points at a FILE holding the page; the
+            // page itself follows (AiRunPolicy), so the pointer is dead weight.
+            Pattern.compile("^\\s*- \\[Snapshot]\\(.*\\)\\s*$"));
+
+    /** A sortable grid header: {@code columnheader "Bayi Kodu: activate to sort column ascending"}. */
+    private static final Pattern SORT_HINT = Pattern.compile(": activate to sort column (?:ascending|descending)");
+
+    /** A line the dump wrapped in single quotes because of the colon above. */
+    private static final Pattern QUOTED_LINE = Pattern.compile("^(\\s*-\\s+)'(.*)'(:?)\\s*$");
+
+    /** {@code - option "ASAŞ ALÜMİNYUM SAN." [ref=f3e493]} */
+    private static final Pattern OPTION = Pattern.compile("^(\\s*)- option \"((?:[^\"\\\\]|\\\\.)*)\"(.*)$");
+
+    /** A child whose whole content is text: {@code - generic [ref=…]: Bayi Kodu} or {@code - text: …}. */
+    private static final Pattern TEXT_CHILD =
+            Pattern.compile("^(\\s*)- (?:generic(?: \\[[^]]*])*|text): (.+)$");
+
+    /** A node line, for its indent and name. */
+    private static final Pattern NAMED_NODE =
+            Pattern.compile("^(\\s*)- [A-Za-z]+ \"((?:[^\"\\\\]|\\\\.)*)\".*$");
+
+    /** A list longer than this is shortened. */
+    static final int OPTIONS_SHOWN = 15;
+
+    /** Options kept from the top of a shortened list, after the chosen and the named ones. */
+    private static final int OPTIONS_HEAD = 3;
+
+    /**
+     * What is left after the scaffolding, without the noise.
+     *
+     * <p><b>Measured 12.11.2026</b> on tape 2628c4fd. The Firma Fatura
+     * İşlemleri page after a row is picked is 10.413 characters: {@code /url}
+     * lines 838, {@code [cursor=pointer]} 833, sortable headers saying
+     * "activate to sort column ascending" and then their own name again as a
+     * child, the console counters. The page with Firma Seçimi OPEN is 13.714,
+     * and 6.860 of it — half — is the 113 firms of one dropdown, of which the
+     * scenario names one.
+     *
+     * <p>Nothing here removes a reference the agent could act on, with one
+     * deliberate exception: a list of more than {@value #OPTIONS_SHOWN}
+     * options keeps the chosen one, every option the SCENARIO names, and the
+     * first few, and says how many it left out and how to reach them (typing
+     * into the focused search box, which needs no reference). That is the
+     * analyst's idea of "filter by what the step names" applied where it is
+     * safe: the step that picks an option names it, and when it does not,
+     * the way to the rest is printed on the spot. A blanket filter by name
+     * was tried on the whole page in 40a2a7f and hid the menu link the next
+     * action needed; it is not repeated here.
+     */
+    static String tidy(String text, String scenario) {
+        String[] lines = text.split("\n", -1);
+        List<String> out = new java.util.ArrayList<>(lines.length);
+        // Ancestors with a name, nearest last: [indent, name].
+        java.util.ArrayDeque<String[]> named = new java.util.ArrayDeque<>();
+        boolean changed = false;
+        for (int i = 0; i < lines.length; i++) {
+            String line = lines[i];
+            if (NOISE.stream().anyMatch(p -> p.matcher(line).matches())) {
+                changed = true;
+                continue;
+            }
+            String cleaned = line.replace(" [cursor=pointer]", "");
+            cleaned = SORT_HINT.matcher(cleaned).replaceAll("");
+            var quoted = QUOTED_LINE.matcher(cleaned);
+            if (!cleaned.equals(line) && quoted.matches()) {
+                cleaned = quoted.group(1) + quoted.group(2).replace("''", "'") + quoted.group(3);
+            }
+
+            int indent = indentOf(cleaned);
+            while (!named.isEmpty() && Integer.parseInt(named.peekLast()[0]) >= indent) {
+                named.pollLast();
+            }
+
+            // A child that only repeats what its parent is already called.
+            var child = TEXT_CHILD.matcher(cleaned);
+            if (child.matches() && !named.isEmpty()
+                    && fold(named.peekLast()[1]).contains(fold(child.group(2)).replace("\"", ""))) {
+                changed = true;
+                continue;
+            }
+
+            // A long run of options.
+            if (OPTION.matcher(cleaned).matches()) {
+                int end = i;
+                while (end < lines.length && OPTION.matcher(lines[end]).matches()
+                        && indentOf(lines[end]) == indent) {
+                    end++;
+                }
+                if (end - i > OPTIONS_SHOWN) {
+                    int hidden = 0;
+                    for (int k = i; k < end; k++) {
+                        var option = OPTION.matcher(lines[k].replace(" [cursor=pointer]", ""));
+                        option.matches();
+                        boolean keep = k - i < OPTIONS_HEAD
+                                || option.group(3).contains("[selected]")
+                                || (!scenario.isEmpty() && scenario.contains(fold(option.group(2))));
+                        if (keep) {
+                            out.add(lines[k].replace(" [cursor=pointer]", ""));
+                        } else {
+                            hidden++;
+                        }
+                    }
+                    out.add(" ".repeat(indent) + "- (" + hidden + " seçenek daha gösterilmedi. Aradığın"
+                            + " burada yoksa liste açıkken adını yaz: browser_press_sequentially, hedefsiz)");
+                    i = end - 1;
+                    changed = true;
+                    continue;
+                }
+            }
+
+            var node = NAMED_NODE.matcher(cleaned);
+            if (node.matches()) {
+                named.addLast(new String[]{String.valueOf(indent), node.group(2)});
+            }
+            if (!cleaned.equals(line)) {
+                changed = true;
+            }
+            out.add(cleaned);
+        }
+        if (!changed) {
+            return text;
+        }
+        // A heading whose only content was noise: "### Snapshot" over a file pointer.
+        List<String> kept = new java.util.ArrayList<>(out.size());
+        for (int i = 0; i < out.size(); i++) {
+            String line = out.get(i).strip();
+            int next = i + 1;
+            while (next < out.size() && out.get(next).isBlank()) {
+                next++;
+            }
+            boolean emptyHeading = line.startsWith("### ")
+                    && (next == out.size() || out.get(next).strip().startsWith("### "));
+            if (emptyHeading) {
+                continue;
+            }
+            // `link "Çıkış" [ref=…]:` whose only child was its /url: the colon
+            // now announces children that are not there.
+            String current = out.get(i);
+            if (current.endsWith(":") && current.strip().startsWith("- ")
+                    && (next == out.size() || indentOf(out.get(next)) <= indentOf(current))) {
+                current = current.substring(0, current.length() - 1);
+            }
+            kept.add(current);
+        }
+        return String.join("\n", kept);
+    }
+
+    private static int indentOf(String line) {
+        int n = 0;
+        while (n < line.length() && line.charAt(n) == ' ') {
+            n++;
+        }
+        return n;
+    }
+
+    /** As BudgetedTool folds the instruction, so the two compare. */
+    static String fold(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.replaceAll("\\s+", " ").trim().toLowerCase(java.util.Locale.forLanguageTag("tr-TR"));
     }
 
     private static final com.fasterxml.jackson.databind.ObjectMapper JSON =

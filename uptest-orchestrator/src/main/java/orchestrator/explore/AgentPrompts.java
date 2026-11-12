@@ -162,8 +162,14 @@ final class AgentPrompts {
               the references of the LATEST page only. Do not ask to wait,
               search or re-read: there is no tool for it and no need.
             - Every tool call is a whole turn and costs thousands of tokens.
-              Fill several fields with ONE browser_fill_form call. Do what the
-              scenario says in as few calls as possible.
+              Use do_steps: put ALL the scenario's steps in ONE call, in
+              order, naming each thing as the page prints it — a button or
+              link text (click), a field label (select / type / date), a cell
+              text of the row (row, picks the first matching row). It finds
+              each element when its step runs, so a button that only appears
+              after an earlier step can be in the same call. It stops at the
+              first step it cannot do; then do THAT step with the other tools
+              and send the rest with do_steps again.
             - Dates: only with set_date (box + gg/aa/yyyy). Never type into a
               date box or drive the calendar yourself.
             - An amount is TWO boxes: lira on the left, the two kuruş digits on

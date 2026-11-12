@@ -73,6 +73,17 @@ final class AiRunPolicy {
         return budget;
     }
 
+    /** The bank's frame around the screen; see PageChrome. Set once the screen is open. */
+    private volatile PageChrome chrome = PageChrome.NONE;
+
+    void chrome(PageChrome learnt) {
+        this.chrome = learnt == null ? PageChrome.NONE : learnt;
+    }
+
+    PageChrome chrome() {
+        return chrome;
+    }
+
     /**
      * Characters kept of each tool's own description (LeanTools).
      *

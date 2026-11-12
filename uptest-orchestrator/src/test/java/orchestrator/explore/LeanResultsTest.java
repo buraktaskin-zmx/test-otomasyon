@@ -109,6 +109,87 @@ class LeanResultsTest {
     }
 
     @Test
+    @DisplayName("12.11.2026: /url, cursor, console counters and the snapshot-file pointer go; refs stay")
+    void noiseGoesRefsStay() {
+        String page = """
+                ### Page
+                - Page URL: https://x/entryNgc.nhnc.do
+                - Page Title: Kurumsal İnternet Şubesi | Yapı Kredi
+                - Console: 12 errors, 16 warnings
+                ### Snapshot
+                - [Snapshot](runs/mcp/page-2026-11-12T11-11-25-186Z.yml)
+                ### Events
+                - New console entries: runs/mcp/console.log#L73-L74
+                ### Snapshot
+                ```yaml
+                - link "Çıkış" [ref=f1e174] [cursor=pointer]:
+                  - /url: "#"
+                - link "Sayın Buse Tam Yetkili TEST AMAÇLI unvan" [ref=f1e183] [cursor=pointer]:
+                  - /url: "#"
+                  - text: Sayın Buse Tam Yetkili
+                  - generic [ref=f1e184]: TEST AMAÇLI unvan
+                - row [ref=f1e649]:
+                  - 'columnheader "Bayi Kodu: activate to sort column ascending" [ref=f1e651] [cursor=pointer]':
+                    - generic [ref=f1e652]: Bayi Kodu
+                - generic [ref=f1e419]: Firma Seçimi
+                - combobox [ref=f1e604] [cursor=pointer]:
+                  - textbox "ASAŞ ALÜMİNYUM SAN." [ref=f1e605]
+                ```""";
+
+        String lean = LeanResults.summarise(page, 100_000, "");
+
+        assertThat(lean)
+                .doesNotContain("/url").doesNotContain("cursor=pointer").doesNotContain("Console:")
+                .doesNotContain("Page Title").doesNotContain("[Snapshot](").doesNotContain("Events")
+                .doesNotContain("activate to sort")
+                // a child repeating its parent's name
+                .doesNotContain("text: Sayın Buse Tam Yetkili").doesNotContain("f1e652")
+                .contains("Page URL")
+                .contains("link \"Çıkış\" [ref=f1e174]\n")
+                .contains("columnheader \"Bayi Kodu\" [ref=f1e651]")
+                // a label is not a repeat: its parent is not named after it
+                .contains("generic [ref=f1e419]: Firma Seçimi")
+                .contains("textbox \"ASAŞ ALÜMİNYUM SAN.\" [ref=f1e605]");
+        assertThat(lean.split("### Snapshot", -1)).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("12.11.2026: 113 firms -> the chosen one, the ones the scenario names, the first few, and the way to the rest")
+    void longOptionListKeepsWhatTheScenarioNames() {
+        StringBuilder list = new StringBuilder("- listbox [expanded] [ref=f1e485]:\n");
+        list.append("  - option \"Seçiniz\" [selected] [ref=f1e486]\n");
+        for (int i = 0; i < 100; i++) {
+            list.append("  - option \"Firma ").append(i).append("\" [ref=f1e").append(500 + i).append("]\n");
+        }
+        list.append("  - option \"ASAŞ ALÜMİNYUM SAN.\" [ref=f1e493]\n");
+        list.append("  - option \"AYDEM\" [ref=f1e494]\n");
+        String scenario = "1. firma seçimi alanından asaş alüminyum san. seç";
+
+        String lean = LeanResults.summarise(list.toString(), 100_000, scenario);
+
+        assertThat(lean)
+                .contains("option \"Seçiniz\" [selected] [ref=f1e486]")
+                .contains("option \"ASAŞ ALÜMİNYUM SAN.\" [ref=f1e493]")
+                .contains("option \"Firma 0\"").contains("option \"Firma 1\"")
+                .doesNotContain("option \"Firma 50\"").doesNotContain("AYDEM")
+                // 103 options: Seçiniz, Firma 0, Firma 1 (the head) and ASAŞ are kept
+                .contains("99 seçenek daha gösterilmedi")
+                .contains("browser_press_sequentially");
+    }
+
+    @Test
+    @DisplayName("a short list is shown whole, scenario or not")
+    void shortListIsWhole() {
+        StringBuilder list = new StringBuilder("- listbox [ref=e1]:\n");
+        for (int i = 0; i < LeanResults.OPTIONS_SHOWN; i++) {
+            list.append("  - option \"O").append(i).append("\" [ref=e").append(10 + i).append("]\n");
+        }
+        String lean = LeanResults.summarise(list.toString(), 100_000, "");
+        assertThat(lean).contains("O0").contains("O" + (LeanResults.OPTIONS_SHOWN - 1))
+                .doesNotContain("gösterilmedi");
+    }
+
+    @Test
     void nullAndPlainTextArePassedThrough() {
         assertThat(LeanResults.summarise(null, 100)).isNull();
         assertThat(LeanResults.summarise("Clicked", 100)).isEqualTo("Clicked");

@@ -246,9 +246,19 @@ public class ExploreController {
             usable.addAll(List.of(MethodToolCallbackProvider.builder()
                     .toolObjects(ours.toArray()).build().getToolCallbacks()));
         }
-
-        return BudgetedTool.wrap(usable, calls, sink, forbidden(instruction), pending, instruction,
+        // "AI ile çalıştır" only: several named steps per turn. Inside the
+        // wrap, so the batch is guarded and recorded; bound to the wrapped
+        // tools afterwards, so each of its steps is too.
+        StepRunner runner = policy == null ? null : new StepRunner();
+        if (runner != null) {
+            usable.add(runner);
+        }
+        Object[] wrapped = BudgetedTool.wrap(usable, calls, sink, forbidden(instruction), pending, instruction,
                 aborted, tape, verdict, policy);
+        if (runner != null) {
+            runner.bind(wrapped, tape);
+        }
+        return wrapped;
     }
 
     /**
@@ -536,13 +546,16 @@ public class ExploreController {
             throw new IllegalStateException("Giriş yapılamadı, ajan başlatılmadı: " + opened.note()
                     + " — ekran açılamadığı için senaryo denenemezdi ve token harcanmadı.");
         }
-        String userTurn = AiRunPrelude.instruction(opened, body.text(), composed, body.mainMenu(),
+        PageChrome chrome = PageChrome.forRun(opened, body.mainMenu(), body.screen(), body.text());
+        String userTurn = AiRunPrelude.instruction(chrome.shown(opened, body.text(), pageCap), body.text(),
+                composed, body.mainMenu(),
                 body.screen(), BudgetedTool.LARGEST_RESULT);
         Set<String> allowed = new java.util.HashSet<>(AI_RUN_TOOLS);
         if (opened.reached() == AiRunPrelude.Reached.NOTHING) {
             allowed.add("browser_navigate");
         }
         AiRunPolicy policy = new AiRunPolicy(raw("browser_snapshot"), settle, runTokenBudget, describeCap, pageCap);
+        policy.chrome(chrome);
         System.out.println("[uptest] ai-run: prelude=" + opened.reached()
                 + (opened.note() == null ? "" : " (" + opened.note() + ")")
                 + ", " + allowed.size() + " tarayici araci, talimat " + userTurn.length()
