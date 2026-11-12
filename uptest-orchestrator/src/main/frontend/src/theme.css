@@ -2731,6 +2731,16 @@ button.db-screen:hover .db-screen-name { color: var(--link); text-decoration: un
 /* AI ÖZET: three lists, each item marked with its own sign beside the word
    in the heading -- the colour is never the only cue. */
 .sd-ai { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-3); }
+/* "Adım adım": the walk from the tape, indented by depth (set inline). The
+   glyph carries the status colour; the line's own words say what happened. */
+.sd-walk { list-style: none; margin: 0; padding: 0; font-size: var(--text-sm); line-height: 1.6; }
+.sd-walk-line { display: flex; gap: var(--space-2); }
+.sd-walk-glyph { flex: none; width: 1em; text-align: center; }
+.sd-walk-line.is-ok .sd-walk-glyph { color: var(--ok); }
+.sd-walk-line.is-fail .sd-walk-glyph { color: var(--fail); }
+.sd-walk-line.is-refused .sd-walk-glyph { color: var(--warn); }
+.sd-walk-line.is-screen { font-weight: 600; margin-top: var(--space-1); }
+.sd-walk-line.is-seen { color: var(--muted); }
 /* "Kayıtlı akıştan çalıştı …" above AI ÖZET, with its two buttons. */
 .sd-cache { display: flex; flex-direction: column; gap: var(--space-1); margin-top: var(--space-3); }
 .sd-cache-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }

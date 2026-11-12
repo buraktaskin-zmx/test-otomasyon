@@ -723,6 +723,8 @@ public class ExploreController {
             Map<String, Object> reply = new LinkedHashMap<>();
             if (visit != null) {
                 reply.put("cache", visit.toJson());
+                // The walk told step by step, from the tape: what happened, not what was claimed.
+                reply.put("walk", WalkStory.toJson(WalkStory.of(tape.calls())));
             }
             // With a result the tool's own return line ("Sonuç kaydedildi")
             // is what came back as content; the prose every older reader

@@ -17,7 +17,7 @@ import { NewScenario } from "../../product/NewScenario";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
 import { docAsText } from "../../lib/scenarioProse";
 import { useToast } from "../../ui/Toast";
-import type { AiRunCache, AiRunSummary, Origin, RunLogin } from "../../api/types";
+import type { AiRunCache, AiRunSummary, Origin, RunLogin, WalkLine } from "../../api/types";
 
 /** A walk that finished, kept until the analyst asks for its Gherkin. */
 interface FinishedWalk {
@@ -321,6 +321,8 @@ export function ProductPanel({
   const [finishedWalk, setFinishedWalk] = useState<FinishedWalk | null>(null);
   /* What the last walk did with the step cache (AiRunCache on the server). */
   const [aiCache, setAiCache] = useState<AiRunCache | null>(null);
+  /* The walk step by step, from the tape (WalkStory on the server). */
+  const [aiWalk, setAiWalk] = useState<WalkLine[]>([]);
   /* The walk's AI session (Token Takibi). Known once the walk answers --
      including a walk that failed, which is the one most worth reading. */
   const [aiTraceId, setAiTraceId] = useState<string | null>(null);
@@ -336,6 +338,7 @@ export function ProductPanel({
     setAiGherkinBusy(false);
     setFinishedWalk(null);
     setAiCache(null);
+    setAiWalk([]);
   }, [selection?.path]);
 
   const aiRun = useAsyncAction(async (fresh?: boolean) => {
@@ -366,6 +369,7 @@ export function ProductPanel({
     setAiGherkinBusy(false);
     setFinishedWalk(null);
     setAiCache(null);
+    setAiWalk([]);
     const result = await explore({
       text,
       url: LOGIN_URL[selection.app.toLowerCase()],
@@ -398,6 +402,7 @@ export function ProductPanel({
     setAiAnswer(result.body.answer);
     setAiSummary(result.body.summary ?? null);
     setAiCache(result.body.cache ?? null);
+    setAiWalk(result.body.walk ?? []);
     setFinishedWalk({
       tapeId: result.body.tapeId,
       app: selection.app,
@@ -648,6 +653,7 @@ export function ProductPanel({
                   onAiRun={() => aiRun.run()}
                   onAiRunFresh={() => aiRun.run(true)}
                   aiCache={aiCache}
+                  aiWalk={aiWalk}
                   aiBusy={aiRun.busy}
                   aiAnswer={aiAnswer}
                   aiSummary={aiSummary}

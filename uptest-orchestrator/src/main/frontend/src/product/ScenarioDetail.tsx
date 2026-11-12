@@ -4,7 +4,7 @@ import { tokenizeGherkinLine } from "../lib/gherkin";
 import { IconButton, useAutoGrow } from "../ui/InlineEdit";
 import { stepExpectation } from "../lib/scenarioProse";
 import type { ScenarioDoc } from "../lib/scenarioProse";
-import type { AiRunCache, AiRunSummary, ScenarioDetail as Detail, ScenarioEdit, SourceChange } from "../api/types";
+import type { AiRunCache, AiRunSummary, WalkLine, ScenarioDetail as Detail, ScenarioEdit, SourceChange } from "../api/types";
 
 /** The three parts of a scenario that each open for editing on their own. */
 type Section = "summary" | "gherkin" | "doc";
@@ -41,6 +41,7 @@ export function ScenarioDetail({
   onAiRun,
   onAiRunFresh,
   aiCache,
+  aiWalk,
   aiBusy,
   aiAnswer,
   aiSummary,
@@ -65,6 +66,8 @@ export function ScenarioDetail({
   onAiRunFresh: () => void;
   /** What the last run did with the step cache; null before a run. */
   aiCache: AiRunCache | null;
+  /** The walk step by step, from the tape; empty before a run. */
+  aiWalk: WalkLine[];
   aiBusy: boolean;
   aiAnswer: string;
   /** The walk's structured result; null when the agent answered in prose. */
@@ -376,7 +379,7 @@ export function ScenarioDetail({
           ) : aiSummary || aiAnswer ? (
             <>
               {aiCache ? <AiCacheLine cache={aiCache} onFresh={onAiRunFresh} /> : null}
-              <AiSummaryView summary={aiSummary} answer={aiAnswer} />
+              <AiSummaryView summary={aiSummary} answer={aiAnswer} walk={aiWalk} />
             </>
           ) : null}
 
@@ -598,10 +601,15 @@ function EditControls({ section, editing, saving, what, onEdit, onSave, onCancel
  * answered in prose instead of reporting, the prose is shown and the verdict
  * says it was not reported -- never guessed from the wording.
  */
-function AiSummaryView({ summary, answer }: { summary: AiRunSummary | null; answer: string }) {
+function AiSummaryView({ summary, answer, walk }: {
+  summary: AiRunSummary | null;
+  answer: string;
+  walk: WalkLine[];
+}) {
   return (
     <div className="sd-ai">
       <span className="sd-pane-title">AI ÖZET</span>
+      <WalkView lines={walk} />
       {summary ? (
         <>
           <AiList title="Doğru ilerleyen adımlar" items={summary.succeeded} tone="ok" />
@@ -675,6 +683,40 @@ function AiCacheLine({ cache, onFresh }: { cache: AiRunCache; onFresh: () => voi
         ) : null}
       </div>
       {open ? <pre className="sd-code sd-answer">{cache.log.join("\n")}</pre> : null}
+    </div>
+  );
+}
+
+const WALK_GLYPH: Record<WalkLine["kind"], string> = {
+  ok: "✓",
+  fail: "✗",
+  refused: "⊘",
+  screen: "▸",
+  seen: "·",
+};
+
+/**
+ * "Adım adım": the walk as it happened, read off the tape by the server --
+ * logged in, which screen, what was clicked, what the screen then showed.
+ * Indented by depth, so each action sits under the screen it was done on.
+ */
+function WalkView({ lines }: { lines: WalkLine[] }) {
+  if (lines.length === 0) return null;
+  return (
+    <div className="sd-ai-block">
+      <span className="sd-doc-label">Adım adım</span>
+      <ul className="sd-walk">
+        {lines.map((line, index) => (
+          <li
+            key={index}
+            className={"sd-walk-line is-" + line.kind}
+            style={{ paddingLeft: `calc(${line.depth} * var(--space-4))` }}
+          >
+            <span className="sd-walk-glyph" aria-hidden="true">{WALK_GLYPH[line.kind]}</span>
+            {line.text}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

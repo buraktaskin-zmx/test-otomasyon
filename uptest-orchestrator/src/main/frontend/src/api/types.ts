@@ -709,6 +709,17 @@ export interface ExploreAnswerResponse {
   summary?: AiRunSummary;
   /** "AI ile çalıştır" only: what the run did with the step cache. */
   cache?: AiRunCache;
+  /** "AI ile çalıştır" only: the walk told step by step, built by the server
+   *  FROM THE TAPE (WalkStory) -- what happened, not what the agent claimed. */
+  walk?: WalkLine[];
+}
+
+/** One line of WalkStory. depth 0 = login/menu, 1 = a screen, 2 = what was
+ *  done on it, 3 = what the screen showed after that. */
+export interface WalkLine {
+  depth: number;
+  kind: "ok" | "fail" | "refused" | "screen" | "seen";
+  text: string;
 }
 
 /** AiRunCache.Visit.toJson. hit = every step replayed in code and one model

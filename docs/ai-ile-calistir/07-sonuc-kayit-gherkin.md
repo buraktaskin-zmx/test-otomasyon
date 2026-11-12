@@ -89,6 +89,22 @@ bir ajan yeşil sonuç alıyordu.
 }
 ```
 
+**`walk` — "Adım adım" (WalkStory).** AI ÖZET'in en üstündeki girintili
+anlatım: giriş, menü, her ekran (başlığıyla; "yeni ekran" / "geri dönüldü"),
+o ekranda yapılan her eylem, ve eylemden sonra ekranın gösterdikleri (açılan
+pencere/uyarı, "… giriniz." mesajı, ızgaradaki satır sayısı). **Banttan,
+kodla** üretilir: 0 token, ajanın iddiası değil olanın kendisi. Reddedilen ve
+başarısız eylemler de yazılır (⊘ / ✗). 80 satırda kesilir.
+
+```json
+"walk": [
+  {"depth":0, "kind":"ok",     "text":"Giriş yapıldı (CIF QZ06395288)"},
+  {"depth":1, "kind":"screen", "text":"Firma Fatura İşlemleri"},
+  {"depth":2, "kind":"ok",     "text":"\"Firma Seçimi\" listesinden \"ASAŞ ALÜMİNYUM SAN.\" seçildi"},
+  {"depth":3, "kind":"seen",   "text":"görüldü: ızgarada 2 satır"}
+]
+```
+
 | Durum | HTTP | UI'da |
 |---|---|---|
 | Sonuç bildirildi | 200 + `summary` | AI ÖZET: üç liste (boş olan gizli) + ✓ Geçti / ✗ Geçmedi |
