@@ -24,6 +24,9 @@ class AiRunPreludeTest {
 
     private final List<String> calls = new ArrayList<>();
 
+    /** What a failing call answers; a test about network errors replaces it. */
+    private String errorText = "### Error\nTimeout 5000ms exceeded";
+
     private static final AiRunPrelude.Login NGC = new AiRunPrelude.Login(
             "ngc", "https://x/indexNgc.do", "QZ06395288", "3014", "pw987654", "34020");
 
@@ -42,7 +45,7 @@ class AiRunPreludeTest {
                     String line = name + " " + input;
                     calls.add(line);
                     if (fails.test(line)) {
-                        return "### Error\nTimeout 5000ms exceeded";
+                        return errorText;
                     }
                     return name.equals("browser_snapshot") ? "- heading \"Firma Fatura İşlemleri\" [ref=e9]" : "ok";
                 }
@@ -168,6 +171,53 @@ class AiRunPreludeTest {
         assertThat(text).contains("ekranı açık").contains("Faturayı seç.")
                 .contains(CompactingAdvisor.SCREEN_OPEN + "\nPAGE\n" + CompactingAdvisor.SCREEN_CLOSE)
                 .doesNotContain("pw987654");
+    }
+
+    private static final String RESET =
+            "### Error\nError: browserBackend.callTool: net::ERR_CONNECTION_RESET at https://x/indexNgc.do";
+
+    private long navigations() {
+        return calls.stream().filter(line -> line.startsWith("browser_navigate")).count();
+    }
+
+    @Test
+    @DisplayName("a reset on the way in is tried again — the Mac path drops ~2 in 5 connections")
+    void resetNavigationIsRetried() {
+        errorText = RESET;
+        int[] left = {2};
+        AiRunPrelude.Outcome outcome = run(
+                line -> line.startsWith("browser_navigate") && left[0]-- > 0, NGC, tape());
+        assertThat(outcome.reached()).isEqualTo(AiRunPrelude.Reached.ON_SCREEN);
+        assertThat(navigations()).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("a path that stays down gives up after five attempts, and says it was the connection")
+    void resetEveryTimeGivesUp() {
+        errorText = RESET;
+        AiRunPrelude.Outcome outcome = run(line -> line.startsWith("browser_navigate"), NGC, tape());
+        assertThat(outcome.reached()).isEqualTo(AiRunPrelude.Reached.NOTHING);
+        assertThat(navigations()).isEqualTo(5);
+        assertThat(outcome.note()).contains("BAĞLANTI").contains("5 denemenin hepsinde")
+                .contains("ERR_CONNECTION_RESET").doesNotContain("proxy");
+    }
+
+    @Test
+    @DisplayName("off the VPN is not retried: the name will not resolve on the fifth try either")
+    void unresolvedNameIsNotRetried() {
+        errorText = "### Error\nnet::ERR_NAME_NOT_RESOLVED at https://x/indexNgc.do";
+        AiRunPrelude.Outcome outcome = run(line -> line.startsWith("browser_navigate"), NGC, tape());
+        assertThat(outcome.reached()).isEqualTo(AiRunPrelude.Reached.NOTHING);
+        assertThat(navigations()).isEqualTo(1);
+        assertThat(outcome.note()).contains("VPN");
+    }
+
+    @Test
+    void certificateIsNotRetried() {
+        assertThat(AiRunPrelude.worthRetrying("net::ERR_CERT_AUTHORITY_INVALID")).isFalse();
+        assertThat(AiRunPrelude.worthRetrying("net::ERR_CONNECTION_RESET")).isTrue();
+        assertThat(AiRunPrelude.diagnose("net::ERR_CERT_AUTHORITY_INVALID at x"))
+                .contains("Sertifika").contains("tekrar denemek düzeltmez");
     }
 
     /** ProductPanel.aiRun's text, character for character. */

@@ -72,6 +72,36 @@ final class AiRunPrelude {
      */
     private static final int FIELD_ATTEMPTS = 6;
 
+    /**
+     * How many times the first navigation is attempted.
+     *
+     * <p><b>Measured 12.11.2026, Mac, VPN on</b>, in the same minute an
+     * "AI ile çalıştır" was reset on its first navigation: curl to the same
+     * URL, five times — reset, 302, 302, reset, 302. curl is not a browser, so
+     * the path itself drops some connections, roughly two in five. At that
+     * rate one attempt loses ~40% of runs and five lose ~1%. The login fields
+     * already had six attempts and the menu three; the one step that touches
+     * the network had one.
+     *
+     * <p>Only the first navigation is covered. A later request that opens a
+     * new connection can be reset too and will surface as a missing login box.
+     */
+    private static final int NAVIGATE_ATTEMPTS = 5;
+
+    /**
+     * Network failures worth trying again, and the ones that are not.
+     *
+     * A connection that was reset, closed, aborted, timed out or answered
+     * empty may well be there on the next attempt. A name that does not
+     * resolve (off the VPN) or a certificate the browser refuses will be
+     * refused every time just as firmly, and retrying those only delays a
+     * diagnosis that was already right.
+     */
+    private static final List<String> WORTH_RETRYING = List.of(
+            "ERR_CONNECTION_RESET", "ERR_CONNECTION_CLOSED", "ERR_CONNECTION_ABORTED",
+            "ERR_CONNECTION_FAILED", "ERR_EMPTY_RESPONSE", "ERR_SOCKET_NOT_CONNECTED",
+            "ERR_TIMED_OUT", "ERR_NETWORK_CHANGED");
+
     private final Map<String, ToolCallback> tools;
     private final ActionTape tape;
     private final Duration settle;
@@ -100,7 +130,7 @@ final class AiRunPrelude {
         loginArgs.put("cif", login.cif());
         loginArgs.put("userId", login.userId());
         try {
-            call("browser_navigate", "{\"url\":" + json(login.url()) + "}");
+            navigate(login.url());
             typeWhenReady(fields.get(0), fields.get(1));
             for (int i = 2; i < fields.size(); i += 2) {
                 type(fields.get(i), fields.get(i + 1));
@@ -231,10 +261,19 @@ final class AiRunPrelude {
                     + " (ERR_NAME_NOT_RESOLVED). Kurum ağına / VPN'e bağlı değilsiniz."
                     + " Kodda yapılacak bir şey yok.";
         }
-        if (raw.contains("ERR_CONNECTION") || raw.contains("ERR_TIMED_OUT")
-                || raw.contains("ERR_CERT") || raw.contains("ERR_PROXY")) {
-            return "giriş yapılamadı — AĞ: adres çözüldü ama bağlantı kurulamadı ("
-                    + marker(raw) + "). Kurum ağı, proxy ya da sertifika denetimi engelliyor.";
+        if (raw.contains("ERR_CERT") || raw.contains("ERR_PROXY")) {
+            return "giriş yapılamadı — AĞ: adres çözüldü ama bağlantı reddedildi ("
+                    + marker(raw) + "). Sertifika ya da proxy denetimi engelliyor;"
+                    + " tekrar denemek düzeltmez.";
+        }
+        if (raw.contains("ERR_CONNECTION") || raw.contains("ERR_TIMED_OUT")) {
+            // What happened, not a guessed cause: this used to say "kurum ağı,
+            // proxy ya da sertifika denetimi" and was read as a proxy fault.
+            return "giriş yapılamadı — BAĞLANTI: adrese ulaşıldı ama bağlantı " + NAVIGATE_ATTEMPTS
+                    + " denemenin hepsinde kesildi (" + marker(raw) + "). Tarayıcı sorunu değil:"
+                    + " aynı anda terminalde curl ile aynı adres denenirse o da kesiliyor"
+                    + " (12.11.2026, Mac). Birkaç dakika sonra tekrar deneyin; sürerse ağ ekibine"
+                    + " saatiyle bildirin.";
         }
         if (raw.contains("does not match any elements") || raw.contains("Timeout")) {
             return "giriş yapılamadı — SAYFA: adres açıldı ama giriş kutusu gelmedi."
@@ -310,6 +349,40 @@ final class AiRunPrelude {
         } catch (RuntimeException absent) {
             return false;
         }
+    }
+
+    /**
+     * The first navigation, tried again while the failure is a transient one.
+     *
+     * Each refusal is logged with its attempt number, so a report says which
+     * of two things happened: "reset once, through on the second" (a flaky
+     * path the walk survived) or "every attempt reset" (the path is down).
+     */
+    private void navigate(String url) {
+        String args = "{\"url\":" + json(url) + "}";
+        for (int attempt = 1; ; attempt++) {
+            try {
+                call("browser_navigate", args);
+                if (attempt > 1) {
+                    System.out.println("[uptest] prelude: adres " + attempt
+                            + ". denemede acildi — baglanti kararsiz");
+                }
+                return;
+            } catch (RuntimeException failed) {
+                if (!worthRetrying(failed.getMessage()) || attempt >= NAVIGATE_ATTEMPTS) {
+                    throw failed;
+                }
+                System.out.println("[uptest] prelude: adres acilamadi (" + attempt + "/"
+                        + NAVIGATE_ATTEMPTS + ") — " + marker(String.valueOf(failed.getMessage()))
+                        + ", tekrar deneniyor");
+                pause();
+            }
+        }
+    }
+
+    static boolean worthRetrying(String error) {
+        String raw = error == null ? "" : error;
+        return WORTH_RETRYING.stream().anyMatch(raw::contains);
     }
 
     private String call(String tool, String args) {
