@@ -9,7 +9,7 @@ import { SEGMENT_WORD } from "./parts";
 /** Rows per page. One screenful, so a card never pushes the next one away. */
 const RUNS_PER_PAGE = 8;
 
-/* Genel Bakış — docs/DASHBOARD.md §4. */
+/* Genel Bakış — docs/dashboard/README.md §4. */
 export function Overview({
   data,
   onOpenScreen,

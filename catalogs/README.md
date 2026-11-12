@@ -3,21 +3,25 @@
 How to make an LLM generate one `.feature` file. Same inputs, same prompt,
 every time — so runs are repeatable and reviewable.
 
-> **This describes the recipe by hand. The pipeline is now code.**
-> `POST /api/v1/scenarios/suggest` does all of it: `PromptBuilder` assembles the
-> system and user prompts, `SuggestService` calls the model, `ScenarioValidator`
-> checks the draft and feeds its errors back for one repair turn. Read this file
-> to understand WHY the prompt is shaped this way, or to reproduce a generation
-> outside the platform — but **`PromptBuilder` is the authority on the actual
-> prompt text**, and the two will drift. When they disagree, the code is right.
-
-> **For MANY scenarios from one catalog**, read
-> [`docs/COKLU-SENARYO-AKISI.md`](../docs/COKLU-SENARYO-AKISI.md) instead.
-> `POST /api/v1/scenarios/suggest-many` does not call the model once with "write
-> five" — `VariationPlanner` computes N data combinations in Java from this
-> catalog's own option lists and constraint keys, and each one becomes its own
-> single-scenario generation. That document also explains where a catalog comes
-> from in the first place (the MCP agent and the DOM scan) and why both are kept.
+> **This describes the recipe by hand, and the endpoint it was written for is
+> gone.** `POST /api/v1/scenarios/suggest` and `/suggest-many` (with
+> `PromptBuilder.user` and `VariationPlanner`) were removed on 2026-11-10.
+> Scenarios are generated today in two places, both still built on
+> `PromptBuilder.system(vocabulary)` and both validated and repaired by
+> `ScenarioValidator` through `SuggestService`:
+> - **Senaryo Üret** — a drawn flow read by a vision model, planned in Turkish
+>   prose, then one Gherkin call per scenario (`orchestrator/flow/`,
+>   `FlowPrompts`, `FlowSuggestService`);
+> - **Gherkin oluştur** — from a finished agent walk's tape
+>   (`PromptBuilder.fromWalk`, `TapeGherkinController`; see
+>   `docs/ai-ile-calistir/07-sonuc-kayit-gherkin.md`).
+>
+> Read this file to understand WHY the prompt is shaped this way — the inputs,
+> the rules and the checklist below still hold — but **the code is the
+> authority on the actual prompt text**, and the two will drift. When they
+> disagree, the code is right. Where a catalog comes from in the first place
+> (the MCP agent and the DOM scan) is in the root `CLAUDE.md`, "Where catalogs
+> come from".
 
 ## Inputs (three, always)
 

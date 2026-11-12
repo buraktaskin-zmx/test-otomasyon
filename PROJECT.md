@@ -198,16 +198,16 @@ column header too.
   back to the model for one repair turn, and returns a still-invalid draft
   anyway together with its errors — a nearly-right scenario an analyst can fix
   beats an error page.
-- **Batch generation, with the variation computed rather than requested.** One
-  screen, N scenarios, each exercising a different combination of what that
-  screen offers. The differences are decided in Java (`VariationPlanner`) and
-  handed to the model as literal values, because the generation temperature is
-  deliberately low — the same request must give the same scenario, which makes
-  "write five different ones" return five near-identical files. Computing it also
-  makes the planner answerable: it resolves conditionally-shown fields correctly,
-  never writes to a field the application owns, and reports its own ceiling when
-  a screen cannot produce as many genuinely different tests as were asked for.
-  Each draft is its own document, validated and repaired on its own.
+- **Batch generation — delivered, then removed on 2026-11-10.** One screen, N
+  scenarios, the differences computed in Java (`VariationPlanner`) because a
+  low-temperature model asked for "five different ones" returns five
+  near-identical files. It left with the Chat and "AI ile Senaryo Üret" panels.
+  What replaced it: **Senaryo Üret** — a drawn flow read by a vision model,
+  planned in Turkish prose an analyst edits, then one Gherkin call per scenario,
+  each its own document, validated and repaired on its own — and **AI ile
+  çalıştır + Gherkin oluştur**, which runs a saved scenario with an agent and
+  turns the walk into steps (`docs/ai-ile-calistir/`). The lesson the planner
+  encoded still stands: variety asked of a deterministic model is not variety.
 - **A scenario library the analysts own.** The Kayıtlı Senaryolar tree — ana
   menü, screens and every scenario — lives in the orchestrator's database, so a
   save is a save rather than an edit to a file in the checkout that collides
@@ -262,7 +262,8 @@ See Roadmap.
    CLOB, never `varchar(255)`) but still not for `TEST_RUN`. What remains:
    `SCENARIO_DRAFT` and `DISCOVERY_RUN` are designed but unwritten, so a
    catalog discovery that finishes after a restart is still unrecoverable and
-   the Çoklu Üret drafts still live only in the browser tab; and the run-history
+   the drafts Senaryo Üret generates live only in the browser tab until saved;
+   and the run-history
    test classes exist but have never been run.
    **The database stopped being only a convenience** when the scenarios moved
    into it: a scenario written in the UI exists nowhere else until somebody
@@ -273,9 +274,12 @@ See Roadmap.
    nothing prunes them.
 3. **MCP agent robustness.** The agent is useful but not yet reliable: it can
    retry a failing tool call verbatim instead of taking a fresh snapshot, and
-   its guards cap total calls and repeat navigations but not repeated identical
-   failures. Every fix so far has followed the same shape — a prompt rule only
-   held once it became code.
+   its guards cap total calls and repeat navigations. On "AI ile çalıştır" a
+   repeated identical failure, a stuck walk, a screen that never loaded, a
+   reload and an agent's false "done" are now refused or corrected in code
+   (`docs/ai-ile-calistir/`); Ekran Keşfi still has only the caps. Every fix so
+   far has followed the same shape — a prompt rule only held once it became
+   code.
 4. **Catalog completeness.** `shown_when` is still hand-written, and the agent
    can miss rows of a confirmation table, which weakens the `verifiable` flags
    a scenario depends on.
@@ -290,11 +294,12 @@ See Roadmap.
   database (`TEST_RUN`, `TEST_RUN_STEP`, `MAIN_MENU`, `SCREEN`, `SCENARIO`,
   orchestrator-side H2). Still in memory and lost on restart: catalog discovery
   runs — so a discovery that finishes after a restart cannot be recovered and
-  its YAML must be walked again — and the generated drafts of Çoklu Üret, which
-  live only in the browser tab. The executor keeps nothing by design.
+  its YAML must be walked again — and the drafts Senaryo Üret generates, which
+  live only in the browser tab until they are saved. The executor keeps nothing by design.
 - **Nothing backs up the scenario library.** "Dosyaya aktar" + commit is the
   only route out of the database and nothing prompts for it.
-- **The MCP agent can loop on a failed tool call.** Seen on the NGC login page,
+- **The MCP agent can loop on a failed tool call** (on Ekran Keşfi; "AI ile
+  çalıştır" refuses the identical repeat since 2026-11-12). Seen on the NGC login page,
   where two `Giriş` links match one selector: the model retried the same guess
   dozens of times instead of re-reading the page, then had its recovery
   navigation refused by the restart guard and returned nothing.

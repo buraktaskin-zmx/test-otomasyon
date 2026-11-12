@@ -39,7 +39,8 @@ Two applications on one Linux server, one Docker network.
   suggestions, validates Gherkin, dispatches runs to a free executor, stores
   and serves results. **Never runs a test itself.**
 - **executor** — this code. Long-lived Spring Boot service wrapping Cucumber
-  and Playwright. Takes one run at a time. Deployed as three replicas of the
+  and Playwright. Takes `simultaneouslyRun` runs at a time (1 by rule, 4 since
+  2026-11-07 as an experiment — see below). Deployed as three replicas of the
   same image.
 
 ### Ports and exposure
@@ -152,8 +153,6 @@ Do not assume module boundaries that are not there.
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/api/v1/scenarios/suggest` | LLM drafts Gherkin from catalog + intent, validates, repairs once |
-| POST | `/api/v1/scenarios/suggest-many` | N drafts for one screen, each a different data combination; sequential, minutes — walked end to end in [`docs/COKLU-SENARYO-AKISI.md`](../../../../../docs/COKLU-SENARYO-AKISI.md) |
 | POST | `/api/v1/scenarios/validate` | 200 always; body says valid + per-line errors |
 | GET | `/api/v1/scenarios/catalogs` | which screens the model can be asked about |
 | POST | `/api/v1/scenarios/catalogs` | store a catalog under `catalogs/<app>/<flow>.yaml` |
@@ -170,20 +169,76 @@ Do not assume module boundaries that are not there.
 | GET | `/api/v1/discovery/{id}` | the draft YAML once that run finished |
 | GET | `/api/v1/llm/hello` | vLLM reachability check, no catalog, no validation |
 
+`POST /api/v1/scenarios/suggest` and `/suggest-many` were removed on
+2026-11-10 with the Chat and "AI ile Senaryo Üret" panels. Scenarios are now
+generated from a drawn flow (Senaryo Üret, below) or from an agent walk
+(`/explore/gherkin`).
+
+**Kayıtlı Senaryolar** — the scenario library in H2 (`ProductController`):
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/v1/products` | every product, enough for a picker (rules not included) |
+| POST | `/api/v1/products` | a new ana menü (product) |
+| GET | `/api/v1/products/{app}/{product}` | one product in full: its rules, its free text, what it is missing |
+| POST | `/api/v1/products/{app}/{product}/screens` | add a screen |
+| GET | `/api/v1/products/{app}/{product}/scenarios` | the scenario table of a product |
+| GET | `/api/v1/products/{app}/{product}/scenario?path=` | one scenario: prose, Gherkin, staleness (`SourceSnapshot`) |
+| PUT | `/api/v1/products/{app}/{product}/scenario` | save one scenario |
+| DELETE | `/api/v1/products/{app}/{product}/scenario?path=` | delete for good (the database is the only copy) |
+| POST | `/api/v1/products/{app}/{product}/scenarios` | "+" beside a screen: a new scenario there |
+| POST | `/api/v1/products/{app}/{product}/scenarios/bulk` | save N generated drafts; refusals reported by index |
+| POST | `/api/v1/products/{app}/{product}/scenarios/arrange` | write a group's drag-and-drop order (`sort_order`) |
+| POST | `/api/v1/products/{app}/{product}/scenario/move` | "Taşı": move a scenario to another screen of the same app |
+| POST | `/api/v1/products/{app}/{product}/headings` | "+ Başlık": a heading on one screen |
+| POST | `/api/v1/products/{app}/{product}/scenario/heading` | put a scenario under a heading |
+| POST | `/api/v1/products/export` | "Dosyaya aktar": write the library back to files, never deleting |
+
+**Senaryo Üret** — a drawn flow read by a vision model (`FlowController`):
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET / PUT | `/api/v1/products/{app}/{product}/flow` | the drawn flow (`flow.json`) |
+| GET / PUT / DELETE | `/api/v1/products/{app}/{product}/flow/screens/{nodeId}` | one screen's screenshot |
+| POST | `/api/v1/products/{app}/{product}/flow/read` | re-read screens with the vision model (stale drafts only; planning reads what it misses) |
+| POST / PUT | `/api/v1/products/{app}/{product}/flow/plan` | the planning call (scenarios in Turkish prose) / save the edited plan |
+| POST | `/api/v1/products/{app}/{product}/flow/suggest` | write every planned scenario as Gherkin; CIF required |
+
+**Dashboard, Token Takibi, test users:**
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/v1/dashboard?period=` | overview — every number defined in `docs/dashboard/README.md` |
+| GET | `/api/v1/dashboard/screens/{app}/{product}/{flow}` | one screen's detail |
+| GET | `/api/v1/dashboard/scenarios/{app}/{product}?path=` | one scenario's run history |
+| GET | `/api/v1/ai-traces?period=` | AI sessions — see `docs/token-takibi/README.md` |
+| GET | `/api/v1/ai-traces/{id}` | one session: turns and tool calls |
+| GET | `/api/v1/ai-traces/{id}/turns/{seq}/messages` | one turn's full input, message by message |
+| GET | `/api/v1/ai-traces/{id}/turns/{seq}/transcript` | the same turn as one document |
+| GET | `/api/v1/ai-traces/{id}/content/{sha}` | one stored text |
+| GET / POST | `/api/v1/users` | test users (CIF, user id) |
+| DELETE | `/api/v1/users/{id}` | remove a test user |
+
 `/api/v1/discovery` is the one catalog path that **consumes an executor slot**,
 because it is a real run. It can therefore answer 503 for the same reason a
 scenario can, and it shows up in run history.
 
-The MCP agent adds three more, and they are **conditional**:
+The MCP agent adds four more, and they are **conditional**:
 
 | Method | Path | Purpose |
 |---|---|---|
 | POST | `/api/v1/explore` | walk a flow, answer in prose |
 | POST | `/api/v1/explore/catalog` | the same walk, answered as a catalog + `problems` |
 | GET | `/api/v1/explore/tools` | what the MCP server offered, with argument schemas |
+| POST | `/api/v1/explore/gherkin` | Gherkin from a finished walk's tape ("Gherkin oluştur") |
 
-`ExploreController` is `@ConditionalOnProperty("uptest.explore.enabled")`.
-Without `uptest.explore.enabled=true` these three are **not registered** and
+`POST /api/v1/explore` with `source: "ai-run"` is Kayıtlı Senaryolar' "AI ile
+çalıştır": a different prompt, a narrower toolbox and a structured result. The
+whole path is documented in `docs/ai-ile-calistir/`.
+
+`ExploreController` and `TapeGherkinController` are
+`@ConditionalOnProperty("uptest.explore.enabled")`.
+Without `uptest.explore.enabled=true` these four are **not registered** and
 every call answers a bare 404 — which looks like a wrong path or a broken model
 and is neither. It cost a round of debugging once; check the property first.
 
@@ -573,7 +628,8 @@ export/import.
 ## Scenario lifecycle (orchestrator side, for context)
 
 ```
-1. POST /api/v1/scenarios/suggest   → LLM drafts Gherkin from screen + intent
+1. POST /api/v1/products/{app}/{product}/flow/suggest  → LLM drafts Gherkin (Senaryo Üret)
+   or POST /api/v1/explore/gherkin                     → from an agent walk's tape
 2. analyst edits in the browser
 3. POST /api/v1/scenarios/validate  → synchronous, ~50 ms, no browser
 4. POST /api/v1/runs                → 202, dispatched to a free executor
@@ -749,8 +805,9 @@ Also: if an image pull is interrupted by a full disk, layers can be left
   `CatalogDiscoveryService.runs` is still a map, so a catalog discovery that
   finishes after a restart is unrecoverable and its four minutes of browser time
   must be spent again. `SCENARIO_DRAFT` — a GENERATED draft, which is a
-  different thing from a saved scenario — is likewise unwritten: the Çoklu Üret
-  drafts still live only in the browser tab. Both are designed; see "State, and
+  different thing from a saved scenario — is likewise unwritten: the drafts
+  Senaryo Üret generates (shown in `workspace/multi/`) live only in the browser
+  tab until they are saved. Both are designed; see "State, and
   where the database is".
 - Backup for the scenario library. "Dosyaya aktar" + commit is the manual
   answer today and nothing enforces it being done.

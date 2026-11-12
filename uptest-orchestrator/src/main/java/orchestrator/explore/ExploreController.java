@@ -524,7 +524,7 @@ public class ExploreController {
      * "AI ile çalıştır": the login and the menu in code, then the agent with a
      * short prompt, a narrow toolbox, the page after every action and only the
      * latest page in its history. Measured before this: 52 turns, 1.48 million
-     * input tokens for one scenario; see docs/TOKEN-TAKIBI.md.
+     * input tokens for one scenario; see docs/ai-ile-calistir/09-tarihce-ve-dersler.md.
      *
      * Called inside explore()'s try, so the tape is finished and the browser
      * closed on every path out of here, the prelude's included.

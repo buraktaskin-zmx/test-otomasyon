@@ -10,7 +10,7 @@ import { TurnMessages } from "./TurnMessages";
 
 /*
   One session, in full: what it cost, where the prompt went, and every turn
-  with the tool calls it asked for. See docs/TOKEN-TAKIBI.md.
+  with the tool calls it asked for. See docs/token-takibi/README.md.
 */
 export function TokenSession({ data, onOpenSession }: {
   data: AiTraceDetail;

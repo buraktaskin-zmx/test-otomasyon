@@ -3,6 +3,12 @@
 **Tarih:** 12.11.2026 · **Durum:** ÇÖZÜLDÜ — Mac'te MCP `0.0.82`'ye sabitlendi,
 AI ile çalıştır giriş yapıyor. Mekanizma tam olarak bilinmiyor (aşağıda).
 
+> **Aynı belirtiyle ikinci, AYRI bir sorun var (öğleden sonra):** 0.0.82 ile de
+> ara ara `ERR_CONNECTION_RESET` geliyor ve birkaç dakika sonra geçiyor. Bu
+> MCP değil, **ağ yolu** — aynı dakikada curl da kesildi. Bkz.
+> [Aralıklı kesilme: ağ yolu](#aralıklı-kesilme-ağ-yolu-öğleden-sonra-mcp-0082-ile).
+> İkisini ayırmanın yolu kural 8.
+
 ## Kısa özet
 
 - Belirti: AI ile çalıştır girişin ilk adımında `net::ERR_CONNECTION_RESET` alıyordu;
@@ -90,6 +96,16 @@ açılışta başlıyor.
 7. **VPN düşmesini tanı:** `ERR_NAME_NOT_RESOLVED` ile `/tokenize ... I/O error`
    (ya da sağlık kontrolünde `OpenAIIoException`) **aynı anda** görünüyorsa
    sorun MCP değil, Mac o an VPN'den düşmüştür. O denemeyi sayma.
+8. **Reset gelince tarayıcıyı suçlamadan önce AYNI DAKİKADA curl at.**
+   `ERR_CONNECTION_RESET` iki farklı şeyin belirtisi olabiliyor. Hata gelir
+   gelmez terminalde:
+   ```bash
+   for i in 1 2 3 4 5; do curl -sS -o /dev/null -w "%{http_code} %{time_total}s\n" https://ifctest.yapikredi.com.tr/ngc/indexNgc.do; sleep 2; done
+   ```
+   curl da `Connection reset by peer` alıyorsa sorun **ağ yolu**: tarayıcı,
+   MCP sürümü ya da Edge'e geçmek çözmez. curl hep `302` dönerken yalnız AI
+   koşusu kesiliyorsa sorun **MCP / tarayıcı tarafı**: sabahki 0.0.85 vakası.
+   Birkaç dakika sonra yapılan curl bir şey söylemez; kesilme geçici.
 
 ## Makineler
 
@@ -137,14 +153,81 @@ Hangi kodun koştuğu stack trace satır numaralarından okundu: `40a2a7f`'te
 | `--allowed-origins` | Playwright 1.66 kaynağında izin dışı istek `route.abort("blockedbyclient")` ile kesiliyor → `ERR_BLOCKED_BY_CLIENT` olur, `ERR_CONNECTION_RESET` değil. |
 | "Alfa Playwright sorunlu" | VDI de alfa (1.64) kullanıyor ve çalışıyor. |
 
+## Aralıklı kesilme: ağ yolu (öğleden sonra, MCP 0.0.82 ile)
+
+**Belirti:** MCP `0.0.82` ile de AI ile çalıştır ara ara girişin ilk adımında
+düşüyor. Kullanıcıya göre birkaç dakika sonra kendiliğinden geçiyor, VDI'da hiç
+olmuyor. Orchestrator konsolu, 12:54:
+
+```
+Error: browserBackend.callTool: net::ERR_CONNECTION_RESET at https://ifctest.yapikredi.com.tr/ngc/indexNgc.do
+[uptest] prelude: prelude_login olmadi (1784 ms)
+... Giriş yapılamadı, ajan başlatılmadı: ... (ERR_CONNECTION_RESET). Kurum ağı, proxy ya da sertifika denetimi engelliyor.
+```
+
+VPN o an açıktı: bir dakika önce `ai-trace: /tokenize calisiyor (https://vllm-...)`
+geçmiş, `ERR_NAME_NOT_RESOLVED` yok (kural 7).
+
+**Ölçüm (kural 8), hatanın geldiği dakikada, aynı Mac'ten:**
+
+```
+curl: (56) Recv failure: Connection reset by peer
+000 0.213709s
+302 0.081244s
+302 0.125587s
+curl: (56) Recv failure: Connection reset by peer
+000 0.233179s
+302 0.135529s
+```
+
+**5'te 2 kesildi.** curl bir tarayıcı değil, Playwright ya da MCP ile ilgisi
+yok. Yani yol, Mac'ten `ifctest`'e giden bağlantıların bir kısmını kesiyor.
+Kesilme bağlantı başına ve hızlı (~0,2 sn, "Recv failure"). Bu, sabahki "curl
+bir kez reset aldı" gözleminin ölçülmüş hâli.
+
+**Kullanıcının tarayıcısı ve deterministik koşu neden "açılıyor":** tek bir
+açılışın şansı ~5'te 3. Bir tarayıcı bağlantıyı kurduktan sonra açık tutup
+yeniden kullandığı için sonraki istekler kesilmeyi görmüyor. AI koşusu ise ilk
+açılışta kesilince ajan başlatılmadan bitiyordu. İlk yarı ölçüme uyuyor;
+tarayıcının bağlantıyı tutması kısmı tahmin.
+
+**VDI neden etkilenmiyor:** banka ağının içinde, bu yoldan geçmiyor. Mac VPN'den
+bağlanıyor. Bu yapısal bir fark, yolun HANGİ noktasının kestiği bilinmiyor.
+
+**"Proxy" kelimesi kanıt değildi.** Konsoldaki "Kurum ağı, proxy ya da sertifika
+denetimi engelliyor" cümlesini tarayıcı değil bizim `AiRunPrelude.diagnose`
+yazıyordu; her `ERR_CONNECTION_*` için aynı tahmin. Kullanıcıyı "proxy hatası"
+ve "Edge mi indirsem" sorusuna o götürdü. `bbe38c4` ile kaldırıldı.
+
+**Yapılan (`bbe38c4`):** ilk adres geçici bir ağ hatasında **5 kez** denenir
+(`AiRunPrelude.navigate`, `NAVIGATE_ATTEMPTS`). ~%40 kesilmeyle bir deneme
+koşuların ~%40'ını kaybederken beş deneme ~%1'ini kaybeder (5 örnekten hesap).
+Tekrar denenmeyenler: `ERR_NAME_NOT_RESOLVED` (VPN kapalı), sertifika ve proxy
+reddi. Konsolda:
+
+| Satır | Anlamı |
+|---|---|
+| `adres acilamadi (1/5) — ERR_CONNECTION_RESET, tekrar deneniyor` → `adres 2. denemede acildi — baglanti kararsiz` | Kesildi, yeniden deneme kurtardı |
+| `bağlantı 5 denemenin hepsinde kesildi` | Yol o an tamamen kapalı; kod kapatamaz, saatiyle ağ ekibine |
+
+**Sınır:** yalnız ilk açılış korunuyor. Giriş sırasında açılan yeni bir
+bağlantı da kesilirse koşu "giriş kutusu gelmedi" (SAYFA) ile düşebilir.
+Mac koşusuyla henüz doğrulanmadı.
+
+**Asıl çözüm ağ ekibinde.** Onlara giden bilgi: Mac, VPN açık,
+`ifctest.yapikredi.com.tr`'ye curl ile 5 bağlantının 2'si `Connection reset by
+peer`, ~0,2 sn'de, 12.11.2026 öğleden sonra; VDI'dan sorun yok.
+
 ## Açık kalanlar
 
 - **Mekanizma bilinmiyor.** 1.66-alpha'nın aynı binary'ye neyi farklı verdiği
   bulunmadı. İki sürümün Chromium varsayılan bayrakları karşılaştırıldı (paketlenmiş
   koddan, sezgisel); ağla ilgili birkaç fark var ama hiçbiri bir TCP reset'ini
   açıklamıyor, o yüzden sebep olarak yazılmadı.
-- curl'ün de bir kez reset alması, Mac'ten `ifctest`'e giden yolun tamamen
-  kararlı olmadığını gösteriyor olabilir. Tek örnek; ölçülmedi.
+- **Mac → `ifctest` yolu bağlantı kesiyor (ölçüldü, yukarıda).** Yolun hangi
+  noktasının kestiği bilinmiyor; ağ ekibine bildirildi mi, cevabı ne oldu,
+  buraya yazılmalı. Bu yüzden sabahki 0.0.85 denemelerindeki tek tük
+  başarı/başarısızlık sayıları da biraz bu gürültüyü taşıyor olabilir.
 - `0.0.82` kendi tarayıcısıyla (`chromium-1246`, `--executable-path` olmadan)
   denenmedi.
 
@@ -211,9 +294,11 @@ git status --short .mcp.json; grep -n "executable-path\|--browser" .mcp.json
 |---|---|---|
 | `40a2a7f` | Sayfayı düz listeye çeviren `LeanPage`, birkaç adımı tek turda yapan `do_steps` (`StepRunner`), `browser_fill_form` kaldırıldı, sayfa sınırı 6000 → 2500, ana menü sayfadan atılıyordu | **geri alındı** |
 | `f713b14` | `40a2a7f`'in geri alınması — ağaç `6163fea` ile birebir aynı | master'da |
-| `stash@{1}` (push edilmedi) | Girişte adresi geçici hatalarda 3 kez deneme; hata mesajının sebep tahmin etmemesi; `UPTEST_MCP_CONFIG` ile makineye özel `.mcp.local.json` | **bekliyor** (`stash@{0}` başka bir şey: geri alınan Token Takibi son-koşu/Geçmiş arayüzü) |
+| `stash@{1}` (push edilmedi) | Girişte adresi geçici hatalarda 3 kez deneme; hata mesajının sebep tahmin etmemesi; `UPTEST_MCP_CONFIG` ile makineye özel `.mcp.local.json` | yeniden deneme kısmı **`bbe38c4`'e alındı** (5 deneme, mesaj yeniden yazıldı — stash'teki mesaj suçu tarayıcı kurulumuna atıyordu, curl ölçümü bunu çürüttü); `UPTEST_MCP_CONFIG` ve `.gitignore` kısmı hâlâ **bekliyor**. `stash@{0}` başka bir şey: geri alınan Token Takibi son-koşu/Geçmiş arayüzü |
 | `82008f1` | Dropdown araması: `browser_press_sequentially` ajana açıldı; hatalı `target`'a ipucu (`BudgetedTool.targetHint`); `RUN_SYSTEM`'e iki cümle; bu belge | master'da, birim testli; **VDI/Mac koşusuyla doğrulanmadı** |
-| `0369853` | Token Takibi: bir turun tam girdisi ve çıktısı okunur (`TurnTranscript`, "tek metin" görünümü) — ajana giden hiçbir şey değişmedi, yalnız gösterim | master'da; `docs/TOKEN-TAKIBI.md` §3b |
+| `0369853` | Token Takibi: bir turun tam girdisi ve çıktısı okunur (`TurnTranscript`, "tek metin" görünümü) — ajana giden hiçbir şey değişmedi, yalnız gösterim | master'da; `docs/token-takibi/README.md` §3b |
+| `eb64738` | Ekran koddan açıldıysa arayüzün "… ekranına git." satırı ajana gitmez (`AiRunPrelude.withoutGoTo`); aynı başarısız çağrı arada sayfa değişmeden tekrar edilemez (`AiRunPolicy.outcome`, `BudgetedTool.SAME_FAILURE`); `RESULT_RULES`'a "son adım görevin sonu, tarayıcıyı kapatma" | master'da, birim testli; **Mac koşusuyla doğrulanmadı** |
+| `bbe38c4` | İlk adres geçici ağ hatasında 5 kez denenir; `diagnose` "proxy" tahmin etmiyor (yukarıda, aralıklı kesilme) | master'da, birim testli; **Mac koşusuyla doğrulanmadı** |
 
 **Dropdown araması (10:44 koşusu, MCP 0.0.82 ile — giriş artık çalışıyor):**
 Firma Seçimi açıldı, ama sayfa 20.192 karakterdi ve sınır 6.000'i tutuyordu
@@ -241,6 +326,11 @@ Aynı koşudan kalan ölçüm: 9 araç tanımı tur başına **2.673 karakter**
 (~750 token) — tanımlar artık baş kalem değil.
 
 ## Bu sorunu çözerken yapılan yanlışlar — tekrarlanmasın
+
+- **Kendi hata mesajımız yanlış teşhise yol açtı.** `diagnose`'un "Kurum ağı,
+  proxy ya da sertifika denetimi engelliyor" cümlesi bir tahmindi; okuyan
+  "proxy hatası" anladı ve tarayıcı değiştirmeyi düşündü. Bir hata mesajı ne
+  OLDUĞUNU söyler, sebebi ölçüm söyler.
 
 - **Kanıtsız sebep yazıldı, üç kez.** "Ağ Chromium'u reddediyor", "kod menüyü
   açamadı", "sebep Chromium 1254, kanıtlandı" — üçü de konsol satırı görülmeden

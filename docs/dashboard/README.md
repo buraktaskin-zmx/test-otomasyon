@@ -66,7 +66,7 @@ anlama gelmesin diye burada bir kez yazılır.
 | E2 | **CIF ve test kullanıcısı.** `Redactor` koşu metninden siliyor, ayrı bir sütun yok. | CIF bazında hiçbir şey gösterilemez. | 2 |
 | E3 | **Koşunun nereden başladığı:** tekli (Çalıştır / Git) mi, çoklu kuyruk mu? | "Son kuyruklar", "kuyruk başarısı" gösterilemez. | 2 |
 | E4 | **Kuyruk kimliği.** Aynı Çalıştır'a basılışla başlayan koşuları bağlayan bir şey yok. | Bir kuyruğun sonucu toplu gösterilemez. | 2 |
-| E5 | **AI üretim metrikleri:** taslak sayısı, doğrulamayı geçen, onarım turu, token. **Token artık kalıcı** (11.11.2026): her AI çağrısı tur ve tool ayrıntısıyla `AI_SESSION` / `AI_TURN` / `AI_TOOL_CALL`'a yazılıyor ve ayrı **Token Takibi** panelinde gösteriliyor — `TOKEN-TAKIBI.md`. Taslak sayıları için `SCENARIO_DRAFT` hâlâ yazılmadı. | "AI üretim hattı" kartı. | 3 |
+| E5 | **AI üretim metrikleri:** taslak sayısı, doğrulamayı geçen, onarım turu, token. **Token artık kalıcı** (11.11.2026): her AI çağrısı tur ve tool ayrıntısıyla `AI_SESSION` / `AI_TURN` / `AI_TOOL_CALL`'a yazılıyor ve ayrı **Token Takibi** panelinde gösteriliyor — `docs/token-takibi/README.md`. Taslak sayıları için `SCENARIO_DRAFT` hâlâ yazılmadı. | "AI üretim hattı" kartı. | 3 |
 
 ---
 
@@ -187,7 +187,7 @@ henüz kaydedilmiyor."
 
 **Token kısmı ayrı panelde:** her AI çağrısının tur, token ve tool ayrıntısı
 11.11.2026'dan beri kaydediliyor ve sol raydaki **Token Takibi** panelinde
-gösteriliyor (`TOKEN-TAKIBI.md`). Bu kart taslak sayılarını bekliyor.
+gösteriliyor (`docs/token-takibi/README.md`). Bu kart taslak sayılarını bekliyor.
 
 ---
 

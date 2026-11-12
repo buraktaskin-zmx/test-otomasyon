@@ -42,11 +42,12 @@ generator as text and is checked by nobody:
 | `shown_when` | parsed, **not** enforced — see below | reads |
 | `max_length`, `min`, `max`, `numeric` | parsed, **not** enforced | reads |
 
-The last two rows are parsed by `CatalogModel` but checked by nobody: they exist
-for `VariationPlanner`, which uses them to choose a different value for each
-scenario of a batch. So a wrong `max_length` does not fail validation — it makes
-the planner pick a value the screen truncates, and the form then validates a
-number nobody chose.
+The last two rows are parsed by `CatalogModel` but checked by nobody. They were
+written for the batch generator (`VariationPlanner`), which chose a different
+value for each scenario of a batch; that generator was removed on 10.11.2026,
+so today no code reads them. They still reach the model, because the catalog is
+handed to it verbatim, and they still describe the screen truthfully. A wrong
+one fails no validation: it misleads whoever writes the scenario.
 
 So a wrong `entry_tab` is not a validation error — it is a thirty-second
 timeout in a browser, blamed on the first field of a form that never opened.
@@ -120,8 +121,9 @@ and row and therefore cannot see one in a plain form section.
 It is NAVIGATION, not a field, and that distinction is the point. The two
 branches are different screens: the catalogued fields belong to the Bilgi Girişi
 form and not one of them exists on the Dosya Yükleme screen. Modelled as a field
-with options, `VariationPlanner` would vary it, half the scenarios would land on
-the upload screen, and every field after it would time out. A flow with its own
+with options, anything that varies a field's options across scenarios (the
+batch generator did, until its removal on 10.11.2026) would send half of them
+to the upload screen, and every field after it would time out. A flow with its own
 screen gets its own catalog — see "One file per flow" above.
 
 ## `fields`
@@ -166,12 +168,12 @@ re-walking.
 
 ### The constraint keys, and who writes them
 
-`max_length`, `min`, `max` and `numeric` exist for one consumer: the batch
-generator (`VariationPlanner`), which has to produce N scenarios that differ.
-Rotating a dropdown's `options` is free, but a text box offers no list — so the
-only honest variation is its LENGTH, and that needs a measured bound. Without
-one the planner falls back to a conservative ladder and SAYS SO in the batch's
-notes; it never invents a bound.
+`max_length`, `min`, `max` and `numeric` were written for one consumer: the
+batch generator (`VariationPlanner`, removed 10.11.2026), which varied a text
+box by its LENGTH and needed a measured bound to do it. No code reads them
+today. They stay because they are true facts about the screen: the catalog
+reaches the prompt verbatim, so whoever writes a boundary-value scenario — a
+model or an analyst — gets exactly the numbers it needs.
 
 **Only the DOM scan can produce them.** `CatalogDiscovery` reads the attributes
 off the input (`maxlength`, `min`, `max`, `type=number`, `inputmode`). The MCP
@@ -201,21 +203,19 @@ confuse because both follow a choice, so the test is: *was the LABEL missing
 from the page, or was the label there with nothing inside it?* Only the first is
 `shown_when`.
 
-Getting it wrong is expensive in one direction. `VariationPlanner` excludes a
-conditional field from every variation that does NOT pick the trigger value, so
-a `shown_when` on an always-present required field leaves it empty in all those
-scenarios and the form refuses them — four runs out of five on a five-option
-parent. A missing `shown_when` on a field that is genuinely always there costs
+Getting it wrong is expensive in one direction. A scenario writer that trusts
+it skips the field in every scenario that does NOT pick the trigger value, so a
+`shown_when` on an always-present required field leaves it empty there and the
+form refuses those runs (measured with the batch generator before its removal:
+four runs out of five on a five-option parent). A missing `shown_when` on a field that is genuinely always there costs
 nothing. `ExploreController.problems()` therefore asks about any choice field
 carrying both a condition and a filled option list.
 
-In a batch that decision is no longer left to the model: `VariationPlanner`
-assigns the field only in the variations that chose the triggering value, and
-lists it as explicitly off-limits in the others. For a single scenario the prompt
-still asks the model to get it right, which is why `shown_when`'s parent must be
-listed BEFORE it — the planner walks the fields once, in catalog order, and
-cannot evaluate a condition whose parent it has not reached. A late parent is
-reported rather than guessed at.
+The batch generator used to settle this in code, assigning the field only in
+the variations that chose the trigger value. Since its removal on 10.11.2026
+the model writing the scenario reads `shown_when` from the catalog and decides.
+List the parent BEFORE the conditional field anyway: every reader, model or
+person, takes the fields in catalog order.
 
 `readonly` exists because a disabled input is not optional — it is not writable
 at all. On DBS Fatura Oluştur the app looks "Bayi Ünvanı" up from the chosen

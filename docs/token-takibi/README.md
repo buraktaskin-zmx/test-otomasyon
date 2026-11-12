@@ -4,7 +4,7 @@ Sol raydaki **Token Takibi** paneli, model çağıran her AI işini bir **oturum
 olarak gösterir: kaç tur sürdü, her turda modele ne gitti, model ne cevap verdi,
 hangi tool çağrılarını istedi, bunlar ne kadar sürdü ve token nereye harcandı.
 
-Kural `DASHBOARD.md` ile aynı: **verisi olmayan rakam gösterilmez.** Tahmin olan
+Kural `docs/dashboard/README.md` ile aynı: **verisi olmayan rakam gösterilmez.** Tahmin olan
 her sayının yanında "≈" durur.
 
 ---
@@ -111,7 +111,7 @@ Bilmeye değer üç şey:
 
 - **Tool tanımları system'den hemen sonra basılır, çünkü şablon onu oraya
   koyuyor.** Mesaj değildir: isteğin kendi `tools` alanında gider. Dökümdeki
-  parantezli not bunu söyler. Token'ı yine her turda ödenir (§8, "Şablon / ek").
+  parantezli not bunu söyler. Token'ı yine her turda ödenir (§2, "Şablon / ek"; ölçümü `docs/ai-ile-calistir/09-tarihce-ve-dersler.md` §23.3).
 - **Hiçbir metin kırpılmaz.** Bir sayfa snapshot'ı on binlerce karakter ve asıl
   soru zaten odur; kırpılmış bir döküm "ajan niye böyle yaptı" sorusuna cevap
   veremez. Tarayıcı kaydırır, uzun olan indirilir.
@@ -146,9 +146,9 @@ ve `msg/<sha>.txt`'yi okuyor (§5).
 
 - **Şifre ve SMS kodu** diske ve veritabanına yazılmadan önce maskelenir — eylem
   bandının iki kuralıyla aynı (`SecretMask`, eskiden `ActionTape`'in içindeydi).
-  CIF ve kullanıcı kodu maskelenmez (test ortamı değerleri, `DASHBOARD.md` §9).
+  CIF ve kullanıcı kodu maskelenmez (test ortamı değerleri, `docs/dashboard/README.md` §9).
 - Görüntüler saklanmaz; yerine "[görüntü 1/2: 340 KB PNG]" satırı durur.
-- **Budanmaz.** `runs/mcp/` gibi büyür; saklama süresi `DASHBOARD.md` açık soru 5.
+- **Budanmaz.** `runs/mcp/` gibi büyür; saklama süresi `docs/dashboard/README.md` açık soru 5.
 
 ## 6. Ayarlar
 
@@ -176,78 +176,18 @@ GET /api/v1/ai-traces/{id}/content/{sha}      → text/plain, maskelenmiş
 
 ## 8. "AI ile çalıştır" neden pahalıydı, ne yapıldı
 
-**Ölçüm (11.11.2026, `firma-fatura-islemleri/10-...salt-okunur`):** 52 tur,
-1.478.146 girdi token'ı, 5.176 çıktı. Hiçbir tek tur 131.072'lik pencereye
-yaklaşmadı (en büyüğü 52.667) — maliyet, ajanın **her turda bütün konuşmayı
-yeniden göndermesinden**: tool sonuçları %66 (her biri küçük, ama sonraki her
-turda tekrar gidiyor), tool tanımları %15, system prompt %7. Turların yarısı
-bekleme (11), arama (10) ve ağ trafiği (4) — ve bunları prompt'un kendisi
-istiyordu ("SEARCH, DO NOT SNAPSHOT", "wait a few seconds … READ THE PAGE AGAIN").
+**Ölçüm (11.11.2026):** tek senaryo 52 tur, 1.478.146 girdi token'ı. Hiçbir
+tur 131.072'lik pencereye yaklaşmadı; maliyet, ajanın **her turda bütün
+konuşmayı yeniden göndermesinden** geliyordu: tool sonuçları %66, tool
+tanımları %15, system prompt %7.
 
-**Yapılanlar — yalnız "AI ile çalıştır"; Ekran Keşfi aynen:**
+Alınan önlemler, sonraki ölçümler ve denenip geri alınanlar artık tek yerde,
+güncel tutulan tarihçede:
+[`docs/ai-ile-calistir/09-tarihce-ve-dersler.md`](../ai-ile-calistir/09-tarihce-ve-dersler.md).
+Bu bölümün eski tam metni orada §23.3 olarak duruyor. Mekanizmaların kendisi:
+[04-araclar-ve-kapi.md](../ai-ile-calistir/04-araclar-ve-kapi.md) (kapı, bütçe,
+takılma) ve [05-sayfa-ve-baglam.md](../ai-ile-calistir/05-sayfa-ve-baglam.md)
+(sayfa özeti, eski sonuçların kısaltılması).
 
-| | Ne | Nerede |
-|---|---|---|
-| 1 | Her turda yalnızca **son** tool sonucu tam gider; eskiler çalıştırılan Playwright satırına iner. Giriş sonrası ilk ekran da ikinci turda kısalır. Bant tam sonuçları tutmaya devam eder | `CompactingAdvisor` |
-| 2 | Giriş ve menü **koddan**, executor'ın seçicileriyle; başarısızlıkta ajana düşer. Şifre ve SMS kodu artık modele gitmez | `AiRunPrelude` |
-| 3 | Araçlar daraltıldı: bekleme, arama, ağ, konsol, ekran görüntüsü yok | `ExploreController.AI_RUN_TOOLS` |
-| 4 | Her eylemden sonra sayfa kodla okunur ve sonuca eklenir (`uptest.explore.settle-ms`) | `AiRunPolicy` |
-| 5 | Kısa system prompt (~1/3) | `AgentPrompts.RUN_SYSTEM` |
-| 6 | **Tavan** 100.000 token: %80'de ajana "bitir" notu, aşılınca `report_result` dışındaki her araç reddedilir — koşu durur ve yapabildiğini raporlar | `uptest.explore.ai-run.token-budget` |
-| 7 | Giriş koddan yapılamazsa ajan **hiç başlatılmaz**; sebep (ağ / sayfa) adıyla söylenir | `AiRunPrelude.diagnose` |
-| 8 | Sayfa modele **özetlenerek** verilir: adı olan ve tıklanabilen her şey kalır, adsız iskelet ve kod yankısı atılır | `LeanResults`, `uptest.explore.ai-run.page-cap` |
-| 9 | Senaryoda geçmeyen bir **onay** (Onayla/Evet/Gönder…) tıklanamaz — banka kaydı geri alınamaz | `BudgetedTool.unaskedCommit` |
-| 10 | Açılır listede **arama**: hedefsiz yazan `browser_press_sequentially` ajana sunulur; hatalı bir `target` ne yapılacağını söyleyen bir cevapla döner | `AI_RUN_TOOLS`, `BudgetedTool.targetHint` |
-| 11 | Ekran koddan açıldıysa arayüzün "… ekranına git." açılış satırı ajana **gitmez** — "Menüye tekrar gitme" ile çelişiyordu | `AiRunPrelude.withoutGoTo` |
-| 12 | **Aynı başarısız çağrı**, arada sayfayı değiştiren başarılı bir eylem yoksa ikinci kez tarayıcıya gitmez; ajana önceki hata ve ne yapacağı söylenir | `AiRunPolicy.outcome` / `failedBefore`, `BudgetedTool.SAME_FAILURE` |
-
-Gherkin oluştur etkilenmez: bant, koddan yapılan menüyü tek bir `prelude_menu`
-kaydı olarak tutar ve renderer bundan `navigate to` satırını üretir.
-
-**İlk ölçüm (11.11.2026, 22 tur, 124.817 girdi):** kısaltma işe yaradı — tool
-sonuçları %66'dan **%26'ya** düştü (971.062 → 32.393). Geriye kalan en büyük
-kalem **tool tanımları: 49.478 token, %40**, tur başına ~2.250. Bunlar her
-turda yeniden gitmek zorunda (modele söylenmeyen aracı çağıramaz), o yüzden
-sıklık değil **uzunluk** kısaldı: `LeanTools` her aracın açıklamasını ilk
-cümlelerine indiriyor ve şemasından yalnızca düzyazıyı atıyor — tip, zorunlu
-alanlar, enum, argüman adları olduğu gibi kalıyor
-(`uptest.explore.ai-run.describe-cap`). Yalnız "AI ile çalıştır"; Ekran Keşfi
-her kelimeyi görmeye devam ediyor.
-
-Kalan kalemler aynı ölçümde: system prompt 13.786 (%11, tur başına ~620 —
-`RUN_SYSTEM` öncesi ~1.950'ydi), model geçmişi 12.675 (%10), şablon 10.081
-(%8), kullanıcı mesajı 6.484 (%5).
-
-Token Takibi'nde oturumun "Bütçe" kartı ve listede "bütçe aşıldı" işareti
-hedefe göre durumu gösterir.
-
-### 12.11.2026: hâlâ pahalı — ve denenip geri alınan çözüm
-
-**Ölçüm:** 26 tur, 112.547 token, senaryo bitmedi ("Arama kutusuna 'san'
-yazılamadı"). Sebep bütçe duvarının geç gelmesi değil, **ajanın göremediği bir
-şey**: Firma Seçimi açılınca sayfa 20.192 karakter oldu, `page-cap` 6.000'de
-kesti (`browser_click sonucu 20192 -> 6153`), ve Select2'nin arama kutusu
-sayfanın **sonunda** açıldığı için modelin gördüğü kısımda yoktu. Ajan ref'ini
-bulamayınca hedef uydurdu (`textbox "Seçiniz"`, `textbox`) ve her birini beş
-kez denedi. Düzeltme 10. satır: liste açılınca arama kutusu zaten odakta,
-yazmak için hedef gerekmiyor.
-
-**Denendi, geri alındı (`40a2a7f` → `f713b14`):** sayfayı tek satırlık düz
-listeye çevirmek (7.187 → 1.665 karakter, 4,3×), `page-cap`'i 2.500'e
-indirmek ve birkaç adımı tek turda yürüten `do_steps`. Birim testleri geçti,
-gerçek koşuda ajan **körleşti**: sayfa 14.275 karaktere çıktı, 2.500'lük sınır
-onu 2.653'e kesti (`14275 -> 2653`) ve aranan menü bağlantısı kesilen kısımda
-kaldı; kesme notu "snapshot'ı daralt" dediği için ajan daraltılmış snapshot
-döngüsüne girdi. Ayrıntı: `docs/MCP-TARAYICI-SORUNU.md`. Çıkarılan ders: bir sayfa özetinin doğruluğu "ref'ler
-korunuyor" testiyle değil, **ajanın bir sonraki eylemi için gereken şeyin
-özette kalmasıyla** ölçülür — ve bunu yalnızca gerçek bir koşu gösterir. Sayfa
-küçültme yeniden denenirse önce hangi öğenin hangi adımda gerektiği ölçülmeli.
-
-**Düzeltildi (tablo satırı 11), gerçek koşuyla henüz ölçülmedi — talimat
-kendiyle çelişiyordu.** Ajana giden ilk mesaj
-art arda üç şey söylüyor: `AiRunPrelude` "ekranı açık, menüye tekrar gitme"
-diyor; hemen ardından arayüzün eklediği satır (`ProductPanel.tsx`, `category
-menüsü altındaki "…" ekranına git.`) tersini söylüyor. Ajan ikincisini
-uyguluyor ve zaten açık olan menüye tıklıyor. Çelişkiyi görmenin yolu: Token
-Takibi → oturum → tur #1 → "Bu turun tam girdisini göster" → `kullanıcı`
-mesajı (§3b).
+Panelde bu yolun izi: oturumun "Bütçe" kartı ve listede "bütçe aşıldı"
+işareti, `uptest.explore.ai-run.token-budget` (100.000) hedefine göre.

@@ -6,7 +6,7 @@ import { Approx, Card, FailingList, KpiRow, StatusWord, relativeTime, usePaged }
 /** Rows per page, as the overview's run table uses. */
 const PER_PAGE = 12;
 
-/* Ekran detayı — docs/DASHBOARD.md §5. */
+/* Ekran detayı — docs/dashboard/README.md §5. */
 
 type Filter = "all" | "failed" | "never" | "notRunnable";
 

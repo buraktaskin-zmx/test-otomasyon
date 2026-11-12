@@ -3,7 +3,7 @@ import { formatDuration } from "../lib/format";
 import type { DashboardHistory } from "../api/types";
 import { Card, StatusWord, relativeTime } from "./parts";
 
-/* Senaryo geçmişi — docs/DASHBOARD.md §6: every run of one scenario, 30 days. */
+/* Senaryo geçmişi — docs/dashboard/README.md §6: every run of one scenario, 30 days. */
 export function ScenarioHistory({ data }: { data: DashboardHistory }) {
   return (
     <div className="db-page">

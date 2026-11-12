@@ -23,7 +23,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * What the Token Takibi panel reads; see docs/TOKEN-TAKIBI.md for what each
+ * What the Token Takibi panel reads; see docs/token-takibi/README.md for what each
  * number means.
  *
  * Sums are made here, not in the browser, for the dashboard's reason: the

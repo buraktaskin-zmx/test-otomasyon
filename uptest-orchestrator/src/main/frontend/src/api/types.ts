@@ -809,7 +809,7 @@ export interface ErrorBody {
 }
 
 /* ------------------------------ dashboard ------------------------------ */
-/* DashboardService's records, field for field. See docs/DASHBOARD.md for what
+/* DashboardService's records, field for field. See docs/dashboard/README.md for what
    each number means; `approximate` is true while runs are matched to
    scenarios by title (stage 1). */
 
@@ -1116,7 +1116,7 @@ export interface BulkSaveResult {
 
 /* ------------------------------ Token Takibi ------------------------------ */
 
-/* AiTraceService's records, field for field. See docs/TOKEN-TAKIBI.md for
+/* AiTraceService's records, field for field. See docs/token-takibi/README.md for
    what each number means and which ones are exact. */
 
 /** ai-run = Kayıtlı Senaryolar' "AI ile çalıştır"; explore = Ekran Keşfi's

@@ -3,7 +3,7 @@ import { getAiContent } from "../api/endpoints";
 import type { AiBreakdown, AiSessionKind, AiSessionStatus, AiToolOutcome } from "../api/types";
 
 /*
-  Token Takibi's small pieces. What every number means: docs/TOKEN-TAKIBI.md.
+  Token Takibi's small pieces. What every number means: docs/token-takibi/README.md.
 
   COLOURS FOLLOW THE CATEGORY, NEVER ITS RANK. The five prompt sources keep the
   same hue on every chart, in the order the dataviz validator passed

@@ -90,13 +90,15 @@ them here:
 - **Server side** (orchestrator + executor API, deployment):
   [`uptest-executor/src/main/java/server/CLAUDE.md`](uptest-executor/src/main/java/server/CLAUDE.md)
 - **Goals, deliverables, roadmap:** [`PROJECT.md`](PROJECT.md)
-- **End-to-end flow, beginner level (Turkish):**
-  [`docs/COKLU-SENARYO-AKISI.md`](docs/COKLU-SENARYO-AKISI.md) — what actually
-  happens from "test invoice creation on this screen" to a running test: every
-  HTTP call, every model call, what the model is given, which calls take
-  minutes, and the three separate "AI" paths that are easy to confuse (MCP
-  agent / DOM scan / scenario generator). Read it before asking how any of this
-  fits together.
+- **"AI ile çalıştır", end to end (Turkish):**
+  [`docs/ai-ile-calistir/`](docs/ai-ile-calistir/README.md) — every process,
+  every prompt verbatim, every guard, how the verdict is settled, what costs
+  tokens, how a scenario must be worded, and where to look when a run breaks.
+- **Historical, beginner level (Turkish):**
+  [`docs/COKLU-SENARYO-AKISI.md`](docs/COKLU-SENARYO-AKISI.md) — the batch
+  generator's flow as of 2026-10-26. That generator was removed on 2026-11-10;
+  the document stays for its still-valid parts (the four concepts, the three
+  separate "AI" paths, the MCP agent loop, the DOM scan) and is marked as such.
 
 ## Repository shape
 
@@ -244,10 +246,10 @@ Elsewhere:
   startup, so a later rename does not cut them loose.
 - Dashboard (orchestrator): `orchestrator/dashboard/` (`GET /api/v1/dashboard`,
   `/screens/{app}/{product}/{flow}`, `/scenarios/{app}/{product}?path=`) and
-  `frontend/src/dashboard/`. What every number means is `docs/DASHBOARD.md`;
+  `frontend/src/dashboard/`. What every number means is `docs/dashboard/README.md`;
   runs without a `scenario_id` are matched by title and marked "≈".
 - Token Takibi (orchestrator): `orchestrator/aitrace/` and `frontend/src/tokens/`;
-  what every number means is `docs/TOKEN-TAKIBI.md`. One turn is one REQUEST,
+  what every number means is `docs/token-takibi/README.md`. One turn is one REQUEST,
   and it is readable two ways (§3b): message by message with each part's token
   count, or as one document in the order the model read it — `TurnTranscript`
   renders that from what is already on disk, nothing extra is stored, and
@@ -266,11 +268,19 @@ Elsewhere:
   tool -- succeeded / failed / warnings, all REQUIRED, `returnDirect` -- and
   the verdict is settled in code (one failed step is "Geçmedi" whatever the
   agent claimed); Serbest Gözlem keeps its prose `ANSWER_RULES`. That run is
-  also the CHEAP walk (docs/TOKEN-TAKIBI.md §8): `AiRunPrelude` logs in and
-  opens the menu in code, `CompactingAdvisor` sends only the latest tool
+  also the CHEAP walk (docs/ai-ile-calistir/09-tarihce-ve-dersler.md): `AiRunPrelude` logs in,
+  opens the menu and waits out the loading screen in code (and starts no
+  agent when it cannot), `CompactingAdvisor` sends only the latest tool
   result whole, `AiRunPolicy` hands back the page after every action and
-  notes the token budget, `ExploreController.AI_RUN_TOOLS` narrows the
-  toolbox and `RUN_SYSTEM` replaces `SYSTEM`. The draft
+  enforces the token budget as a WALL and a stuck walk (`STUCK_AFTER`),
+  `ExploreController.AI_RUN_TOOLS` narrows the toolbox and `RUN_SYSTEM`
+  replaces `SYSTEM`. The page the model sees is cut down by `LeanResults`
+  (scaffold, noise, long option lists) and `PageChrome` (the bank's frame);
+  `LeanTools` shortens the tool definitions; `StepRunner` is `do_steps`,
+  several named steps in one turn; `BusyPage` waits out the loading overlay
+  and refuses F5; `TargetCaption` lets the commit guard read what a clicked
+  reference SAYS; `ClaimCheck` holds the agent's "done" against the tape. The
+  whole path: `docs/ai-ile-calistir/`. The draft
   checks (`problems()`) are in
   `CatalogDraftChecks`; a lesson below that says `ExploreController.SYSTEM`
   means `AgentPrompts.SYSTEM`. The walk-to-Gherkin renderer is `TapeRenderer`
@@ -279,6 +289,8 @@ Elsewhere:
 - Discovery dispatch (orchestrator): `orchestrator/catalog/CatalogDiscoveryService`
   builds the synthetic feature and sends it through `ExecutorPool` like any other
   run; `orchestrator/api/DiscoveryController` is its endpoint.
+- "AI ile çalıştır" mimarisi, promptları, senaryo yazım rehberi ve hata
+  ayıklama: `docs/ai-ile-calistir/` (README'den başla)
 - Human-facing vocabulary contract: `VOCABULARY.md`
 - `mvn test` feature classpath: `uptest-executor/src/test/resources/` +
   `uptest-executor/src/test/java/.../RunCucumberTest.java`
@@ -344,6 +356,17 @@ is the container deployment, which is not live — see *Docker: later* above.
   the Mac's `.mcp.json`, every attempt by time, the commands, and the traps
   (a `pkill -f "Google Chrome for Testing"` kills the MCP SERVER, because its
   own arguments carry that path) — is `docs/MCP-TARAYICI-SORUNU.md`.
+- **On the Mac, `ERR_CONNECTION_RESET` to `ifctest` is usually the NETWORK,
+  not the browser.** Measured 12.11.2026, VPN on, in the minute "AI ile
+  çalıştır" was reset: curl to the same URL went reset, 302, 302, reset, 302.
+  curl is not a browser, so no browser, MCP version or switch to Edge fixes
+  that; the VDI is inside the bank network and never sees it. `AiRunPrelude`
+  therefore tries the first navigation up to five times on a transient error
+  (`NAVIGATE_ATTEMPTS`), and does NOT retry `ERR_NAME_NOT_RESOLVED` (off the
+  VPN) or a certificate refusal. To tell this apart from the 0.0.85 failure
+  above, run curl IN THE SAME MINUTE (rule 8 in that document): curl reset
+  too = path; curl always 302 = MCP side. `diagnose` used to say "proxy" for
+  every `ERR_CONNECTION_*` — a guess that sent the user looking at browsers.
 - `UPTEST_BROWSER_CHANNEL` deliberately does NOT go through the
   blank-means-default helper: *unset* = system Edge, *set-but-empty* = no
   channel, which is the only way to ask for Playwright's bundled Chromium.
@@ -1263,6 +1286,27 @@ and leave each independently runnable.
   agent clicked the already-open main menu. Same family as the lesson on prompt rules above, with a different
   author: two pieces of code each add a paragraph and neither knows the other.
   Token Takibi → turn #1 → "tek metin" shows the message exactly as sent.
+  Fixed in `AiRunPrelude.withoutGoTo` (only on `ON_SCREEN`, only the LEADING
+  line, so the menu-did-not-open case keeps it). Its sibling went in the same
+  commit: the agent re-sending one failed call five times is now refused by
+  `AiRunPolicy.failedBefore` until a successful action changes the page.
+- **An agent's "done" is a claim; the tape is the fact.** 12.11.2026, tape
+  2628c4fd: the agent reported all four steps done, "Fatura İptal Et" and
+  "Geri" among them, `passed: true` — and the tape holds no click on either.
+  It never SAW the link: it sat at character 6.885 of a page capped at 6.000,
+  because the İşlemler panel comes after the grid on every one of these
+  screens. Looking for it, the agent clicked another row and selected a
+  different invoice. Two fixes, and both are this file's oldest lessons again:
+  `ClaimCheck` turns a named press with no click behind it into a failed step
+  in code (a prompt cannot make a model honest about its own work), and the
+  cap went to 12.000 — a budget for the conversation must not cut the element
+  the next action needs. The same day added two more of the same family: a
+  screen still under "Lütfen bekleyiniz" gets no agent at all (25 turns and
+  100.901 tokens were spent clicking an overlay), and a click refused by the
+  loading overlay is retried in code for Playwright's thirty seconds instead
+  of MCP's five, with F5 refused outright (the agent reloaded twice and ended
+  on about:blank). Walked record by record:
+  `docs/ai-ile-calistir/13-ornek-kosu-2628c4fd.md`.
 - **Hooks must close everything even when tracing fails.** `Playwright.create()`
   starts a node driver process per scenario; a throwing `tracing().stop()` that
   skipped the closes leaked that driver and its browser for the lifetime of the

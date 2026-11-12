@@ -223,7 +223,7 @@ public class TestRunEntity {
     private String errorMessage;
 
     /*
-     * Dashboard stage 2 (docs/DASHBOARD.md §10). All nullable: ddl-auto=update
+     * Dashboard stage 2 (docs/dashboard/README.md §10). All nullable: ddl-auto=update
      * adds them to a table that already has rows, and runs from before this
      * change simply have none.
      */

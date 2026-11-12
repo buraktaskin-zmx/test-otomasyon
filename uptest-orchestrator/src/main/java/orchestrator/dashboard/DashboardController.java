@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Map;
 
 /**
- * The dashboard's reads; see docs/DASHBOARD.md for what each number means.
+ * The dashboard's reads; see docs/dashboard/README.md for what each number means.
  *
  * {@code period} is 24h, 7d or 30d (anything else reads as 7d); {@code cif}
  * narrows to one test login's runs, blank for all.

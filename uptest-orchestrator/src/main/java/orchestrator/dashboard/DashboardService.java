@@ -31,7 +31,7 @@ import java.util.UUID;
 import java.util.function.Predicate;
 
 /**
- * The numbers behind the dashboard, as docs/DASHBOARD.md defines them — stage 1:
+ * The numbers behind the dashboard, as docs/dashboard/README.md defines them — stage 1:
  * from what the database holds today.
  *
  * <p><b>Runs are matched to scenarios by id, and by NAME only where there is

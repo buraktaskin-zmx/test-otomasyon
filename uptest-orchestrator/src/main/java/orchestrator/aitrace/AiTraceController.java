@@ -13,7 +13,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * The Token Takibi panel's reads. See docs/TOKEN-TAKIBI.md.
+ * The Token Takibi panel's reads. See docs/token-takibi/README.md.
  *
  * {@code period}: 24h, 7d, 30d or all (anything else reads as 7d).
  * {@code kind}: comma separated session kinds; blank lists everything except

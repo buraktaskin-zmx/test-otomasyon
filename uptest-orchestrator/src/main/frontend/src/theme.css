@@ -2212,7 +2212,7 @@ body {
 /* Git stays where it is while editing, visibly out of reach. */
 .sd-go:disabled { background: var(--empty); }
 
-/* ===================== Dashboard (docs/DASHBOARD.md) =====================
+/* ===================== Dashboard (docs/dashboard/README.md) =====================
    Status colours only, never blue (DESIGN.md §1). Green and red are close for
    a deuteranope, so segments are split by a 2px gap and every bar carries its
    counts in words; "hiç koşmadı" is near the surface, so it gets an outline. */
@@ -2520,7 +2520,7 @@ button.db-screen:hover .db-screen-name { color: var(--link); text-decoration: un
     background: var(--surface-2);
 }
 
-/* ===================== Token Takibi (docs/TOKEN-TAKIBI.md) =====================
+/* ===================== Token Takibi (docs/token-takibi/README.md) =====================
    Five categorical hues for the prompt's sources, in the order the dataviz
    validator passed on THIS theme's surfaces (white, and the dark #151d27):
    worst adjacent CVD ΔE 9.1 light / 8.4 dark, normal-vision 19.6 / 19.3.

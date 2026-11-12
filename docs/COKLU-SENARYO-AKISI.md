@@ -1,5 +1,27 @@
 # Çoklu Senaryo Üretimi — Baştan Sona Akış
 
+> **⚠ TARİHSEL BELGE — 26.10.2026 durumunu anlatır.** Burada anlatılan toplu
+> üretici ("Senaryoları Üret" + **5**, `VariationPlanner`,
+> `POST /api/v1/scenarios/suggest-many`, `OutlineFlattener`) **10.11.2026'da
+> kaldırıldı**, Chat ve "AI ile Senaryo Üret" panelleriyle birlikte. Belge
+> silinmedi, çünkü bir kısmı hâlâ doğru ve yeni gelen biri için hâlâ en iyi
+> başlangıç:
+>
+> | Bölüm | Bugün |
+> |---|---|
+> | §1 Dört kavram (Gherkin, adım sözlüğü, katalog, iki uygulama) | Geçerli. Güncel adım listesi: `VOCABULARY.md` |
+> | §2 Üç ayrı "AI" | Ayrım geçerli; "C. Senaryo Üretici" artık çizilmiş akıştan üreten **Senaryo Üret** (`orchestrator/flow/`) ve ajan yürüyüşünden üreten **Gherkin oluştur** |
+> | §3 Büyük resim | Kısmen: toplu üretim kutuları yok |
+> | §4 Katalog nereden geliyor (MCP ajanı, DOM taraması) | Geçerli |
+> | §5–§8 "Senaryoları Üret", VariationPlanner, 5 model çağrısı, yanıt | **Kaldırıldı** — yalnızca tarih |
+> | §9 Koşu | Genel olarak geçerli; eşzamanlılık 07.11'de değişti (`simultaneouslyRun`, tarayıcıdaki kuyruk), bkz. `uptest-executor/src/main/java/server/CLAUDE.md` |
+> | §10–§15 | Toplu üretime dair kısımlar tarih; ajan ve tarama kısımları geçerli |
+>
+> **Güncel akışlar:** senaryolar artık veritabanında (Kayıtlı Senaryolar, kök
+> `CLAUDE.md` → "Key paths"); çizimden üretim için kök `CLAUDE.md` → "Where
+> catalogs come from"; kayıtlı bir senaryoyu ajanla koşturmak için
+> `docs/ai-ile-calistir/`.
+
 Bir analist "bu ekranda DBS faturası oluşturmayı test etmek istiyorum" yazıp
 **5** dediğinde ne oluyor? Bu doküman o cümleden çalışan teste kadar her adımı
 anlatıyor: hangi HTTP isteği gidiyor, hangi AI çağrısı atılıyor, AI'nın elinde ne
