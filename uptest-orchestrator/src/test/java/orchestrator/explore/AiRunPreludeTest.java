@@ -56,6 +56,20 @@ class AiRunPreludeTest {
                 .isEqualTo(AiRunPrelude.LOAD_POLLS);
     }
 
+    @Test
+    @DisplayName("12.11.2026, tape 9d2a2f42: a window closed while loading is NOT a loaded screen — no agent, no menu retry")
+    void closedWhileLoadingStartsNoAgent() {
+        int[] polls = {0};
+        snapshot = () -> ++polls[0] <= 2 ? LOADING
+                : "[{\"text\":\"### Page\\n- Page URL: about:blank\\n### Snapshot\\n```yaml\\n\\n```\"}]";
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> run(line -> false, NGC, tape()))
+                .isInstanceOf(BudgetedTool.BrowserClosed.class);
+        // The menu was clicked once: closing the window is not a menu to try again.
+        assertThat(calls.stream().filter(line -> line.contains(".main-nav")).count()).isEqualTo(1);
+        assertThat(polls[0]).isEqualTo(3);
+    }
+
     private static final AiRunPrelude.Login NGC = new AiRunPrelude.Login(
             "ngc", "https://x/indexNgc.do", "QZ06395288", "3014", "pw987654", "34020");
 

@@ -162,6 +162,9 @@ final class AiRunPrelude {
                 call("browser_click", target(child));
                 record(MENU_TOOL, menuArgs, true, mainMenu + " › " + screen + " açıldı", menuBegan);
                 return loaded(screen);
+            } catch (BudgetedTool.BrowserClosed gone) {
+                // Not a menu that failed to open: there is no browser to retry in.
+                throw gone;
             } catch (RuntimeException notOpen) {
                 lastError = oneLine(notOpen.getMessage());
                 System.out.println("[uptest] prelude: menu " + attempt + ". denemede acilmadi — " + lastError);
@@ -418,6 +421,16 @@ final class AiRunPrelude {
             pause();
             BusyPage.waitWhileBusy(tools.get("browser_evaluate"), settle);
             page = page();
+            if (closed(page)) {
+                // Measured 12.11.2026, tape 9d2a2f42: the operator closed a window
+                // stuck on "Lütfen bekleyiniz"; the next look read the fresh blank
+                // page, found no loading text on it, called the screen loaded and
+                // started the agent on nothing. This flow never stands on a blank
+                // page after the bank was opened (same reasoning as BudgetedTool),
+                // so a blank page here means the browser is gone.
+                System.out.println("[uptest] prelude: tarayici kapandi (about:blank) — ajan baslatilmiyor");
+                throw new BudgetedTool.BrowserClosed();
+            }
             if (page != null && !stillLoading(page)) {
                 if (poll > 1) {
                     System.out.println("[uptest] prelude: ekran " + poll + ". bakista yuklendi");
@@ -432,6 +445,11 @@ final class AiRunPrelude {
                 + " saniyede yüklenmedi (sayfada hâlâ \"Lütfen bekleyiniz\" yazıyor). Uygulama ya da"
                 + " bağlantı yavaş; deterministik koşu bu ekranı yüklüyorsa birkaç dakika sonra tekrar"
                 + " deneyin");
+    }
+
+    /** The browser was replaced by a blank one: the window was closed. */
+    static boolean closed(String page) {
+        return page != null && LeanResults.unwrap(page).contains("Page URL: about:blank");
     }
 
     /** The bank's loading overlay is on the page. */
