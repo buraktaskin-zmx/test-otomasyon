@@ -4,7 +4,7 @@ import { tokenizeGherkinLine } from "../lib/gherkin";
 import { IconButton, useAutoGrow } from "../ui/InlineEdit";
 import { stepExpectation } from "../lib/scenarioProse";
 import type { ScenarioDoc } from "../lib/scenarioProse";
-import type { AiRunCache, AiRunSummary, WalkLine, ScenarioDetail as Detail, ScenarioEdit, SourceChange } from "../api/types";
+import type { AiCacheStatus, AiRunCache, AiRunSummary, WalkLine, ScenarioDetail as Detail, ScenarioEdit, SourceChange } from "../api/types";
 
 /** The three parts of a scenario that each open for editing on their own. */
 type Section = "summary" | "gherkin" | "doc";
@@ -39,7 +39,8 @@ export function ScenarioDetail({
   onBack,
   onOpen,
   onAiRun,
-  onAiRunFresh,
+  onFastRun,
+  fastStatus,
   aiCache,
   aiWalk,
   aiBusy,
@@ -62,8 +63,10 @@ export function ScenarioDetail({
   /** Hands the scenario to the browsing agent -- the same call as Ekran
    *  Keşfi's Serbest Gözlem. */
   onAiRun: () => void;
-  /** The same run with the step cache ignored: the agent walks from scratch. */
-  onAiRunFresh: () => void;
+  /** "Hızlı çalıştır": the cached tool calls of the last passed walk, sent again. */
+  onFastRun: () => void;
+  /** Whether there is a cache for this scenario as written now; null while asking. */
+  fastStatus: AiCacheStatus | null;
   /** What the last run did with the step cache; null before a run. */
   aiCache: AiRunCache | null;
   /** The walk step by step, from the tape; empty before a run. */
@@ -329,6 +332,17 @@ export function ScenarioDetail({
             >
               {aiBusy ? "Ajan çalışıyor…" : "AI ile çalıştır"}
             </button>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              disabled={!fastStatus?.available || aiBusy || editing !== null}
+              title={fastStatus?.available
+                ? `Kayıtlı akış: ${fastStatus.stepCount} çağrı, sayfa okunmadan gönderilir; sonucu tek AI turu değerlendirir`
+                : fastStatus?.reason ?? "Kayıtlı akış soruluyor…"}
+              onClick={onFastRun}
+            >
+              Hızlı çalıştır
+            </button>
             {onShowTokens && (aiBusy || aiAnswer || aiClosed) ? (
               <button
                 type="button"
@@ -378,7 +392,7 @@ export function ScenarioDetail({
             </p>
           ) : aiSummary || aiAnswer ? (
             <>
-              {aiCache ? <AiCacheLine cache={aiCache} onFresh={onAiRunFresh} /> : null}
+              {aiCache ? <AiCacheLine cache={aiCache} /> : null}
               <AiSummaryView summary={aiSummary} answer={aiAnswer} walk={aiWalk} />
             </>
           ) : null}
@@ -632,56 +646,44 @@ function AiSummaryView({ summary, answer, walk }: {
 }
 
 /**
- * How the last run used the step cache: replayed in code, taken over by the
- * agent part way, or walked from scratch -- and why. The full step log is in
- * the orchestrator console with the "[uptest] ai-cache" prefix; the same
- * lines are under "Adımlar".
+ * What the last run did with the step cache behind "Hızlı çalıştır": sent the
+ * cached calls, stopped on one (and dropped the cache), or walked with the
+ * agent and saved (or did not save) its calls. The full log is in the
+ * orchestrator console with the "[uptest] ai-cache" prefix; the same lines are
+ * under "Adımlar".
  */
-function AiCacheLine({ cache, onFresh }: { cache: AiRunCache; onFresh: () => void }) {
+function AiCacheLine({ cache }: { cache: AiRunCache }) {
   const [open, setOpen] = useState(false);
   let text: string;
   switch (cache.state) {
     case "hit":
-      text = `Kayıtlı akıştan çalıştı: ${cache.stepCount} adım koddan, sonuç tek AI turuyla.`;
+      text = `Hızlı çalıştır: ${cache.stepCount} çağrı kayıttan, sayfa okunmadan gönderildi; sonucu tek AI turu değerlendirdi.`;
       break;
-    case "takeover":
-      text = `Kayıtlı akış ${cache.stoppedAt ?? "?"}. adımda durdu, ajan oradan devraldı`
-        + (cache.note ? ` (${cache.note}).` : ".");
+    case "stopped":
+      text = `Hızlı çalıştır ${cache.stoppedAt ?? "?"}. adımda durdu`
+        + (cache.note ? ` (${cache.note})` : "")
+        + ". Kayıtlı akış silindi; Hızlı çalıştır, 'AI ile çalıştır' yeniden geçene kadar kapalı.";
       break;
-    case "ignored":
-      text = "Kayıtlı akış kullanılmadı: ajanla baştan istendi.";
-      break;
-    case "miss":
-      text = "Kayıtlı akış yok" + (cache.note ? ` (${cache.note})` : "") + "; ajan ekranı baştan gezdi.";
+    case "walked":
+      text = "Ajan ekranı gezdi.";
       break;
     default:
       text = "";
   }
   if (!text) return null;
-  const replayed = cache.state === "hit" || cache.state === "takeover";
   return (
     <div className="sd-cache">
       <p className="sd-note">
         {text}
         {cache.saved ? ` Akış: ${cache.saved}.` : ""}
       </p>
-      <div className="sd-cache-actions">
-        {cache.log.length > 0 ? (
+      {cache.log.length > 0 ? (
+        <div className="sd-cache-actions">
           <button type="button" className="btn btn-ghost" aria-expanded={open} onClick={() => setOpen(!open)}>
             {open ? "Adımları gizle" : "Adımlar"}
           </button>
-        ) : null}
-        {replayed ? (
-          <button
-            type="button"
-            className="btn btn-ghost"
-            title="Kayıtlı akışı kullanmadan ajanı ekranı baştan gezdirir; geçerse akış yenilenir"
-            onClick={onFresh}
-          >
-            Cache'siz, ajanla baştan
-          </button>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
       {open ? <pre className="sd-code sd-answer">{cache.log.join("\n")}</pre> : null}
     </div>
   );

@@ -40,7 +40,7 @@ public class AiRunCacheEntity {
     @Column(name = "text_hash", nullable = false, length = 64)
     private String textHash;
 
-    /** {@code CachedSteps.CachedStep} list as JSON. */
+    /** {@code ReplayCalls.ReplayCall} list as JSON: tool calls with page-independent targets. */
     @Column(name = "steps_json", nullable = false, length = Length.LONG32)
     private String stepsJson;
 

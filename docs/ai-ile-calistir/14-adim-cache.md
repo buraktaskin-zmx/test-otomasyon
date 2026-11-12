@@ -1,151 +1,150 @@
-# AI ile çalıştır — Adım cache'i ve adım içi Beklenen
+# AI ile çalıştır — Hızlı çalıştır ve adım içi Beklenen
 
 [← İçindekiler](README.md) · [← Örnek koşu](13-ornek-kosu-2628c4fd.md)
 
 ---
 
-## 29. Adım cache'i: ikinci koşuda ekran yeniden gezilmez
+## 29. Hızlı çalıştır: kayıtlı araç çağrıları, sayfa okunmadan
 
-### 29.1 Ne yapar
+### 29.1 İki düğme
 
-Bir senaryo "AI ile çalıştır" ile bir kez **GEÇTİ** olduktan sonra, o
-yürüyüşün adımları `AI_RUN_CACHE` tablosuna yazılır. Aynı senaryo bir daha
-çalıştırıldığında:
-
-1. Giriş ve menü bugünkü gibi kodla yapılır (`AiRunPrelude`).
-2. Cache'teki adımlar **kodla, model olmadan** sırayla uygulanır
-   (`CachedWalk` → `StepRunner`).
-3. Adımlar bitince **tek bir AI turu** yalnızca sonucu değerlendirir:
-   adım içi beklentilerin sayfaları ve son sayfa + Beklenen → `report_result`.
-
-Bugün bir koşu ~25 tur ve ~100 bin token harcıyor. Cache'li bir koşu bir tur
-ve birkaç bin token harcar. **Karar hiçbir zaman eski koşudan alınmaz;** her
-koşuda yeniden verilir.
+| Düğme | Ne yapar | Cache |
+|---|---|---|
+| **AI ile çalıştır** | Ajan ekranı her zaman baştan gezer (bugünkü yürüyüş) | **Okumaz.** Koşu GEÇTİ ise yürüyüşün araç çağrılarını `AI_RUN_CACHE`'e yazar / yeniler |
+| **Hızlı çalıştır** | Kayıtlı araç çağrılarını sırayla, **sayfaya bakmadan** yeniden gönderir; sonucu tek AI turu değerlendirir | **Yalnız onu okur.** Senaryonun güncel metni için geçerli kayıt yoksa düğme **disable** |
 
 ```
-AI ile çalıştır ─► AiRunPrelude (giriş + menü, kodla)
-                    │
-                    ├─ AiRunCache.lookup: senaryo id + metnin SHA-256'sı
-                    │
-          MISS ─────┤──── HIT
-           │        │      ▼
-           │        │    CachedWalk: adımlar tek tek StepRunner ile (model YOK)
-           │        │      ├─ hepsi tamam ─► TEK AI TURU (yalnız report_result aracı)
-           │        │      └─ k. adım tutmadı / tırnaklı beklenen görülmedi
-           │        │             ─► ajan o sayfadan devralır
-           ▼        │
-   bugünkü ajan yürüyüşü
-                    ▼
-   ClaimCheck ─► karar ─► AiRunCache.settle:
-        GEÇTİ ve (MISS ya da devralma) → adımlar yazılır / yenilenir
-        HIT + GEÇTİ  → success_count++
-        GEÇMEDİ      → failure_count++, cache yerinde kalır
+AI ile çalıştır ─► prelude ─► ajan yürür ─► ClaimCheck ─► GEÇTİ? ─► araç çağrıları cache'e
+                                                                    (Hızlı çalıştır açılır)
+
+Hızlı çalıştır ─► kayıt yok? ─► 409 NO_CACHE (tarayıcı açılmaz)
+               └► prelude (giriş + menü, kodla)
+                   └► her kayıtlı çağrı ─► ham MCP aracı (seçiciyle, ad aranmaz, snapshot yok)
+                        ├─ hata ─► DUR: koşu Geçmedi (kodla) ─► cache SİLİNİR ─► tarayıcı kapanır
+                        │                                         (Hızlı çalıştır disable)
+                        └─ hepsi tamam ─► kontrol sayfaları ─► TEK AI TURU (VERDICT_SYSTEM)
+                                                ├─ GEÇTİ  ─► success_count++
+                                                └─ GEÇMEDİ (Beklenen görülmedi) ─► cache KALIR
 ```
 
-### 29.2 Ne saklanır, ne saklanmaz
+**Neden bir adım hatasında silinir ama Beklenen görülmeyince kalır:** bir çağrı
+hata veriyorsa (düğme yok, satır yok, veri değişmiş) kayıtlı akış artık o
+ekranı anlatmıyordur. Bütün çağrılar gittiyse ama sonuç farklıysa akış
+geçerlidir; değişen uygulamanın davranışıdır, ve o kırmızı kalmalıdır.
 
-Saklanan, **sayfanın yazdığı adlardır**: `StepRunner.Step` = eylem + ad + değer.
-MCP'nin referansları (`e42`, `f3e747`) **saklanmaz**, çünkü bir sayfa
-yüklemesine aittirler. Bant 2628c4fd'de "Fatura İptal Et" aynı yürüyüşte üç
-farklı referans aldı.
+### 29.2 Ne saklanır: sayfadan bağımsız hedefler
 
-| Kaynak | Nasıl okunur |
+Ajan referanslarla (`e42`) çalışır; bunlar bir sayfa yüklemesine aittir. Ama
+MCP her eylemde **çalıştırdığı Playwright satırını** döndürür ve bant onu
+tutar:
+
+```
+await page.getByRole('link', { name: 'Fatura İptal Et' }).click();
+```
+
+`ReplayCalls` bu satırı Playwright'ın kendi seçici biçimine çevirir ve
+`target` olarak saklar:
+
+| Bantta (MCP'nin çalıştırdığı) | Saklanan `target` |
 |---|---|
-| `do_steps` partisi | Partinin kendi adımları (`StepJournal`): `row "Ödenecek"` gibi. Bantta bu tıklama yalnızca bir referanstır; anlamı partide yazar |
-| Ajanın tek çağrısı | Çağrının yapıldığı sayfada çözülür: liste aç + seçenek → `select`, ızgara satırı → `row <satırı tanıtan hücre>`, düğme/bağlantı → `click`, `set_date` → `date`, `browser_type` → `type` |
-| Tarih | Kayıt gününe olan **gün farkıyla** saklanır. Oynatırken bugün + fark kullanılır; tarih çürümez |
-| REDDEDİLEN / HATA alan çağrı | Atlanır: hiçbir şey yapmamıştır |
-| Çözülemeyen çağrı (`browser_handle_dialog`, adı okunamayan tık, …) | **Bütün yürüyüş cache'e yazılmaz**, neden konsolda. Bir adımı sessizce atlayan replay başka bir senaryodur |
+| `getByRole('link', { name: 'Fatura İptal Et' })` | `internal:role=link[name="Fatura İptal Et"i]` |
+| `getByRole('button', { name: 'Geri', exact: true })` | `internal:role=button[name="Geri"s]` |
+| `getByLabel('Fatura No')` | `internal:label="Fatura No"i` |
+| `getByText('Detay', { exact: true }).first()` | `internal:text="Detay"s >> nth=0` |
+| `locator('#select2-firma-container')` | `#select2-firma-container` |
+| `getByRole('row', {…}).getByRole('radio')` | `… >> internal:role=radio` |
 
-### 29.3 Ne zaman kullanılmaz (MISS)
+Her çağrı: araç, `target`, diğer argümanlar (`text`, `values`, `key`, …),
+tarih için **kayıt gününe olan gün farkı**, ve o adımın altına yazılmış
+Beklenen. Tarih oynatılırken bugün + fark kullanılır; çürümez.
 
-| Durum | Konsol |
+`set_date` kendi tıklamalarını yaptığı için, kutuyu açan Playwright satırı
+`set_date`'in sonucuna eklenir ve oradan okunur.
+
+**Saklanmayanlar:** REDDEDİLEN / HATA alan çağrılar, snapshot'lar, prelude.
+**Yürüyüşü hiç saklatmayanlar** (neden konsolda `kaydedilmedi:` satırında):
+hedefi `aria-ref=…` olan, düzenli ifadeyle bulunan ya da tanınmayan bir
+bulucu; `browser_handle_dialog`, `browser_fill_form`, `browser_navigate`.
+
+Eski (ada göre arayan) cache satırları okunamaz ve "eski biçimde" sayılır;
+bir "AI ile çalıştır" onları yeniden yazar.
+
+### 29.3 Hızlı çalıştır ne YAPMAZ
+
+- Sayfayı okuyup bir şey **aramaz**. Çağrılar arasında yalnız bankanın
+  yükleme katmanı beklenir (`BusyPage`, JS ile; snapshot değil).
+- Ajan çağırmaz; hata olunca **devralma yoktur**.
+- Sayfayı yalnız **kontrol anlarında** okur: Beklenen'i olan bir adımdan
+  hemen sonra ve en sonda. Bunlar karar turuna "k. adımdan HEMEN SONRAKİ
+  ekran" ve "Son ekran" olarak gider. Beklenen'i "AI ile çalıştır" nasıl
+  değerlendiriyorsa öyle değerlendirir: sayfaya bakan bir modelle.
+- Tarayıcıyı kullanıcı kapatırsa bu bir cache hatası değildir: koşu "tarayıcı
+  kapandı" ile biter, cache **kalır**.
+
+### 29.4 Düğmenin durumu
+
+UI, senaryo seçildiğinde ve her koşudan sonra şunu sorar:
+
+```
+POST /api/v1/explore/cache-status {app, product, scenarioPath, text}
+→ {available, stepCount, savedAt, reason}
+```
+
+`text`, "AI ile çalıştır"ın gönderdiği metnin aynısıdır; cache onun
+SHA-256'sına bağlıdır. Düğmenin `title`'ı nedenini söyler:
+
+| `reason` | Ne demek |
 |---|---|
-| Kayıtlı bir senaryodan gelmeyen koşu (Ekran Keşfi) | `ai-cache yok: kayıtlı bir senaryodan gelmeyen koşu cache kullanmaz` |
-| Senaryonun kayıtlı akışı yok | `ai-cache MISS: bu senaryonun kayıtlı akışı yok` |
-| Senaryo metni kayıttan sonra değişti (doğal dil düzenlendi) | `ai-cache MISS: senaryo metni kayıttan sonra değişmiş` |
-| Ekran koddan açılamadı | `ai-cache MISS: ekran koddan açılamadı, kayıtlı akış oynatılmadı` |
-| Analist "Cache'siz, ajanla baştan" bastı (`ignoreCache: true`) | `ai-cache atlandı: analist ajanla baştan istedi` |
-
-Metnin özeti, UI'nin gönderdiği senaryo metninin (`text`) SHA-256'sıdır.
-Başta ve sonda kalan boşluklar yok sayılır. Adımlar, Beklenen, ön koşul ya
-da ad değişirse özet değişir.
-
-### 29.4 Oynatma durursa: ajan devralır
-
-Oynatma şu iki durumda durur:
-- bir adım tutmazsa (`StepRunner` "YAPILMADI" / "HATA" / "REDDEDİLDİ" der: ad
-  sayfada yok, satır artık yok, seçim tutmadı, onay engeli…);
-- **tırnaklı** bir adım içi beklenti sayfada görünmezse.
-
-Durduğu anda ajan o sayfadan başlar. Ajana giden ilk mesajın başında şunlar
-yer alır: koddan yapılan adımlar, hangi adımda neden durulduğu ve "Yapılmış
-adımları TEKRARLAMA". Sonuca bir uyarı eklenir: "Kayıtlı akış k. adımda durdu
-(…); ajan oradan devraldı." Ajan geçerse cache, oynatılan adımlar ve ajanın
-adımlarıyla birlikte **yenilenir**. Verisi değişen bir satır (örneğin iptal
-edilmiş fatura) böylece kendini onarır.
-
-Oynatma sırasında ekranda yeni bir uyarı belirirse (dialog, "… giriniz.")
-oynatma durmaz. Uyarı konsola ve karar turuna "Ekranın yol boyunca
-söyledikleri" başlığıyla yazılır; değerlendirmeyi model yapar.
+| kayıtlı akış yok | Bu senaryo hiç "AI ile çalıştır" ile geçmedi, ya da son Hızlı çalıştır bir adımda durup akışı sildi |
+| senaryo kayıttan sonra değişmiş | Doğal dil düzenlendi; akış eski metne aitti |
+| kayıtlı akış eski biçimde | Önceki, ada göre arayan cache'ten kalma satır |
 
 ### 29.5 Konsol
 
-Her karar ve her adım sunucu konsoluna `[uptest] ai-cache` önekiyle yazılır:
-
 ```
-[uptest] ai-cache HIT: 4 adım (bant 6955433b-…, 2 başarılı / 0 başarısız tekrar)
-[uptest] ai-cache    select "Firma Seçimi" = "ASAŞ ALÜMİNYUM SAN."
-[uptest] ai-cache    row "Ödenecek"
-[uptest] ai-cache    click "Fatura İptal Et"
-[uptest] ai-cache    click "Geri"
-[uptest] ai-cache oynatılıyor: 4 adım, model YOK
-[uptest] ai-cache 1/4 select "Firma Seçimi" = "ASAŞ ALÜMİNYUM SAN." → tamam
-[uptest] ai-cache 2/4 row "Ödenecek" → tamam (HLLSRC03 Ödenecek)
-[uptest] ai-cache 3/4 click "Fatura İptal Et" → tamam
-[uptest] ai-cache    beklenen ""Fatura İptal" ekranı açılır" → görüldü (kodla, 0 token)
-[uptest] ai-cache 4/4 click "Geri" → tamam
-[uptest] ai-cache bitti: 4/4 adım koddan yapıldı
-[uptest] ai-cache karar turu: tek AI cagrisi, talimat 2961 karakter
-[uptest] ai-cache kayıtlı akışla koşu GEÇTİ; akış yerinde kalıyor
+[uptest] ai-cache HIT: 6 çağrı (bant 6955433b-…, 2 başarılı tekrar)
+[uptest] ai-cache hızlı çalıştır: 6 çağrı kayıttan, sayfa okunmadan
+[uptest] ai-cache 1/6 tıkla "Firma Seçimi"  [#select2-firma-container] → tamam
+[uptest] ai-cache 2/6 tıkla "ASAŞ ALÜMİNYUM SAN."  [internal:role=option[name="ASAŞ ALÜMİNYUM SAN."i]] → tamam
+[uptest] ai-cache 3/6 tıkla "HLLSRC03 Ödenecek"  [internal:role=row[name="HLLSRC03 Ödenecek"i]] → TUTMADI: locator.click: Timeout 5000ms exceeded …
+[uptest] ai-cache silindi: 3. adım tutmadı: locator.click: Timeout 5000ms exceeded …
 ```
 
-Aynı satırlar HTTP cevabında `cache.log` olarak döner. UI'de AI ÖZET'in
-üstündeki satırın **"Adımlar"** düğmesi bunları gösterir.
+Aynı satırlar cevabın `cache.log`'unda; UI'de AI ÖZET'in üstündeki
+**"Adımlar"** düğmesi gösterir. Hata ayrıca AI ÖZET'in "Geçemeyen adımlar"
+listesinde yazar.
 
 ### 29.6 Cevap
 
 ```json
 "cache": {
-  "state": "hit",            // none | miss | ignored | hit | takeover
-  "note": "4 adım, kaynak bant 6955433b-…",
-  "stepCount": 4,
-  "stoppedAt": 3,            // yalnız takeover'da
-  "log": ["oynatılıyor: 4 adım, model YOK", "1/4 select …", "…"],
-  "saved": "4 adım kaydedildi" // ya da "kaydedilmedi: <neden>"
+  "state": "hit",            // none | walked | missing | hit | stopped
+  "note": "6 çağrı, kaynak bant 6955433b-…",
+  "stepCount": 6,
+  "stoppedAt": 3,            // yalnız stopped'da
+  "log": ["hızlı çalıştır: 6 çağrı kayıttan, sayfa okunmadan", "1/6 tıkla …"],
+  "saved": "6 çağrı kaydedildi" // AI ile çalıştır'da; stopped'da "kayıtlı akış silindi"
 }
 ```
 
 ### 29.7 Tablo: `AI_RUN_CACHE`
 
-`scenario_id` (birincil anahtar), `scenario_path`, `text_hash`, `steps_json`,
-`step_count`, `source_tape_id`, `cif`, `created_at`, `last_used_at`,
-`last_validated_at`, `hit_count`, `success_count`, `failure_count`.
-
-Bu yeni bir tablo; `ddl-auto=update` onu ilk açılışta kurar. `SCENARIO`
-tablosuna bir foreign key ile bağlı değildir. Silinen bir senaryonun satırı
-kalır ama kimse onu aramaz.
+`scenario_id` (birincil anahtar), `scenario_path`, `text_hash`, `steps_json`
+(`ReplayCall` listesi), `step_count`, `source_tape_id`, `cif`, `created_at`,
+`last_used_at`, `last_validated_at`, `hit_count`, `success_count`,
+`failure_count`. `ddl-auto=update` ilk açılışta kurar; `SCENARIO`'ya foreign
+key yok.
 
 ### 29.8 Bilinen sınırlar
 
-- **Tutar** (`enter amount`, iki kutu) oynatılırken etiketle bulunamayabilir.
-  O zaman o adımda durulur ve ajan devralır.
-- Yalnız **son geçen** yürüyüş saklanır; geçmişi tutulmaz.
-- Test kullanıcısı (`cif`) anahtarın parçası değildir. Başka bir kullanıcı
-  başka satırlar görürse satır adımında durulur ve ajan devralır.
-- Ajanın `do_steps` dışında, adı okunamayan bir öğeye yaptığı tek bir tık
-  bütün yürüyüşü cache'siz bırakır. Neden konsolda `kaydedilmedi:` satırında
-  yazar.
+- **İlk doğrulanacak:** MCP 0.0.82'nin `target`'ta `internal:role=…`
+  seçicisini kabul etmesi. Kabul etmezse ilk adım `does not match` der.
+- Satır adı satırın bütün metnini taşır (`HLLSRC03 Ödenecek 1.250,00 …`). O
+  fatura değişince satır adımı tutmaz → akış silinir → bir "AI ile çalıştır"
+  yeniden kaydeder. İstenen davranış budur.
+- Select2 açıcı bir kimlikle bulunursa (`#select2-…-container`) o kimlik
+  sabittir; adla (`Seçiniz`) bulunursa seçili değer değişince tutmayabilir.
+- Test kullanıcısı (`cif`) anahtarın parçası değil.
 
 ---
 
@@ -184,9 +183,10 @@ kuralıyla ayrılır. Eski senaryolar aynen çalışır.
 | `StepRunner` (do_steps) | Beklenen'i olan bir adımdan sonra partiyi **kodla durdurur** (`BEKLENEN KONTROLÜ`). Sonraki adım o sayfayı değiştiremez |
 | `RUN_SYSTEM` | "A step with a Beklenen line under it is checked RIGHT AFTER that step … If the page does not show it, that step is FAILED." |
 | `ClaimCheck` | Beklenen satırını adım saymaz. İçindeki bir "tıkla", basılması istenen bir düğme sanılmaz |
-| `CachedWalk` | Tırnaklı ad(lar) o anki sayfada **kodla** aranır (0 token). Görülmezse ajan devralır. Tırnaksız bir beklentide o sayfa saklanır ve karar turuna "k. adımdan HEMEN SONRAKİ ekran" diye eklenir |
+| `ReplayCalls.align` | Kayıtta Beklenen'i, o adımın tırnaklı adını taşıyan çağrıya bağlar |
+| `FastReplay` | O çağrıdan hemen sonra sayfayı alır; karar turu onu "k. adımdan HEMEN SONRAKİ ekran" olarak görür |
 | Detay görünümü | Beklenen satırı, adımın altında numarasız ve soluk renkte görünür |
 
 Yazım kuralı her yerde aynı: ekranda görünecek adı **tırnak içinde**,
-ekranın yazdığı gibi yazın. Tırnaklı bir beklenti cache'li koşuda kodla
-kontrol edilir; tırnaksız olanı model değerlendirir.
+ekranın yazdığı gibi yazın. Tırnaklı ad, Beklenen'in hangi adıma ait olduğunu
+Hızlı çalıştır'da da belirler.

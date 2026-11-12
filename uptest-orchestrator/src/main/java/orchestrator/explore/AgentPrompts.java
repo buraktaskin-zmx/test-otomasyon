@@ -204,7 +204,7 @@ final class AgentPrompts {
 
     /**
      * The system prompt of a CACHED "AI ile çalıştır": code has already done
-     * every step from the scenario's last passed walk (CachedWalk), so the
+     * every step from the scenario's last passed walk (FastReplay), so the
      * model is asked one thing in one turn — do the pages show what the
      * scenario expects. The verdict is never reused from an earlier run.
      */

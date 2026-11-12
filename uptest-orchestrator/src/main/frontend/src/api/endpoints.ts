@@ -8,6 +8,7 @@ import type {
   DiscoverStatus,
   ExecutorNode,
   ExploreAnswerResponse,
+  AiCacheStatus,
   ExploreCatalogResponse,
   ExploreRequest,
   ExploreToolsResponse,
@@ -295,6 +296,13 @@ export const getProductScenarios = (app: string, product: string) =>
  *  between every action. */
 export const explore = (request: ExploreRequest) =>
   api<ExploreAnswerResponse>("POST", "/api/v1/explore", request);
+
+/** Whether "Hızlı çalıştır" has a cache for this scenario's current text. */
+export const aiCacheStatus = (request: { app: string; product: string; scenarioPath: string; text: string }) =>
+  api<AiCacheStatus>("POST", "/api/v1/explore/cache-status", request);
+
+/** The 409 "Hızlı çalıştır" gets when the scenario has no usable cache. */
+export const NO_CACHE = "NO_CACHE";
 
 /** A minute or so: one model call (plus one repair turn) over the walk's
  *  recorded tape. Made after `explore` has answered. */

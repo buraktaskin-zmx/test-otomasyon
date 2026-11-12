@@ -1,6 +1,6 @@
 package orchestrator.explore;
 
-import orchestrator.explore.CachedSteps.CachedStep;
+import orchestrator.explore.ReplayCalls.ReplayCall;
 import orchestrator.persistence.AiRunCacheEntity;
 import orchestrator.persistence.AiRunCacheRepository;
 import orchestrator.product.ProductService;
@@ -21,22 +21,25 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * "AI ile çalıştır"'s step cache: looked up before the agent starts, written
- * after a walk PASSES.
+ * The step cache behind "Hızlı çalıştır".
  *
- * <p>The key is the saved scenario (its id) plus the text it was run with.
- * Edit the scenario and the text no longer matches; the cache is ignored
- * and the next passed walk replaces it. The cache never carries a verdict —
- * a cached run is judged again every time ({@link CachedWalk}).
+ * <p>Written after an "AI ile çalıştır" walk PASSES: the walk's tool calls,
+ * each with a page-independent target ({@link ReplayCalls}). Read by
+ * "Hızlı çalıştır", which sends them again ({@link FastReplay}). A call that
+ * errors there drops the row: the screen or its data has moved on, and the
+ * button is disabled until an agent walk passes again.
  *
- * <p>Every decision is printed with the {@code [uptest] ai-cache} prefix:
- * hit or miss and why, saved or not and why.
+ * <p>The key is the saved scenario (its id) plus the text it was run with:
+ * edit the scenario and the row no longer counts. Nothing here carries a
+ * verdict — every fast run is judged again.
+ *
+ * <p>Every decision is printed with the {@code [uptest] ai-cache} prefix.
  */
 @Service
 public class AiRunCache {
 
-    /** What happened to the cache on one run; also the answer's {@code cache} block. */
-    enum State { NONE, MISS, IGNORED, HIT, TAKEOVER }
+    /** What one run did with the cache; also the answer's {@code cache} block. */
+    enum State { NONE, WALKED, MISSING, HIT, STOPPED }
 
     /** One run's dealings with the cache. Filled in as the run goes. */
     static final class Visit {
@@ -46,7 +49,7 @@ public class AiRunCache {
         final String cif;
         State state;
         String note;
-        List<CachedStep> steps = List.of();
+        List<ReplayCall> calls = List.of();
         List<String> log = List.of();
         int stoppedAt;
         String saved;
@@ -70,7 +73,7 @@ public class AiRunCache {
             if (note != null) {
                 out.put("note", note);
             }
-            out.put("stepCount", steps.size());
+            out.put("stepCount", calls.size());
             if (stoppedAt > 0) {
                 out.put("stoppedAt", stoppedAt);
             }
@@ -80,6 +83,10 @@ public class AiRunCache {
             }
             return out;
         }
+    }
+
+    /** For the "Hızlı çalıştır" button: is there a cache this scenario, as written now, can use. */
+    public record Status(boolean available, int stepCount, Instant savedAt, String reason) {
     }
 
     private static final String PREFIX = "[uptest] ai-cache ";
@@ -92,52 +99,77 @@ public class AiRunCache {
         this.products = products;
     }
 
-    /**
-     * @param ignore the analyst asked for a fresh walk ("Cache'siz, ajanla baştan")
-     */
-    Visit lookup(String app, String product, String scenarioPath, String text, String cif, boolean ignore) {
+    /** "AI ile çalıştır": the cache is not read; the walk may write it. */
+    Visit walked(String app, String product, String scenarioPath, String text, String cif) {
+        UUID id = scenarioId(app, product, scenarioPath);
+        return new Visit(id, scenarioPath, sha256(text), cif, id == null ? State.NONE : State.WALKED,
+                id == null ? "kayıtlı senaryo değil" : null);
+    }
+
+    /** "Hızlı çalıştır": the cache this scenario's current text can use, or why there is none. */
+    Visit lookup(String app, String product, String scenarioPath, String text, String cif) {
         UUID id = scenarioId(app, product, scenarioPath);
         String hash = sha256(text);
-        if (id == null) {
-            System.out.println(PREFIX + "yok: kayıtlı bir senaryodan gelmeyen koşu cache kullanmaz");
-            return new Visit(null, scenarioPath, hash, cif, State.NONE, "kayıtlı senaryo değil");
+        Status status = status(id, hash);
+        if (!status.available()) {
+            System.out.println(PREFIX + "yok: " + status.reason() + " (" + scenarioPath + ")");
+            return new Visit(id, scenarioPath, hash, cif, State.MISSING, status.reason());
         }
-        if (ignore) {
-            System.out.println(PREFIX + "atlandı: analist ajanla baştan istedi (" + scenarioPath + ")");
-            return new Visit(id, scenarioPath, hash, cif, State.IGNORED, "analist cache'siz istedi");
-        }
-        Optional<AiRunCacheEntity> row = safeFind(id);
-        if (row.isEmpty()) {
-            System.out.println(PREFIX + "MISS: bu senaryonun kayıtlı akışı yok (" + scenarioPath + ")");
-            return new Visit(id, scenarioPath, hash, cif, State.MISS, "kayıtlı akış yok");
-        }
-        if (!hash.equals(row.get().getTextHash())) {
-            System.out.println(PREFIX + "MISS: senaryo metni kayıttan sonra değişmiş (" + scenarioPath + ")");
-            return new Visit(id, scenarioPath, hash, cif, State.MISS, "senaryo metni değişmiş");
-        }
-        List<CachedStep> steps = CachedSteps.fromJson(row.get().getStepsJson());
-        if (steps.isEmpty()) {
-            System.out.println(PREFIX + "MISS: kayıtlı akış okunamadı (" + scenarioPath + ")");
-            return new Visit(id, scenarioPath, hash, cif, State.MISS, "kayıtlı akış okunamadı");
-        }
+        AiRunCacheEntity row = safeFind(id).orElseThrow();
         Visit visit = new Visit(id, scenarioPath, hash, cif, State.HIT,
-                steps.size() + " adım, kaynak bant " + row.get().getSourceTapeId());
-        visit.steps = steps;
-        System.out.println(PREFIX + "HIT: " + steps.size() + " adım (bant " + row.get().getSourceTapeId()
-                + ", " + row.get().getSuccessCount() + " başarılı / " + row.get().getFailureCount()
-                + " başarısız tekrar)");
-        steps.forEach(step -> System.out.println(PREFIX + "   " + CachedSteps.describe(step)));
+                status.stepCount() + " çağrı, kaynak bant " + row.getSourceTapeId());
+        visit.calls = ReplayCalls.fromJson(row.getStepsJson());
+        System.out.println(PREFIX + "HIT: " + visit.calls.size() + " çağrı (bant " + row.getSourceTapeId() + ", "
+                + row.getSuccessCount() + " başarılı tekrar)");
         return visit;
     }
 
-    /**
-     * After the verdict: count a cached run, or save the steps of a walk the
-     * agent took part in. Only a PASSED walk is saved — a failed one may have
-     * gone the wrong way, and replaying a wrong way is the bug promoted to a
-     * passing test this project keeps warning about.
-     */
-    void settle(Visit visit, RunVerdict verdict, ActionTape tape, StepJournal journal, String scenarioText) {
+    public Status status(String app, String product, String scenarioPath, String text) {
+        return status(scenarioId(app, product, scenarioPath), sha256(text));
+    }
+
+    private Status status(UUID id, String hash) {
+        if (id == null) {
+            return new Status(false, 0, null, "kayıtlı bir senaryo değil");
+        }
+        Optional<AiRunCacheEntity> row = safeFind(id);
+        if (row.isEmpty()) {
+            return new Status(false, 0, null, "kayıtlı akış yok; önce 'AI ile çalıştır' ile bir kez geçmeli");
+        }
+        if (!hash.equals(row.get().getTextHash())) {
+            return new Status(false, 0, null, "senaryo kayıttan sonra değişmiş; 'AI ile çalıştır' ile yeniden kaydedin");
+        }
+        List<ReplayCall> calls = ReplayCalls.fromJson(row.get().getStepsJson());
+        if (calls.isEmpty()) {
+            return new Status(false, 0, null, "kayıtlı akış eski biçimde; 'AI ile çalıştır' ile yeniden kaydedin");
+        }
+        return new Status(true, calls.size(), row.get().getCreatedAt(), null);
+    }
+
+    /** A fast run hit a call that no longer works: the row goes, the button is disabled. */
+    void invalidate(Visit visit, String reason) {
         if (visit == null || visit.scenarioId == null) {
+            return;
+        }
+        try {
+            rows.deleteById(visit.scenarioId);
+            visit.state = State.STOPPED;
+            visit.note = reason;
+            visit.saved = "kayıtlı akış silindi";
+            System.out.println(PREFIX + "silindi: " + reason + " (" + visit.scenarioPath + ")");
+        } catch (RuntimeException failed) {
+            System.out.println(PREFIX + "silinemedi — " + failed.getClass().getSimpleName() + ": "
+                    + failed.getMessage());
+        }
+    }
+
+    /**
+     * After the verdict. A fast run is counted; an agent walk that PASSED is
+     * written down. A failed walk is never saved: replaying a wrong path is the
+     * bug promoted to a passing test this project keeps warning about.
+     */
+    void settle(Visit visit, RunVerdict verdict, ActionTape tape, String scenarioText) {
+        if (visit == null || visit.scenarioId == null || visit.state == State.STOPPED) {
             return;
         }
         RunVerdict.Result result = verdict == null ? null : verdict.result();
@@ -153,38 +185,36 @@ public class AiRunCache {
                     }
                     rows.save(row);
                 });
-                System.out.println(PREFIX + "kayıtlı akışla koşu " + (passed ? "GEÇTİ" : "GEÇMEDİ")
+                System.out.println(PREFIX + "hızlı koşu " + (passed ? "GEÇTİ" : "GEÇMEDİ (beklenen)")
                         + "; akış yerinde kalıyor");
                 return;
             }
-            if (visit.state == State.TAKEOVER && !passed) {
-                safeFind(visit.scenarioId).ifPresent(row -> {
-                    row.used(Instant.now());
-                    row.failed();
-                    rows.save(row);
-                });
+            if (visit.state != State.WALKED) {
+                return;
             }
             if (!passed) {
                 System.out.println(PREFIX + "kaydedilmedi: koşu geçmedi");
                 visit.saved = "kaydedilmedi: koşu geçmedi";
                 return;
             }
-            CachedSteps.Extracted extracted = CachedSteps.fromWalk(tape.calls(), journal, LocalDate.now());
+            ReplayCalls.Extracted extracted = ReplayCalls.fromWalk(tape.calls(), LocalDate.now());
             if (!extracted.usable()) {
                 System.out.println(PREFIX + "kaydedilmedi: " + extracted.refusal());
                 visit.saved = "kaydedilmedi: " + extracted.refusal();
                 return;
             }
-            List<CachedStep> steps = new ArrayList<>(extracted.steps());
-            List<String> unmatched = CachedSteps.align(steps, scenarioText);
+            List<ReplayCall> calls = new ArrayList<>(extracted.calls());
+            List<String> unmatched = ReplayCalls.align(calls, scenarioText);
             AiRunCacheEntity row = safeFind(visit.scenarioId).orElseGet(() -> new AiRunCacheEntity(visit.scenarioId));
-            row.store(visit.scenarioPath, visit.textHash, CachedSteps.toJson(steps), steps.size(), tape.id(),
+            row.store(visit.scenarioPath, visit.textHash, ReplayCalls.toJson(calls), calls.size(), tape.id(),
                     visit.cif, Instant.now());
             rows.save(row);
-            visit.saved = steps.size() + " adım kaydedildi";
-            System.out.println(PREFIX + "kaydedildi: " + steps.size() + " adım (bant " + tape.id() + ")");
-            steps.forEach(step -> System.out.println(PREFIX + "   " + CachedSteps.describe(step)
-                    + (step.expected() == null ? "" : "  ⟶ beklenen: " + step.expected())));
+            visit.calls = calls;
+            visit.saved = calls.size() + " çağrı kaydedildi";
+            System.out.println(PREFIX + "kaydedildi: " + calls.size() + " çağrı (bant " + tape.id() + ")");
+            calls.forEach(call -> System.out.println(PREFIX + "   " + call.says()
+                    + (call.target() == null ? "" : "  [" + call.target() + "]")
+                    + (call.expected() == null ? "" : "  ⟶ beklenen: " + call.expected())));
             unmatched.forEach(line -> System.out.println(PREFIX + "   adımı bulunamayan beklenen (son ekranda"
                     + " değerlendirilecek): " + line));
         } catch (RuntimeException failed) {
@@ -196,6 +226,9 @@ public class AiRunCache {
     }
 
     private Optional<AiRunCacheEntity> safeFind(UUID id) {
+        if (id == null) {
+            return Optional.empty();
+        }
         try {
             return rows.findById(id);
         } catch (RuntimeException unreadable) {

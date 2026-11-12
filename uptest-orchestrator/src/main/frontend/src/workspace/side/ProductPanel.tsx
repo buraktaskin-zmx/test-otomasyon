@@ -9,7 +9,7 @@ import { useRunQueue } from "../../hooks/useRunQueue";
 import type { useProducts } from "../../hooks/useProducts";
 import type { useTestUsers } from "../../hooks/useTestUsers";
 import {
-  BROWSER_CLOSED, addScreen, createHeading, createMenu, createScenarioFile, explore, exportScenarios,
+  BROWSER_CLOSED, NO_CACHE, aiCacheStatus, addScreen, createHeading, createMenu, createScenarioFile, explore, exportScenarios,
   arrangeScenarios, deleteScenario, moveScenario, setScenarioHeading, tapeGherkin,
 } from "../../api/endpoints";
 import type { MoveTarget } from "../../product/ScenarioTable";
@@ -17,7 +17,7 @@ import { NewScenario } from "../../product/NewScenario";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
 import { docAsText } from "../../lib/scenarioProse";
 import { useToast } from "../../ui/Toast";
-import type { AiRunCache, AiRunSummary, Origin, RunLogin, WalkLine } from "../../api/types";
+import type { AiCacheStatus, AiRunCache, AiRunSummary, Origin, RunLogin, WalkLine } from "../../api/types";
 
 /** A walk that finished, kept until the analyst asks for its Gherkin. */
 interface FinishedWalk {
@@ -341,23 +341,49 @@ export function ProductPanel({
     setAiWalk([]);
   }, [selection?.path]);
 
-  const aiRun = useAsyncAction(async (fresh?: boolean) => {
+  /* The text an ai-run sends. "Hızlı çalıştır"'s cache is keyed on this exact
+     text, so the status check and the run must build it the same way. */
+  const screenName = screen?.name || selection?.flow || "";
+  const category = registry?.category ?? "";
+  const aiRunText = (doc: NonNullable<typeof products.scenario>["doc"]) => [
+    category
+      ? `${category} menüsü altındaki "${screenName}" ekranına git.`
+      : `"${screenName}" ekranına git.`,
+    "Sonra şu senaryoyu uygula:",
+    "",
+    docAsText(doc),
+  ].join("\n");
+
+  /* "Hızlı çalıştır": enabled only when the server has a cache for this
+     scenario as it is written now. Asked again after every run. */
+  const [fastStatus, setFastStatus] = useState<AiCacheStatus | null>(null);
+  const [fastAsk, setFastAsk] = useState(0);
+  const fastText = products.scenario ? aiRunText(products.scenario.doc) : "";
+  useEffect(() => {
+    setFastStatus(null);
+    if (!selection?.path || !fastText) return;
+    let live = true;
+    void aiCacheStatus({
+      app: selection.app,
+      product: selection.product,
+      scenarioPath: selection.path,
+      text: fastText,
+    }).then((answer) => {
+      if (live) setFastStatus(answer.ok ? answer.body : null);
+    });
+    return () => {
+      live = false;
+    };
+  }, [selection?.app, selection?.product, selection?.path, fastText, fastAsk]);
+
+  const aiRun = useAsyncAction(async (fast?: boolean) => {
     const scenario = products.scenario;
     if (!selection || !scenario) return;
     if (!chosenUser) {
       toast("Önce yukarıdan bir CIF seçin — ajan onunla giriş yapar", true);
       return;
     }
-    const screenName = screen?.name || selection.flow || "";
-    const category = registry?.category ?? "";
-    const text = [
-      category
-        ? `${category} menüsü altındaki "${screenName}" ekranına git.`
-        : `"${screenName}" ekranına git.`,
-      "Sonra şu senaryoyu uygula:",
-      "",
-      docAsText(scenario.doc),
-    ].join("\n");
+    const text = aiRunText(scenario.doc);
 
     gherkinRequest.current++;
     setAiTraceId(null);
@@ -385,8 +411,9 @@ export function ProductPanel({
       flow: selection.flow ?? undefined,
       scenarioPath: selection.path ?? undefined,
       screen: screenName || undefined,
-      ignoreCache: fresh === true ? true : undefined,
+      fastRun: fast === true ? true : undefined,
     });
+    setFastAsk((n) => n + 1);
     const traced = result.ok
       ? result.body.traceId
       : (result.body as { traceId?: string } | null)?.traceId;
@@ -394,6 +421,10 @@ export function ProductPanel({
     if (!result.ok) {
       if (result.error === BROWSER_CLOSED) {
         setAiClosed(true);
+        return;
+      }
+      if (result.error === NO_CACHE) {
+        toast("Hızlı çalıştır: kayıtlı akış yok — önce 'AI ile çalıştır' ile bir kez geçmeli", true);
         return;
       }
       toast("Ajan çalıştırılamadı: " + result.error, true);
@@ -651,7 +682,8 @@ export function ProductPanel({
                     { app: selection.app, product: selection.product, path: selection.path! },
                   )}
                   onAiRun={() => aiRun.run()}
-                  onAiRunFresh={() => aiRun.run(true)}
+                  onFastRun={() => aiRun.run(true)}
+                  fastStatus={fastStatus}
                   aiCache={aiCache}
                   aiWalk={aiWalk}
                   aiBusy={aiRun.busy}

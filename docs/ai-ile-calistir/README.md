@@ -35,9 +35,10 @@ Ajan her şeyi kendi yapmaz:
 - **Kararı ajan vermez:** kod, ajanın iddiasını bantla karşılaştırır.
 - Her çağrı tam haliyle diske yazılır. Bu bant sonradan "Gherkin oluştur" ile
   deterministik bir senaryoya çevrilebilir.
-- Bir kez **geçen** senaryonun adımları saklanır (`AI_RUN_CACHE`). Sonraki
-  koşuda bu adımları kod uygular, sonucu tek bir AI turu değerlendirir. Bir
-  adım tutmazsa ajan o noktadan devralır ([§29](14-adim-cache.md)).
+- Bir kez **geçen** senaryonun araç çağrıları saklanır (`AI_RUN_CACHE`).
+  **Hızlı çalıştır** bunları sayfaya bakmadan yeniden gönderir, sonucu tek bir
+  AI turu değerlendirir. Bir çağrı tutmazsa koşu durur ve kayıt silinir
+  ([§29](14-adim-cache.md)).
 
 ```
  analist ──► React UI ──► orchestrator ──► AiRunPrelude (KOD: giriş + menü + yükleme bekleme)
@@ -83,7 +84,7 @@ Ajan her şeyi kendi yapmaz:
 | [11-hata-ayiklama.md](11-hata-ayiklama.md) | §25 | Log satırları, belirti tablosu, bakış sırası, kopyala-yapıştır komutlar |
 | [12-bilinen-aciklar.md](12-bilinen-aciklar.md) | §26–§27 | Açık sorunlar, dosya haritası |
 | [13-ornek-kosu-2628c4fd.md](13-ornek-kosu-2628c4fd.md) | — | Yanlış "Geçti" veren gerçek bir koşu, kayıt kayıt; bugünkü kod ne yapardı |
-| [14-adim-cache.md](14-adim-cache.md) | §29–§30 | Adım cache'i (geçen yürüyüş kodla tekrar oynatılır, tek AI turu karar verir, durursa ajan devralır) ve adım içi Beklenen |
+| [14-adim-cache.md](14-adim-cache.md) | §29–§30 | Hızlı çalıştır (geçen yürüyüşün araç çağrıları sayfa okunmadan yeniden gönderilir, tek AI turu karar verir, bir çağrı tutmazsa kayıt silinir) ve adım içi Beklenen |
 
 **§ numaraları dosyalar arasında sabittir.** Bir metin "§13" diyorsa o bölüm
 hangi dosyadaysa oradadır; tablo yukarıda. Bağlantılı olanlar doğrudan o

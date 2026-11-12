@@ -677,9 +677,9 @@ export interface ExploreRequest {
   /** The screen's name as its menu prints it: where the code navigates
    *  before the agent starts ("AI ile çalıştır" only). */
   screen?: string;
-  /** "AI ile çalıştır" only: walk from scratch even when the scenario has a
-   *  cached walk ("Cache'siz, ajanla baştan"). */
-  ignoreCache?: boolean;
+  /** "Hızlı çalıştır": send the scenario's cached tool calls again instead of
+   *  letting the agent walk. Refused with 409 NO_CACHE when there is none. */
+  fastRun?: boolean;
 }
 
 /** POST /api/v1/explore 200 body.
@@ -714,6 +714,15 @@ export interface ExploreAnswerResponse {
   walk?: WalkLine[];
 }
 
+/** POST /api/v1/explore/cache-status: can "Hızlı çalıştır" run this
+ *  scenario as it is written now, and if not why. */
+export interface AiCacheStatus {
+  available: boolean;
+  stepCount: number;
+  savedAt?: string | null;
+  reason?: string | null;
+}
+
 /** One line of WalkStory. depth 0 = login/menu, 1 = a screen, 2 = what was
  *  done on it, 3 = what the screen showed after that. */
 export interface WalkLine {
@@ -722,13 +731,14 @@ export interface WalkLine {
   text: string;
 }
 
-/** AiRunCache.Visit.toJson. hit = every step replayed in code and one model
- *  turn judged it; takeover = the replay stopped at `stoppedAt` and the agent
- *  went on from there; miss / ignored = the agent walked from scratch; none =
+/** AiRunCache.Visit.toJson. walked = "AI ile çalıştır", the agent walked
+ *  (`saved` says whether its calls were cached); hit = "Hızlı çalıştır" sent
+ *  every cached call and one model turn judged it; stopped = a cached call
+ *  failed at `stoppedAt`, the run failed and the cache was dropped; none =
  *  not a saved scenario. `log` is the replay, line for line, as the server
- *  console printed it; `saved` says whether this run's steps were cached. */
+ *  console printed it. */
 export interface AiRunCache {
-  state: "none" | "miss" | "ignored" | "hit" | "takeover";
+  state: "none" | "walked" | "missing" | "hit" | "stopped";
   note?: string;
   stepCount: number;
   stoppedAt?: number;

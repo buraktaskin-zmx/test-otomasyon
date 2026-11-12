@@ -87,9 +87,6 @@ final class StepRunner implements ToolCallback {
     private Map<String, ToolCallback> tools = Map.of();
     private ActionTape tape;
 
-    /** Where finished batches are noted for the step cache; null when nobody asks. */
-    private StepJournal journal;
-
     /**
      * Compacted name → the expectation the scenario wrote under the step that
      * quotes it ({@link StepExpectations#checkpoints}). A batch stops right
@@ -97,11 +94,6 @@ final class StepRunner implements ToolCallback {
      * checked, and the next step would replace that page.
      */
     private Map<String, String> checkpoints = Map.of();
-
-    StepRunner journal(StepJournal journal) {
-        this.journal = journal;
-        return this;
-    }
 
     StepRunner checkpoints(Map<String, String> checkpoints) {
         this.checkpoints = checkpoints == null ? Map.of() : Map.copyOf(checkpoints);
@@ -168,37 +160,28 @@ final class StepRunner implements ToolCallback {
         }
         Set<String> before = complaints(AriaSnapshot.of(latestPage()));
         List<String> log = new ArrayList<>();
-        List<Step> done = new ArrayList<>();
-        int from = tape.calls().size();
         String halted = null;
-        try {
-            for (int i = 0; i < steps.size() && halted == null; i++) {
-                Step step = steps.get(i);
-                String outcome = attempt(step);
-                if (!outcome.startsWith("tamam")) {
-                    halted = outcome;
-                    log.add(line(i, step, outcome));
-                    break;
-                }
-                done.add(step);
+        for (int i = 0; i < steps.size() && halted == null; i++) {
+            Step step = steps.get(i);
+            String outcome = attempt(step);
+            if (!outcome.startsWith("tamam")) {
+                halted = outcome;
                 log.add(line(i, step, outcome));
-                Set<String> now = complaints(AriaSnapshot.of(latestPage()));
-                now.removeAll(before);
-                if (!now.isEmpty()) {
-                    log.add("   ekran yeni bir şey söylüyor: " + String.join(" | ", now));
-                    halted = "ekran değişti";
-                    break;
-                }
-                String expected = expectationAfter(step);
-                if (expected != null && i < steps.size() - 1) {
-                    log.add("   BEKLENEN KONTROLÜ: senaryo bu adımın altına \"" + expected
-                            + "\" yazmış. Aşağıdaki sayfada bunu kontrol et, sonra kalan adımları gönder.");
-                    halted = "beklenen kontrolü";
-                }
+                break;
             }
-        } finally {
-            if (journal != null) {
-                journal.add(from, tape.calls().size(), done);
+            log.add(line(i, step, outcome));
+            Set<String> now = complaints(AriaSnapshot.of(latestPage()));
+            now.removeAll(before);
+            if (!now.isEmpty()) {
+                log.add("   ekran yeni bir şey söylüyor: " + String.join(" | ", now));
+                halted = "ekran değişti";
+                break;
+            }
+            String expected = expectationAfter(step);
+            if (expected != null && i < steps.size() - 1) {
+                log.add("   BEKLENEN KONTROLÜ: senaryo bu adımın altına \"" + expected
+                        + "\" yazmış. Aşağıdaki sayfada bunu kontrol et, sonra kalan adımları gönder.");
+                halted = "beklenen kontrolü";
             }
         }
         StringBuilder out = new StringBuilder(String.join("\n", log));
@@ -220,23 +203,6 @@ final class StepRunner implements ToolCallback {
             throw closed;
         } catch (RuntimeException failed) {
             return "HATA: " + firstLine(String.valueOf(failed.getMessage()));
-        }
-    }
-
-    /**
-     * One step, noted in the journal as a batch of its own — what a cached
-     * replay uses, so a walk the agent finishes after it can be cached whole.
-     */
-    String attemptNoted(Step step) {
-        int from = tape.calls().size();
-        String outcome = "HATA: adım koşulamadı";
-        try {
-            outcome = attempt(step);
-            return outcome;
-        } finally {
-            if (journal != null) {
-                journal.add(from, tape.calls().size(), outcome.startsWith("tamam") ? List.of(step) : List.of());
-            }
         }
     }
 

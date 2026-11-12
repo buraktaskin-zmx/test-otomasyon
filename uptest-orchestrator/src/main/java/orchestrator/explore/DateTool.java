@@ -93,8 +93,9 @@ public class DateTool {
             return "There is no month " + month + ". Give the date as gg/aa/yyyy.";
         }
 
+        String opened;
         try {
-            step("open the field", click, "{\"target\":" + quote(target) + "}");
+            opened = step("open the field", click, "{\"target\":" + quote(target) + "}");
             // Year first, then month: each one redraws the day grid, so a day
             // chosen before them is thrown away. The month is sent as jQuery
             // UI's own 0-based value rather than its Turkish name — the name
@@ -113,7 +114,18 @@ public class DateTool {
         }
 
         return "Set to " + date + ". Clicking the day closes the calendar and writes the value, so "
-                + "do not type into the box afterwards and do not press anything else in the calendar.";
+                + "do not type into the box afterwards and do not press anything else in the calendar."
+                + boxLine(opened);
+    }
+
+    /**
+     * The Playwright line MCP ran to open the box, carried in the result so the
+     * tape keeps a target for the box that does not depend on one page load —
+     * what "Hızlı çalıştır" sends again (ReplayCalls). Empty when there was none.
+     */
+    private static String boxLine(String clicked) {
+        String line = ReplayCalls.codeLine(clicked);
+        return line.isEmpty() ? "" : "\n### Ran Playwright code\n```js\n" + line + "\n```";
     }
 
     /**
@@ -124,12 +136,13 @@ public class DateTool {
      * otherwise show a single set_date line and nothing about which of the
      * four steps went wrong.
      */
-    private static void step(String what, ToolCallback tool, String arguments) {
+    private static String step(String what, ToolCallback tool, String arguments) {
         System.out.println("[uptest] set_date: " + what + " -> " + arguments);
         String result = tool.call(arguments);
         if (result != null && result.contains("### Error")) {
             throw new IllegalStateException(what + " failed: " + oneLine(result));
         }
+        return result;
     }
 
     private static String oneLine(String value) {
