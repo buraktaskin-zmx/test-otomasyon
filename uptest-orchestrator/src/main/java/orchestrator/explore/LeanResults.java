@@ -65,7 +65,7 @@ final class LeanResults {
         if (result == null) {
             return null;
         }
-        String out = RAN_CODE.matcher(result).replaceAll("");
+        String out = RAN_CODE.matcher(unwrap(result)).replaceAll("");
         out = dropScaffold(out);
         if (out.length() <= cap) {
             return out;
@@ -74,6 +74,54 @@ final class LeanResults {
                 + "\n\n[... kesildi. Bu sayfa tek bir cevaba sigmayacak kadar buyuk. "
                 + "Aradigin sey burada yoksa TUM sayfayi yeniden okuma: snapshot'i "
                 + "target/depth ile daralt.]";
+    }
+
+    private static final com.fasterxml.jackson.databind.ObjectMapper JSON =
+            new com.fasterxml.jackson.databind.ObjectMapper();
+
+    /**
+     * The text inside MCP's content-block array, or the result unchanged.
+     *
+     * <p><b>Measured 12.11.2026</b> on tape 2628c4fd: this class removed
+     * NOTHING from a real page — 10.911 characters in, 10.911 out, then cut
+     * at the cap. MCP hands a result over as {@code [{"text":"### Page\n…"}]},
+     * a JSON string in which every line break is the two characters
+     * {@code \n}. Read that way the whole page is ONE line, no line matches a
+     * snapshot node, and nothing is dropped; the code echo is not matched
+     * either. The unit tests fed plain text and passed, which is the
+     * "measure a page summary on a real walk, never on fixtures alone"
+     * lesson arriving a second time. Unwrapped first, the same page goes
+     * from 10.413 to 7.906 characters.
+     *
+     * <p>The model gets the plain text, which reads the same to it and costs
+     * fewer tokens than the escaped form. The tape keeps the raw result.
+     * Anything that is not that exact shape is passed through untouched.
+     */
+    static String unwrap(String result) {
+        String head = result.stripLeading();
+        if (!head.startsWith("[{") || !head.contains("\"text\"")) {
+            return result;
+        }
+        try {
+            var root = JSON.readTree(head);
+            if (!root.isArray()) {
+                return result;
+            }
+            StringBuilder out = new StringBuilder();
+            for (var block : root) {
+                var text = block.get("text");
+                if (text == null || !text.isTextual()) {
+                    return result;
+                }
+                if (out.length() > 0) {
+                    out.append('\n');
+                }
+                out.append(text.asText());
+            }
+            return out.toString();
+        } catch (Exception notJson) {
+            return result;
+        }
     }
 
     /**
@@ -109,6 +157,15 @@ final class LeanResults {
         }
         boolean named = node.group(3) != null && !node.group(3).isBlank();
         if (named) {
+            return true;
+        }
+        // A box with TEXT of its own is a label, not scaffolding: this
+        // application prints "Firma Seçimi" as `generic [ref=f3e419]: Firma
+        // Seçimi` beside an unnamed combobox, and the label is the only thing
+        // that says which box is which. Dropping it went unnoticed only because
+        // this class never ran on a real page before unwrap() (12.11.2026).
+        String rest = node.group(4).replaceAll("\\[[^]]*]", "").trim();
+        if (rest.startsWith(":") && !rest.substring(1).isBlank()) {
             return true;
         }
         String role = node.group(2).toLowerCase(java.util.Locale.ROOT);

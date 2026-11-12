@@ -44,10 +44,10 @@ public record ScenarioFields(String title, List<String> rules, List<String> need
         rules = clean(rules);
         needs = clean(needs);
         otherTags = clean(otherTags);
-        preconditions = clean(preconditions);
-        steps = clean(steps);
-        expected = clean(expected);
-        summary = clean(summary);
+        preconditions = prose(preconditions);
+        steps = prose(steps);
+        expected = prose(expected);
+        summary = prose(summary);
         // No comment lines in any Gherkin, by the analysts' rule.
         gherkin = gherkin == null ? "" : COMMENT_LINE.matcher(gherkin).replaceAll("");
     }
@@ -64,6 +64,36 @@ public record ScenarioFields(String title, List<String> rules, List<String> need
                 .filter(item -> item != null)
                 .map(item -> item.trim().replaceFirst("^[-•*]\\s+", "").trim())
                 .filter(item -> !item.isEmpty())
+                .toList();
+    }
+
+    /** "1. ", "2) " typed or pasted in front of an item. */
+    private static final Pattern NUMBERING = Pattern.compile("^\\d{1,3}[.)]\\s+");
+
+    /** A section's own heading pasted in as an item: "Adımlar", "Ön koşul:", "Beklenen". */
+    private static final Pattern HEADING = Pattern.compile(
+            "(?iu)^(ad[ıi]mlar|(ö|o)n\\s*ko[şs]ul(lar)?|beklenen(ler)?|a[çc][ıi]klama)\\s*:?$");
+
+    /**
+     * {@link #clean}, plus what a list pasted from elsewhere brings with it.
+     *
+     * <p><b>Measured 12.11.2026</b> (tape 2628c4fd): "İptal ekranından Geri
+     * ile listeye dönülür" was stored with the steps
+     * {@code ["Adımlar", "1. Firma Seçimi…", "2. Listede…", …]} — the block
+     * pasted with its own heading and numbers. Every consumer numbers the
+     * steps itself, so the agent was handed {@code 1. Adımlar},
+     * {@code 2. 1. Firma Seçimi…}, {@code 4. 3. … "Fatura İptal Et"…}: two
+     * numberings that disagree, and a step 1 that is the word "Adımlar".
+     *
+     * <p>Applied here because every write AND every read builds this record
+     * (ScenarioStore reads through it), so rows already saved that way are
+     * cleaned the next time they are read, without a migration. Only the four
+     * prose lists — never rules, needs or tags.
+     */
+    private static List<String> prose(List<String> items) {
+        return clean(items).stream()
+                .map(item -> NUMBERING.matcher(item).replaceFirst("").trim())
+                .filter(item -> !item.isEmpty() && !HEADING.matcher(item).matches())
                 .toList();
     }
 }

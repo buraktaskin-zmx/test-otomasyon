@@ -139,7 +139,7 @@ public class ExploreController {
                              @Value("${uptest.explore.ai-run.token-budget:100000}") long runTokenBudget,
                              @Value("${uptest.explore.ai-run.tool-budget:40}") int runToolBudget,
                              @Value("${uptest.explore.ai-run.describe-cap:220}") int describeCap,
-                             @Value("${uptest.explore.ai-run.page-cap:6000}") int pageCap) {
+                             @Value("${uptest.explore.ai-run.page-cap:12000}") int pageCap) {
         this.client = builder.build();
         this.tools = tools;
         this.catalogs = catalogs;
@@ -612,6 +612,8 @@ public class ExploreController {
             // analyst reads the lines and decides.
             TapeRenderer.Rendered rendered =
                     TapeRenderer.render(tape.calls(), body.mainMenu(), body.expected());
+            // The agent's "done" is held against the tape before anyone sees it.
+            ClaimCheck.apply(verdict, body.text(), tape.calls(), rendered.steps());
             Map<String, Object> reply = new LinkedHashMap<>();
             // With a result the tool's own return line ("Sonuç kaydedildi")
             // is what came back as content; the prose every older reader

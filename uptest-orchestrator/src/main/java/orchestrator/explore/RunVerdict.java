@@ -48,7 +48,17 @@ public final class RunVerdict {
     private final List<String> added = new CopyOnWriteArrayList<>();
 
     /**
-     * @param succeeded     steps carried out that behaved as they should
+     * Failures the CODE found in the agent's claim (ClaimCheck): a step it
+     * reported done that the tape shows it never did. Kept apart for the same
+     * reason as {@link #added}, and they decide the verdict like any failure.
+     */
+    private final List<String> refutedFailures = new CopyOnWriteArrayList<>();
+
+    /** The captions of those steps, folded — the agent's own lines naming them leave "succeeded". */
+    private final List<String> refutedCaptions = new CopyOnWriteArrayList<>();
+
+    /**
+     * @param succeeded    steps carried out that behaved as they should
      * @param failed        steps not carried out, or that did not show what was expected
      * @param warnings      what the analyst should know that did not decide the result
      * @param claimedPassed what the agent said
@@ -164,12 +174,35 @@ public final class RunVerdict {
     /** The result with the code's warnings after the agent's, or null when the agent never reported one. */
     public Result result() {
         Result r = result;
-        if (r == null || added.isEmpty()) {
+        if (r == null || (added.isEmpty() && refutedFailures.isEmpty())) {
             return r;
         }
+        List<String> succeeded = new ArrayList<>();
+        for (String line : r.succeeded()) {
+            String folded = ClaimCheck.compact(line);
+            if (refutedCaptions.stream().noneMatch(folded::contains)) {
+                succeeded.add(line);
+            }
+        }
+        List<String> failed = new ArrayList<>(r.failed());
+        failed.addAll(refutedFailures);
         List<String> warnings = new ArrayList<>(r.warnings());
         warnings.addAll(added);
-        return new Result(r.succeeded(), r.failed(), warnings, r.claimedPassed());
+        return new Result(succeeded, failed, warnings, r.claimedPassed());
+    }
+
+    /**
+     * A step the agent reported done and the tape shows it never did. It
+     * leaves "succeeded" (every agent line naming the caption does) and is
+     * listed as failed, so the run is Geçmedi whatever {@code passed} said.
+     */
+    public void refute(String caption, String failure) {
+        String folded = ClaimCheck.compact(caption == null ? "" : caption);
+        if (folded.isEmpty() || failure == null || failure.isBlank()) {
+            return;
+        }
+        refutedCaptions.add(folded);
+        refutedFailures.add(failure.strip());
     }
 
     /** A warning from the code, shown after the agent's own. */

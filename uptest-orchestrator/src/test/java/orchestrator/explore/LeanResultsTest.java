@@ -82,6 +82,33 @@ class LeanResultsTest {
     }
 
     @Test
+    @DisplayName("12.11.2026: MCP's real shape — a JSON array, escaped line breaks — is summarised too")
+    void realMcpShapeIsUnwrapped() {
+        String wrapped = "[{\"text\":\"### Page\\n- Page URL: x\\n### Snapshot\\n```yaml\\n"
+                + "- generic [ref=f3e417]:\\n"
+                + "  - generic [ref=f3e418]:\\n"
+                + "    - generic [ref=f3e419]: Firma Seçimi\\n"
+                + "    - combobox [ref=f3e422] [cursor=pointer]:\\n"
+                + "      - textbox \\\"Seçiniz\\\" [ref=f3e423]\\n"
+                + "  - list [ref=f3e733]:\\n"
+                + "    - listitem [ref=f3e746]:\\n"
+                + "      - link \\\"Fatura İptal Et\\\" [ref=f3e747] [cursor=pointer]:\\n"
+                + "        - /url: \\\"#\\\"\\n"
+                + "```\"}]";
+
+        String lean = LeanResults.summarise(wrapped, 10_000);
+
+        assertThat(lean)
+                .doesNotContain("\\n")
+                .doesNotContain("generic [ref=f3e417]")
+                .doesNotContain("listitem [ref=f3e746]")
+                // A label is text of its own, not scaffolding.
+                .contains("generic [ref=f3e419]: Firma Seçimi")
+                .contains("textbox \"Seçiniz\" [ref=f3e423]")
+                .contains("link \"Fatura İptal Et\" [ref=f3e747]");
+    }
+
+    @Test
     void nullAndPlainTextArePassedThrough() {
         assertThat(LeanResults.summarise(null, 100)).isNull();
         assertThat(LeanResults.summarise("Clicked", 100)).isEqualTo("Clicked");

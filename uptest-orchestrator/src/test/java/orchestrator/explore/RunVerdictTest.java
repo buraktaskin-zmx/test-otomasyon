@@ -172,6 +172,38 @@ class RunVerdictTest {
         assertThat(reached).containsExactly("browser_click", "browser_click");
     }
 
+    @Test
+    @DisplayName("12.11.2026: a click by reference alone is judged by what the page says the reference is")
+    void referenceOnlyClickIsReadOffThePage() {
+        String scenario = fold("3. İşlemler panelindeki \"Fatura İptal Et\" düğmesine tıkla\n"
+                + "4. Açılan ekranda \"Geri\" düğmesine tıkla");
+        RunVerdict verdict = new RunVerdict();
+        List<String> reached = new ArrayList<>();
+        ActionTape tape = ActionTape.open(dir, "explore", scenario, "", "", List.of());
+        // As MCP really returns it: a JSON array, the tree's line breaks escaped.
+        String tree = "- generic [ref=f4e1]:\\n"
+                + "  - button \\\"Evet\\\" [ref=f4e20] [cursor=pointer]\\n"
+                + "  - link [ref=f4e21] [cursor=pointer]:\\n"
+                + "    - text: Geri\\n"
+                + "  - link \\\"Silinmiş Faturalar\\\" [ref=f4e22] [cursor=pointer]";
+        tape.record("browser_snapshot", "{}", ActionTape.Outcome.OK,
+                "[{\"text\":\"### Page\\n- Page URL: x\\n### Snapshot\\n```yaml\\n" + tree + "\\n```\"}]");
+        AiRunPolicy policy = new AiRunPolicy(null, java.time.Duration.ZERO, 0, 220, 6000, () -> 0L);
+        Object[] tools = BudgetedTool.wrap(List.of(fake("browser_click", reached)),
+                99, null, List.of(), new LinkedHashSet<>(), scenario, new AtomicBoolean(), tape,
+                verdict, policy);
+        ToolCallback click = (ToolCallback) tools[0];
+
+        assertThat(click.call("{\"target\": \"f4e20\"}")).contains("REFUSED").contains("evet");
+        assertThat(reached).isEmpty();
+
+        // Named only by a child's text, and asked for: goes through.
+        click.call("{\"target\": \"f4e21\"}");
+        // "sil" inside a word of the page's own text is not a delete button.
+        click.call("{\"target\": \"f4e22\"}");
+        assertThat(reached).containsExactly("browser_click", "browser_click");
+    }
+
     /** BudgetedTool folds the instruction before storing it; the test must match. */
     private static String fold(String text) {
         return text.replaceAll("\s+", " ").trim().toLowerCase(java.util.Locale.forLanguageTag("tr-TR"));
