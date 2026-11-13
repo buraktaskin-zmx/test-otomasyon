@@ -71,8 +71,18 @@ public final class RunVerdict {
     /** The model's {@code expectations} answers; null when the CODE reported the result. */
     private volatile List<String> answers;
 
-    /** B-number → why the code says that expectation could not be judged where it is (ExpectationCheck). */
-    private final Map<Integer, String> misplaced = new ConcurrentHashMap<>();
+    /**
+     * B-number → the code's own finding on that expectation (ExpectationCheck),
+     * which decides it whatever the model answered.
+     */
+    private final Map<Integer, Overruled> overruled = new ConcurrentHashMap<>();
+
+    /** {@code verb}: "kontrol edilemedi" (judged on the wrong page) or "görülmedi" (on no page at all). */
+    private record Overruled(String verb, String why) {
+    }
+
+    /** A model line that is its own report on a B-numbered expectation; the code reports those. */
+    private static final Pattern OWN_B_LINE = Pattern.compile("^\\s*B\\d+\\b");
 
     /** "B2 GÖRÜLDÜ: …", "2) GÖRÜLMEDİ - …": the B-number an answer names. */
     private static final Pattern ANSWER_NUMBER =
@@ -157,7 +167,14 @@ public final class RunVerdict {
     /** The code found expectation {@code number} cannot be judged where it is checked. */
     void misplaced(int number, String why) {
         if (why != null && !why.isBlank()) {
-            misplaced.put(number, why.strip());
+            overruled.putIfAbsent(number, new Overruled("kontrol edilemedi", why.strip()));
+        }
+    }
+
+    /** The code found a name of expectation {@code number} on no page of the walk: it cannot have been seen. */
+    void unseen(int number, String why) {
+        if (why != null && !why.isBlank()) {
+            overruled.put(number, new Overruled("görülmedi", why.strip()));
         }
     }
 
@@ -244,11 +261,14 @@ public final class RunVerdict {
         List<String> succeeded = new ArrayList<>();
         for (String line : r.succeeded()) {
             String folded = ClaimCheck.compact(line);
-            if (refutedCaptions.stream().noneMatch(folded::contains)) {
+            if (refutedCaptions.stream().noneMatch(folded::contains)
+                    && !(judged && OWN_B_LINE.matcher(line).find())) {
                 succeeded.add(line);
             }
         }
-        List<String> failed = new ArrayList<>(r.failed());
+        // The model's own "B2 …" lines repeat what settleExpectations reports, in code.
+        List<String> failed = new ArrayList<>(r.failed().stream()
+                .filter(line -> !(judged && OWN_B_LINE.matcher(line).find())).toList());
         failed.addAll(refutedFailures);
         if (judged) {
             settleExpectations(given, succeeded, failed);
@@ -284,9 +304,9 @@ public final class RunVerdict {
                 answer = unnumbered.get(next++);
             }
             String head = "Beklenen (" + e.where() + ") ";
-            String wrong = misplaced.get(e.number());
+            Overruled wrong = overruled.get(e.number());
             if (wrong != null) {
-                failed.add(head + "kontrol edilemedi: " + e.text() + " — " + wrong);
+                failed.add(head + wrong.verb() + ": " + e.text() + " — " + wrong.why());
                 continue;
             }
             if (answer == null) {

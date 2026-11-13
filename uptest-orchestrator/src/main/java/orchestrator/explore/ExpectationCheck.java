@@ -49,12 +49,21 @@ final class ExpectationCheck {
             return;
         }
         List<String> pages = pages(calls);
-        if (pages.size() < 2) {
+        if (pages.isEmpty()) {
             return;
         }
         String last = pages.get(pages.size() - 1);
         List<String> earlier = pages.subList(0, pages.size() - 1);
         for (StepExpectations.Expectation e : verdict.expected()) {
+            List<String> absent = nowhere(e.text(), pages);
+            if (!absent.isEmpty()) {
+                System.out.println("[uptest] explore: B" + e.number() + " gorulmus olamaz — " + absent
+                        + " bu kosuda hicbir ekranda yoktu");
+                verdict.unseen(e.number(), String.join(", ", absent.stream().map(n -> "\"" + n + "\"").toList())
+                        + (absent.size() == 1 ? " adı" : " adları") + " bu koşuda hiçbir ekranda geçmedi."
+                        + " Adı ekranın yazdığı gibi yazın.");
+                continue;
+            }
             if (e.afterStep() != 0) {
                 continue;
             }
@@ -101,18 +110,68 @@ final class ExpectationCheck {
             return new ArrayList<>(out);
         }
         for (String part : expectation.split(",|\\s+ve\\s+")) {
-            List<String> words = new ArrayList<>();
-            for (String word : part.strip().split("\\s+")) {
-                if (word.isEmpty() || !Character.isUpperCase(word.codePointAt(0))) {
-                    break;
-                }
-                words.add(word.replaceAll("[.:;]+$", ""));
+            String[] words = part.strip().split("\\s+");
+            if (words.length == 0 || words[0].isEmpty() || !capital(words[0])) {
+                continue;
             }
-            if (!words.isEmpty() && words.size() <= 4) {
-                out.add(String.join(" ", words));
+            // Up to the last capitalised word before the closing run of lower-case
+            // ones: "Fatura Dönemi alanları salt okunur görünür" → "Fatura Dönemi",
+            // but "Yeni Son banko Tarihi" stays whole — a lower-case word INSIDE
+            // a name is part of what the analyst wrote, and may be the mistake.
+            int last = 0;
+            for (int i = 0; i < words.length; i++) {
+                if (capital(words[i])) {
+                    last = i;
+                }
+            }
+            if (last < MAX_WORDS) {
+                List<String> name = new ArrayList<>();
+                for (int i = 0; i <= last; i++) {
+                    name.add(words[i].replaceAll("[.:;]+$", ""));
+                }
+                out.add(String.join(" ", name));
             }
         }
         return new ArrayList<>(out);
+    }
+
+    /** Longer than this and a "name" is a sentence. */
+    private static final int MAX_WORDS = 6;
+
+    private static boolean capital(String word) {
+        return !word.isEmpty() && Character.isUpperCase(word.codePointAt(0));
+    }
+
+    /**
+     * The names of {@code expectation} that NO page of the walk showed. Such
+     * an expectation cannot have been seen, whatever the model answered.
+     *
+     * <p><b>Measured 13.11.2026</b>: "Güncelleme formunda yeni değer alanları
+     * bulunur". The analyst listed "Yeni Son banko Tarihi" on purpose — the
+     * screen says "Yeni Son Ödeme Tarihi" — and the model answered "görüldü",
+     * its evidence a word-for-word copy of the expectation.
+     */
+    static List<String> nowhere(String expectation, List<String> pages) {
+        List<String> out = new ArrayList<>();
+        String folded = TapeRenderer.fold(expectation);
+        if (pages.isEmpty() || ABSENCE.stream().anyMatch(folded::contains)) {
+            return out;
+        }
+        // Only names the analyst marked as names: quoted, or a list of FIELDS.
+        // A free sentence ("Hata mesajı görünür: İşlem yapılamadı") cut into
+        // capitalised runs yields "names" no page carries, and failing a run
+        // over them would be the code inventing a mistake.
+        if (StepExpectations.quotedIn(expectation).isEmpty() && !folded.contains("alan")) {
+            return out;
+        }
+        List<String> compacted = pages.stream().map(ClaimCheck::compact).toList();
+        for (String name : names(expectation)) {
+            String needle = ClaimCheck.compact(name).replaceAll("[.!?:;]+$", "");
+            if (needle.length() >= 3 && compacted.stream().noneMatch(page -> page.contains(needle))) {
+                out.add(name);
+            }
+        }
+        return out;
     }
 
     /** Every page the walk was shown, in order: the snapshots on the tape. */

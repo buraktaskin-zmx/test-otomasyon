@@ -284,7 +284,10 @@ Elsewhere:
   `StepExpectations.all`) must be answered in `report_result`'s required
   `expectations`; an unanswered one is Geçmedi in code, and
   `ExpectationCheck` fails a final one whose names are missing from the last
-  page but were on an earlier one (tape bd40c3ee passed with neither answered).
+  page but were on an earlier one (tape bd40c3ee passed with neither answered),
+  or any one (quoted, or listed as "… alanları") that NO page of the walk
+  showed — the model called a deliberately wrong "Yeni Son banko Tarihi"
+  "görüldü" on 13.11.2026, its evidence a copy of the expectation.
   The toolbox is the MCP's tools FILTERED by `AI_RUN_TOOLS`, so a listed name
   the server does not serve is silently absent and a call to it killed the
   walk: MCP 0.0.82 on the Mac has no `browser_press_sequentially`, which the

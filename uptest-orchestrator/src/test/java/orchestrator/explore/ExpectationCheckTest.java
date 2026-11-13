@@ -149,10 +149,58 @@ class ExpectationCheckTest {
         ExpectationCheck.apply(verdict, walk());
         RunVerdict.Result result = verdict.result();
         assertThat(result.passed()).isFalse();
-        assertThat(result.failed()).singleElement().asString()
+        // B1 is the placeholder the scenario was run with: no page carries that "title".
+        assertThat(result.failed()).hasSize(2);
+        assertThat(result.failed().get(0))
+                .startsWith("Beklenen (3. adımdan sonra) görülmedi: \"<güncelleme ekranının başlığı>\"");
+        assertThat(result.failed().get(1))
                 .startsWith("Beklenen (son ekranda) kontrol edilemedi: Kurum Adı")
                 .contains("\"Kurum Adı\", \"Bayi Ünvanı\", \"Para Birimi\", \"Fatura Dönemi\" alanları son ekranda yok")
                 .contains("adımın hemen altına \"Beklenen:\"");
+    }
+
+    @Test
+    @DisplayName("13.11.2026: a field written wrong on purpose ('Yeni Son banko Tarihi') cannot be 'görüldü'")
+    void aNameNoPageShowedFails() {
+        String scenario = """
+                Adımlar:
+                1. İşlemler panelinden "Fatura Güncelle" bağlantısına tıkla
+
+                Beklenen:
+                - Yeni Fatura No, Yeni Para Birimi, Yeni Son banko Tarihi, Yeni Fatura Dönemi ve Yeni Fatura Tipi alanları görünür
+                - Yeni Fatura No ve Yeni Fatura Tutarı alanları tamamen boş değerlerle görünür""";
+        String page = UPDATE_PAGE + """
+
+                - generic [ref=e827]: Yeni Para Birimi
+                - textbox "Yeni Son Ödeme Tarihi" [ref=e848]: 13/11/2026
+                - generic [ref=e858]: Yeni Fatura Tipi""";
+        RunVerdict verdict = new RunVerdict();
+        verdict.expecting(StepExpectations.all(scenario));
+        verdict.reportResult(List.of("Tüm adımlar uygulandı"),
+                List.of("B2 beklenen sonucu karşılanmadı: Yeni Fatura No dolu"), List.of(),
+                List.of("B1 GÖRÜLDÜ: Yeni Fatura No, Yeni Para Birimi, Yeni Son banko Tarihi … alanları görünür",
+                        "B2 GÖRÜLMEDİ: Yeni Fatura No alanı 'HLLSRC03' değeriyle dolu"), false);
+        ExpectationCheck.apply(verdict, List.of(
+                new TapeRenderer.Call(1, "browser_snapshot", "{}", "OK", LIST_PAGE),
+                new TapeRenderer.Call(2, "browser_snapshot", "{}", "OK", page)));
+        RunVerdict.Result result = verdict.result();
+        assertThat(result.failed()).hasSize(2);
+        assertThat(result.failed().get(0))
+                .startsWith("Beklenen (son ekranda) görülmedi: Yeni Fatura No, Yeni Para Birimi")
+                .contains("\"Yeni Son banko Tarihi\" adı bu koşuda hiçbir ekranda geçmedi");
+        assertThat(result.failed().get(1)).startsWith("Beklenen (son ekranda) görülmedi: Yeni Fatura No ve");
+        assertThat(result.succeeded()).containsExactly("Tüm adımlar uygulandı");
+    }
+
+    @Test
+    @DisplayName("a lower-case word inside a name is kept; a free sentence is never read as field names")
+    void namesKeepTheWholeName() {
+        assertThat(ExpectationCheck.names("Yeni Son banko Tarihi ve Yeni Fatura Dönemi alanları görünür"))
+                .containsExactly("Yeni Son banko Tarihi", "Yeni Fatura Dönemi");
+        assertThat(ExpectationCheck.nowhere("Hata mesajı görünür: İşlem yapılamadı", List.of(LIST_PAGE)))
+                .isEmpty();
+        assertThat(ExpectationCheck.nowhere("Bayi Kodu ve Fatura No alanları görünür", List.of(LIST_PAGE)))
+                .isEmpty();
     }
 
     @Test

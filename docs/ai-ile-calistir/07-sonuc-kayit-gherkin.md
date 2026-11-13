@@ -59,6 +59,10 @@
      │   son sayfada OLMAYAN ama önceki bir sayfada OLAN ad ≥ 2 mi?      │
      │     ("kapanır", "görünmez", "yok", "değil" diyen madde atlanır)  │
      │   evet → verdict.misplaced(B-no, "… son ekranda yok; …")         │
+     │   HER Beklenen (adım altı da): adı bu koşunun HİÇBİR sayfasında   │
+     │     yoksa → verdict.unseen(B-no, "\"X\" adı … hiçbir ekranda      │
+     │     geçmedi") — yalnız tırnaklı adlar ya da "… alanları" listesi  │
+     │   ajanın kendi "B2 …" satırları atılır (kod zaten yazıyor)         │
      ├─────────────────────────────────────────────────────────────────┤
      │ Beklenen'lerin kodla kapanması (RunVerdict.settleExpectations)   │
      │   StepExpectations.all: adım altındakiler + son liste → B1, B2…  │
@@ -91,6 +95,15 @@ gösterildi. Ayrıca son adım "Geri" olduğu için son sayfa listeydi; "Kurum A
 "Bayi Ünvanı", "Para Birimi" orada yoktu. Bu kurallar prompt'ta zaten
 yazıyordu. Bugünkü kod aynı bandı **Geçmedi** sayar: B1 ve B3 cevapsız, B2 ise
 yanlış yerde (`ExpectationCheckTest`, ve gerçek bant üzerinde ayrıca denendi).
+
+**Hiçbir ekranda olmayan ad (ölçüldü, 13.11.2026):** "Güncelleme formunda yeni
+değer alanları bulunur". Analist Beklenen'e bilerek "Yeni Son banko Tarihi"
+yazdı; ekranda "Yeni Son Ödeme Tarihi" var. Model maddeye "görüldü" dedi ve
+kanıt olarak Beklenen cümlesini aynen geri yazdı. Bir ad koşunun hiçbir
+sayfasında yoksa görülmüş olamaz; artık bunu kod söylüyor. Ad çıkarılırken
+adın içindeki küçük harfli sözcük atılmaz ("Yeni Son banko Tarihi" bütün
+kalır; hata zaten o sözcükte olabilir). Serbest bir cümleden ("Hata mesajı
+görünür: …") ad çıkarılmaz, çünkü orada kod bir hata uydurmuş olur.
 
 **ClaimCheck'in kontrol ETMEDİKLERİ:**
 
