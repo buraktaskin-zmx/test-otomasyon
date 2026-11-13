@@ -1329,3 +1329,30 @@ export interface AiTurnMessages {
   reasoning: AiMessage | null;
   toolCalls: Array<{ id: string; name: string; arguments: string }>;
 }
+
+/* ========================================================================
+   Veritabanı -- /api/v1/db
+   ======================================================================== */
+
+/** GET /api/v1/db/tools. The endpoint 404s when uptest.db.enabled=false, so
+ *  a non-ok result means "hide the panel"; `error` on an ok result means the
+ *  panel IS on but the Python server did not start, which the analyst can
+ *  act on (VPN, path, Oracle login). The two are deliberately not merged. */
+export interface DbToolsResponse {
+  count: number;
+  tools: string[];
+  error?: string;
+}
+
+/** One earlier line of the panel's conversation, resent so follow-up
+ *  questions ("peki o müşterinin faturaları?") have something to refer to. */
+export interface DbTurn {
+  role: "user" | "assistant";
+  text: string;
+}
+
+export interface DbAskResponse {
+  answer: string;
+  /** The Token Takibi session this question was recorded in; "" when tracing is off. */
+  traceId: string;
+}

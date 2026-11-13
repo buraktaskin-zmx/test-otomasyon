@@ -94,6 +94,10 @@ them here:
   [`docs/ai-ile-calistir/`](docs/ai-ile-calistir/README.md) — every process,
   every prompt verbatim, every guard, how the verdict is settled, what costs
   tokens, how a scenario must be worded, and where to look when a run breaks.
+- **Veritabanı paneli (Turkish):** [`docs/veritabani-paneli.md`](docs/veritabani-paneli.md)
+  ve [`docs/database-mcp-kurulum.md`](docs/database-mcp-kurulum.md) — test
+  verisini sorarak bulmak; MCP server'ın Mac kurulumu, sürüm sabitleri,
+  salt okuma korumaları.
 - **Historical, beginner level (Turkish):**
   [`docs/COKLU-SENARYO-AKISI.md`](docs/COKLU-SENARYO-AKISI.md) — the batch
   generator's flow as of 2026-10-26. That generator was removed on 2026-11-10;
@@ -324,6 +328,19 @@ Elsewhere:
   means `AgentPrompts.SYSTEM`. The walk-to-Gherkin renderer is `TapeRenderer`
   with `PlaywrightLine` (the echoed line, parsed), `TapeScope` (the snapshots a
   reference resolves in) and `ExpectedVerifies` (the THEN from BEKLENEN).
+- Veritabanı paneli (orchestrator): `orchestrator/db/` + `frontend/src/db/`.
+  Test Oracle'ına Türkçe soru sorup senaryoya yazılacak GERÇEK bir kayıt
+  bulmak için; model aynı kurum içi vLLM, araçlar bir Python MCP server'ından
+  (`<repo dışı>/database-mcp`, salt okunur). Off by default
+  (`uptest.db.enabled`). **`.mcp.json`'a EKLENMEZ**: o dosya tek bir
+  `ToolCallbackProvider` üretir ve `ExploreController.toolsFor` izin listesi
+  yokken onun tamamını tarayıcı ajanına verir — DB araçları oraya karışır ve
+  Python açılmazsa ajanı da yanında götürür. Bu yüzden `DbToolbox` kendi
+  `McpSyncClient`'ını bean olarak YAYINLAMAZ (yayınlasa Spring AI yine o tek
+  provider'a katardı; ikinci bir provider bean'i de ExploreController'ın
+  injection'ını belirsizleştirirdi). Bağlantı TEMBEL: ilk soruda kurulur, ki
+  kapalı VPN uygulamayı açılmaz hâle getirmesin. Tamamı:
+  `docs/veritabani-paneli.md`, server kurulumu `docs/database-mcp-kurulum.md`.
 - Discovery dispatch (orchestrator): `orchestrator/catalog/CatalogDiscoveryService`
   builds the synthetic feature and sends it through `ExecutorPool` like any other
   run; `orchestrator/api/DiscoveryController` is its endpoint.

@@ -33,6 +33,9 @@ import type {
   ValidationResult,
   VocabularyRefreshResponse,
   VocabularyResponse,
+  DbToolsResponse,
+  DbTurn,
+  DbAskResponse,
 } from "./types";
 import type { ProductSummary } from "./types";
 import type {
@@ -501,3 +504,19 @@ export const createScenariosBulk = (app: string, product: string,
   api<BulkSaveResult>("POST",
     "/api/v1/products/" + encodeURIComponent(app) + "/" + encodeURIComponent(product)
       + "/scenarios/bulk", items);
+
+/* ----------------------------- veritabanı -------------------------------- */
+
+/** 404 when uptest.db.enabled=false -- hide the whole Veritabanı panel on any
+ *  non-ok result, exactly as getExploreTools does for Ekran Keşfi. */
+export const getDbTools = () =>
+  api<DbToolsResponse>("GET", "/api/v1/db/tools");
+
+/** 503 when the MCP server did not start; its error names the cause. */
+export const askDb = (text: string, history: DbTurn[]) =>
+  api<DbAskResponse>("POST", "/api/v1/db/ask", { text, history });
+
+/** Drops the stdio connection so the next question restarts run.sh --
+ *  the fix for "VPN was down when the first question ran". */
+export const reconnectDb = () =>
+  api<DbToolsResponse>("POST", "/api/v1/db/reconnect", {});

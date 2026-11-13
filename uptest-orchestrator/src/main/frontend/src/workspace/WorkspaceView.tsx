@@ -5,6 +5,8 @@ import { MultiBar } from "./multi/MultiBar";
 import { MultiList } from "./multi/MultiList";
 import type { Draft } from "./multi/draft";
 import { AgentPanel } from "./side/AgentPanel";
+import { DbPanel } from "../db/DbPanel";
+import { useDbTools } from "../hooks/useDbTools";
 import { ProductPanel } from "./side/ProductPanel";
 import { UsersPanel } from "./side/UsersPanel";
 import { SideRail } from "./side/SidePane";
@@ -397,10 +399,15 @@ export function WorkspaceView({
   const wideMode = panelOpen
     && (sideTab === "product" || sideTab === "users"
       || sideTab === "agent" || sideTab === "dashboard" || sideTab === "flow"
-      || sideTab === "tokens");
+      || sideTab === "tokens" || sideTab === "db");
 
+  const dbTools = useDbTools();
   const liveRun = runPoll.run?.status === "RUNNING";
   const agentVisible = !tools.loaded || tools.available;
+  /* Same rule as the agent's: shown while the first check is in flight, then
+     only if /api/v1/db/tools answered at all. A 404 means uptest.db.enabled
+     is false, so the rail item would open a panel whose every button 404s. */
+  const dbVisible = !dbTools.loaded || dbTools.available;
   const runDisabled = runPoll.starting || listMode;
 
   return (
@@ -410,6 +417,7 @@ export function WorkspaceView({
         onChange={showPanel}
         liveRun={liveRun}
         agentVisible={agentVisible}
+        dbVisible={dbVisible}
         collapsed={!panelOpen}
         onToggleCollapse={() => setPanelOpen((open) => !open)}
       />
@@ -534,6 +542,7 @@ export function WorkspaceView({
           vocabularyFailed={vocabulary.failed}
           onInsert={insertAtCursor}
         />
+        {dbVisible ? <DbPanel active={sideTab === "db"} tools={dbTools} /> : null}
         {agentVisible ? (
           <AgentPanel
             active={sideTab === "agent"}

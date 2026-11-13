@@ -14,7 +14,7 @@ import type { ReactNode } from "react";
   .is-active, exactly as the tab strip did.
 */
 
-export type SideTab = "dashboard" | "tokens" | "flow" | "product" | "users" | "timeline" | "agent";
+export type SideTab = "dashboard" | "tokens" | "flow" | "product" | "users" | "timeline" | "agent" | "db";
 
 /*
   Inline SVG, 16px, stroke-based.
@@ -88,6 +88,14 @@ const ICONS: Record<SideTab, ReactNode> = {
       <path d="M2.5 13.4h11" />
     </Icon>
   ),
+  // The database: the stacked cylinder every tool draws for one.
+  db: (
+    <Icon>
+      <ellipse cx="8" cy="4" rx="5" ry="2" />
+      <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4" />
+      <path d="M3 8c0 1.1 2.2 2 5 2s5-.9 5-2" />
+    </Icon>
+  ),
   // The agent: a browser window it drives.
   agent: (
     <Icon>
@@ -109,6 +117,7 @@ export function SideRail({
   onChange,
   liveRun,
   agentVisible,
+  dbVisible,
   collapsed,
   onToggleCollapse,
 }: {
@@ -116,6 +125,7 @@ export function SideRail({
   onChange: (tab: SideTab) => void;
   liveRun: boolean;
   agentVisible: boolean;
+  dbVisible: boolean;
   collapsed: boolean;
   onToggleCollapse: () => void;
 }) {
@@ -125,6 +135,7 @@ export function SideRail({
     { id: "flow", label: "Senaryo Üret" },
     { id: "product", label: "Kayıtlı Senaryolar" },
     ...(agentVisible ? ([{ id: "agent", label: "Ekran Keşfi" }] as const) : []),
+    ...(dbVisible ? ([{ id: "db", label: "Veritabanı" }] as const) : []),
     { id: "timeline", label: "Çalıştır" },
     // Last, and pushed to the bottom by CSS: set up once, rarely revisited.
     { id: "users", label: "Test Kullanıcıları" },
