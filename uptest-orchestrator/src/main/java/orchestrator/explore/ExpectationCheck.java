@@ -60,8 +60,8 @@ final class ExpectationCheck {
                 System.out.println("[uptest] explore: B" + e.number() + " gorulmus olamaz — " + absent
                         + " bu kosuda hicbir ekranda yoktu");
                 verdict.unseen(e.number(), String.join(", ", absent.stream().map(n -> "\"" + n + "\"").toList())
-                        + (absent.size() == 1 ? " adı" : " adları") + " bu koşuda hiçbir ekranda geçmedi."
-                        + " Adı ekranın yazdığı gibi yazın.");
+                        + (absent.size() == 1 ? " adı" : " adları") + " bu koşuda hiçbir ekranda geçmedi:"
+                        + " ya koşu o ekrana ulaşmadı, ya da ad ekranın yazdığından farklı yazılmış.");
                 continue;
             }
             if (e.afterStep() != 0) {

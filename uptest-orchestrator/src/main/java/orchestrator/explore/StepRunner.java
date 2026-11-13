@@ -195,12 +195,68 @@ final class StepRunner implements ToolCallback {
         return out.toString();
     }
 
+    /** One scenario step as CodeSteps read it: its number, the action, and the Beklenen under it. */
+    record Planned(int number, Step step, String expected) {
+    }
+
+    /**
+     * The steps carried out by CODE, no model involved (13.11.2026, the
+     * analyst's question "can our own Java code do these steps?").
+     *
+     * <p>Unlike {@link #run}, a step with a Beklenen under it does not halt:
+     * the page right after it is kept as a checkpoint, as "Hızlı çalıştır"
+     * keeps it, and the walk goes on — the verdict turn holds the expectation
+     * against that page. It stops at the first step that does not take, or
+     * when the screen starts saying something new while steps remain; then
+     * the agent takes over from that step.
+     */
+    FastReplay.Result runAll(List<Planned> steps) {
+        List<String> log = new ArrayList<>();
+        List<String> done = new ArrayList<>();
+        List<FastReplay.Checkpoint> checkpoints = new ArrayList<>();
+        if (tools.isEmpty() || tape == null || steps.isEmpty()) {
+            return new FastReplay.Result(log, done, steps.isEmpty() ? 0 : steps.get(0).number(),
+                    "kod yürütmesi bu koşuda yok", checkpoints, latestPage());
+        }
+        Set<String> before = complaints(AriaSnapshot.of(latestPage()));
+        for (int i = 0; i < steps.size(); i++) {
+            Planned planned = steps.get(i);
+            String says = says(planned.step());
+            String outcome = attempt(planned.step());
+            print(log, planned.number() + ". " + says + " → " + outcome);
+            if (!outcome.startsWith("tamam")) {
+                return new FastReplay.Result(log, done, planned.number(), outcome, checkpoints, latestPage());
+            }
+            done.add(planned.number() + ". " + says);
+            if (planned.expected() != null) {
+                checkpoints.add(new FastReplay.Checkpoint(planned.number(), planned.expected(), latestPage()));
+            }
+            Set<String> now = complaints(AriaSnapshot.of(latestPage()));
+            now.removeAll(before);
+            if (!now.isEmpty() && i < steps.size() - 1) {
+                String why = "ekran yeni bir şey söylüyor: " + String.join(" | ", now);
+                print(log, "   " + why);
+                return new FastReplay.Result(log, done, steps.get(i + 1).number(), why, checkpoints, latestPage());
+            }
+        }
+        return new FastReplay.Result(log, done, 0, null, checkpoints, latestPage());
+    }
+
+    private static String says(Step step) {
+        return step.action() + " \"" + step.name() + "\"" + (blank(step.value()) ? "" : " = \"" + step.value() + "\"");
+    }
+
+    private static void print(List<String> log, String line) {
+        log.add(line);
+        System.out.println("[uptest] ai-run kod " + line);
+    }
+
     /** {@link #perform}, with a failure turned into its reason; a closed browser still ends the walk. */
     String attempt(Step step) {
         try {
             return perform(step);
-        } catch (BudgetedTool.BrowserClosed closed) {
-            throw closed;
+        } catch (BudgetedTool.BrowserClosed | BudgetedTool.WalkOver over) {
+            throw over;
         } catch (RuntimeException failed) {
             return "HATA: " + firstLine(String.valueOf(failed.getMessage()));
         }
@@ -229,6 +285,7 @@ final class StepRunner implements ToolCallback {
             case "row" -> row(name);
             case "date" -> date(name, step.value());
             case "press" -> press(name);
+            case "search" -> search(step.value() != null ? step.value() : name);
             default -> "BİLİNMEYEN ADIM '" + step.action() + "': click, select, type, row, date, press";
         };
     }
@@ -251,6 +308,10 @@ final class StepRunner implements ToolCallback {
         if (found.size() != 1) {
             return notOne(found, label, "yazı kutusu");
         }
+        AriaSnapshot.Node kurus = kurusBox(page, found.get(0));
+        if (kurus != null && value.contains(",")) {
+            return amount(label, found.get(0), kurus, value);
+        }
         Map<String, Object> arguments = new LinkedHashMap<>();
         arguments.put("target", found.get(0).ref());
         arguments.put("element", label);
@@ -259,6 +320,94 @@ final class StepRunner implements ToolCallback {
         // painted back over (CLAUDE.md, the fill() lesson).
         arguments.put("slowly", true);
         return act("browser_type", arguments);
+    }
+
+    /**
+     * The kuruş box of an amount: the unnamed textbox after a "," beside the
+     * labelled one, in the same container — the shape every amount on these
+     * screens has ({@code textbox "Toplam Tutar": "0"}, {@code generic: ","},
+     * {@code textbox: "00"}). Null for an ordinary box.
+     */
+    static AriaSnapshot.Node kurusBox(AriaSnapshot page, AriaSnapshot.Node box) {
+        List<AriaSnapshot.Node> nodes = page.nodes();
+        int at = nodes.indexOf(box);
+        boolean comma = false;
+        for (int i = at + 1; at >= 0 && i < nodes.size() && i <= at + 4; i++) {
+            AriaSnapshot.Node next = nodes.get(i);
+            if (next.parent() != box.parent()) {
+                break;
+            }
+            if (",".equals(next.caption().replace("\"", "").strip())) {
+                comma = true;
+            } else if (comma && TYPEABLE.contains(next.role()) && next.name().isBlank()) {
+                return next;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * An amount is two boxes, and the form validates the value it computes
+     * from both (CLAUDE.md: "1.250,50" typed into one box leaves the form
+     * reading nothing, refused with "Toplam tutar giriniz"). Each box is
+     * cleared and typed key by key, then both are read back.
+     */
+    private String amount(String label, AriaSnapshot.Node lira, AriaSnapshot.Node kurus, String value) {
+        String[] parts = value.strip().split(",", 2);
+        String whole = parts[0].replaceAll("[^0-9]", "").replaceFirst("^0+(?=\\d)", "");
+        String cents = (parts.length > 1 ? parts[1].replaceAll("[^0-9]", "") : "") + "00";
+        cents = cents.substring(0, 2);
+        if (whole.isEmpty()) {
+            return "YAPILMADI: tutar okunamadı: \"" + value + "\"";
+        }
+        String done = typeInto(lira.ref(), label, whole);
+        if (!done.startsWith("tamam")) {
+            return done;
+        }
+        done = typeInto(kurus.ref(), label + " (kuruş)", cents);
+        if (!done.startsWith("tamam")) {
+            return done;
+        }
+        AriaSnapshot after = AriaSnapshot.of(latestPage());
+        List<AriaSnapshot.Node> boxes = byLabel(after, label, TYPEABLE);
+        AriaSnapshot.Node shownKurus = boxes.size() == 1 ? kurusBox(after, boxes.get(0)) : null;
+        String shownWhole = boxes.size() == 1 ? digits(boxes.get(0).text()) : "";
+        String shownCents = shownKurus == null ? "" : digits(shownKurus.text());
+        if (shownWhole.equals(whole) && shownCents.equals(cents)) {
+            return "tamam";
+        }
+        return "YAPILMADI: \"" + label + "\" " + whole + "," + cents + " olmadı, kutular " + shownWhole + ","
+                + shownCents + " gösteriyor";
+    }
+
+    /** Clears a box and types into it key by key: a masked box rebuilds its value from key events. */
+    private String typeInto(String ref, String element, String text) {
+        String done = act("browser_click", Map.of("target", ref, "element", element));
+        if (!done.startsWith("tamam")) {
+            return done;
+        }
+        done = act("browser_press_key", Map.of("key", "ControlOrMeta+a"));
+        if (!done.startsWith("tamam")) {
+            return done;
+        }
+        Map<String, Object> arguments = new LinkedHashMap<>();
+        arguments.put("target", ref);
+        arguments.put("element", element);
+        arguments.put("text", text);
+        arguments.put("slowly", true);
+        return act("browser_type", arguments);
+    }
+
+    private static String digits(String text) {
+        return (text == null ? "" : text).replaceAll("[^0-9]", "").replaceFirst("^0+(?=\\d)", "");
+    }
+
+    /** Types into whatever has the focus — an opened dropdown's search box. */
+    private String search(String value) {
+        if (blank(value)) {
+            return "YAPILMADI: aranacak metin (value) yok";
+        }
+        return act("browser_press_sequentially", Map.of("text", value));
     }
 
     private String date(String label, String value) {

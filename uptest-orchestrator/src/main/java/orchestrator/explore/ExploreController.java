@@ -139,8 +139,8 @@ public class ExploreController {
                              @Value("${uptest.explore.tool-budget:250}") int budget,
                              @Value("${uptest.explore.tape-dir:./runs/mcp}") String tapeDir,
                              @Value("${uptest.explore.settle-ms:1500}") long settleMs,
-                             @Value("${uptest.explore.ai-run.token-budget:100000}") long runTokenBudget,
-                             @Value("${uptest.explore.ai-run.tool-budget:40}") int runToolBudget,
+                             @Value("${uptest.explore.ai-run.token-budget:0}") long runTokenBudget,
+                             @Value("${uptest.explore.ai-run.tool-budget:150}") int runToolBudget,
                              @Value("${uptest.explore.ai-run.describe-cap:220}") int describeCap,
                              @Value("${uptest.explore.ai-run.page-cap:12000}") int pageCap) {
         this.client = builder.build();
@@ -207,7 +207,7 @@ public class ExploreController {
      */
     private Object[] toolsFor(CatalogSink sink, String instruction, Set<String> pending,
                               AtomicBoolean aborted, ActionTape tape, RunVerdict verdict) {
-        return toolsFor(sink, instruction, pending, aborted, tape, verdict, null, null, budget, Map.of());
+        return toolsFor(sink, instruction, pending, aborted, tape, verdict, null, null, budget, null);
     }
 
     /**
@@ -215,12 +215,13 @@ public class ExploreController {
      *                    narrowed to {@code allowed}
      * @param allowed     the browser tools offered, or null for all but WITHHELD
      * @param calls       the tool-call ceiling for this walk
-     * @param checkpoints names whose step carries an expectation; do_steps stops after them
+     * @param runner      "AI ile çalıştır": do_steps, offered to the agent and bound to the
+     *                    wrapped tools so the code can also run steps through it; null otherwise
      */
     private Object[] toolsFor(CatalogSink sink, String instruction, Set<String> pending,
                               AtomicBoolean aborted, ActionTape tape, RunVerdict verdict,
                               AiRunPolicy policy, Set<String> allowed, int calls,
-                              Map<String, String> checkpoints) {
+                              StepRunner runner) {
         List<ToolCallback> usable = new ArrayList<>(Arrays.stream(tools.getToolCallbacks())
                 .filter(callback -> !WITHHELD.contains(callback.getToolDefinition().name()))
                 .filter(callback -> allowed == null || allowed.contains(callback.getToolDefinition().name()))
@@ -275,7 +276,6 @@ public class ExploreController {
         // "AI ile çalıştır" only: several named steps per turn. Inside the
         // wrap, so the batch is guarded and recorded; bound to the wrapped
         // tools afterwards, so each of its steps is too.
-        StepRunner runner = policy == null ? null : new StepRunner().checkpoints(checkpoints);
         if (runner != null) {
             usable.add(runner);
         }
@@ -587,7 +587,11 @@ public class ExploreController {
             visit.log = walk.log();
             visit.stoppedAt = walk.stoppedAt();
             if (walk.complete()) {
-                return judge(body, composed, aborted, tape, verdict, walk, chrome, visit.calls);
+                Set<String> attached = new java.util.HashSet<>();
+                visit.calls.forEach(call -> attached.add(call.expected()));
+                List<String> unmatched = StepExpectations.withExpectation(body.text()).stream()
+                        .map(StepExpectations.Step::expected).filter(e -> !attached.contains(e)).toList();
+                return judge(body, composed, aborted, tape, verdict, walk, chrome, unmatched, "hizli calistir");
             }
             // A call that no longer works: the run fails here, in code, and the cache goes.
             String why = walk.stoppedAt() + ". adım tutmadı: " + walk.reason()
@@ -597,43 +601,79 @@ public class ExploreController {
             return verdict.asText();
         }
         if (answer == null) {
+            String checklist = StepExpectations.checklist(verdict.expected());
             String userTurn = AiRunPrelude.instruction(chrome.shown(opened, body.text(), pageCap), body.text(),
                     composed, body.mainMenu(),
                     body.screen(), BudgetedTool.LARGEST_RESULT)
-                    + StepExpectations.checklist(verdict.expected());
+                    + checklist;
             Set<String> allowed = new java.util.HashSet<>(AI_RUN_TOOLS);
             if (opened.reached() == AiRunPrelude.Reached.NOTHING) {
                 allowed.add("browser_navigate");
             }
             AiRunPolicy policy = policyFor(chrome);
+            // One toolbox for the code and the agent: the same guards, budget, tape.
+            StepRunner runner = new StepRunner().checkpoints(checkpoints);
+            Object[] toolbox = toolsFor(null, userTurn, new LinkedHashSet<>(), aborted, tape, verdict,
+                    policy, allowed, runToolBudget, runner);
             System.out.println("[uptest] ai-run: prelude=" + opened.reached()
                     + (opened.note() == null ? "" : " (" + opened.note() + ")")
                     + ", " + allowed.size() + " tarayici araci, talimat " + userTurn.length()
-                    + " karakter, token butcesi " + runTokenBudget + ", cache " + visit.state);
-            // The SAME client Ekran Keşfi uses — Spring's, configured. The only
-            // difference is an advisor that cuts the old pages out of each turn.
+                    + " karakter, token butcesi " + (runTokenBudget > 0 ? runTokenBudget : "yok")
+                    + ", cache " + visit.state);
             try {
-                answer = client.prompt()
-                        .system(RUN_SYSTEM + RESULT_RULES)
-                        .user(userTurn)
-                        .advisors(new CompactingAdvisor())
-                        .tools(toolsFor(null, userTurn, new LinkedHashSet<>(), aborted, tape, verdict,
-                                policy, allowed, runToolBudget, checkpoints))
-                        .call()
-                        .content();
-            } catch (IllegalStateException unknown) {
-                // Spring throws this when the model names a tool it was not given;
-                // the walk is over either way, but the analyst gets the reason as a result.
-                String message = String.valueOf(unknown.getMessage());
-                if (!message.startsWith(UNKNOWN_TOOL) || verdict.isClosed()) {
-                    throw unknown;
+                // CODE first (CodeSteps): every step written in the guide's grammar is
+                // carried out without the model; it takes over only where code stops.
+                CodeSteps.Parsed parsed = opened.reached() == AiRunPrelude.Reached.ON_SCREEN
+                        ? CodeSteps.parse(body.text()) : null;
+                FastReplay.Result code = null;
+                if (parsed != null && !parsed.steps().isEmpty()) {
+                    System.out.println("[uptest] ai-run kod: " + parsed.steps().size() + "/" + parsed.total()
+                            + " adım kodla okundu" + (parsed.firstUnread() > 0
+                            ? "; " + parsed.firstUnread() + ". adım okunamadı: " + parsed.unreadText() : ""));
+                    code = runner.runAll(parsed.steps());
                 }
-                String name = message.substring(UNKNOWN_TOOL.length()).strip();
-                System.out.println("[uptest] ai-run: ajan olmayan bir araci cagirdi (" + name + ") — kosu durdu");
-                verdict.reportResult(List.of(), List.of("Ajan bu koşuda olmayan bir aracı çağırdı (" + name
-                        + "); koşu orada durdu. Bu bir uygulama hatası değil, ajan aracı sorunudur."),
-                        List.of(), false);
-                answer = verdict.asText();
+                if (code != null && code.complete() && parsed.all()) {
+                    System.out.println("[uptest] ai-run kod: bütün adımlar kodla yapıldı — yalnız karar turu");
+                    answer = judge(body, composed, aborted, tape, verdict, code, chrome,
+                            unchecked(body.text(), code), "kodla yurutme");
+                } else {
+                    if (code != null) {
+                        userTurn = AiRunPrelude.instruction(chrome.shown(new AiRunPrelude.Outcome(
+                                        AiRunPrelude.Reached.ON_SCREEN, code.lastPage(), null), body.text(), pageCap),
+                                body.text(), composed, body.mainMenu(), body.screen(), BudgetedTool.LARGEST_RESULT)
+                                + CodeSteps.handover(parsed, code) + checklist;
+                        System.out.println("[uptest] ai-run kod: ajan " + (code.stoppedAt() > 0 ? code.stoppedAt()
+                                : parsed.firstUnread()) + ". adımdan devralıyor");
+                    }
+                    // The SAME client Ekran Keşfi uses — Spring's, configured. The only
+                    // difference is an advisor that cuts the old pages out of each turn.
+                    answer = client.prompt()
+                            .system(RUN_SYSTEM + RESULT_RULES)
+                            .user(userTurn)
+                            .advisors(new CompactingAdvisor())
+                            .tools(toolbox)
+                            .call()
+                            .content();
+                }
+            } catch (RuntimeException failed) {
+                BudgetedTool.WalkOver over = causeOf(failed, BudgetedTool.WalkOver.class);
+                String message = String.valueOf(failed.getMessage());
+                if (over != null && !verdict.isClosed()) {
+                    stopped(verdict, tape, over.getMessage());
+                    answer = verdict.asText();
+                } else if (failed instanceof IllegalStateException && message.startsWith(UNKNOWN_TOOL)
+                        && !verdict.isClosed()) {
+                    // Spring throws this when the model names a tool it was not given;
+                    // the walk is over either way, but the analyst gets the reason as a result.
+                    String name = message.substring(UNKNOWN_TOOL.length()).strip();
+                    System.out.println("[uptest] ai-run: ajan olmayan bir araci cagirdi (" + name + ") — kosu durdu");
+                    verdict.reportResult(List.of(), List.of("Ajan bu koşuda olmayan bir aracı çağırdı (" + name
+                            + "); koşu orada durdu. Bu bir uygulama hatası değil, ajan aracı sorunudur."),
+                            List.of(), false);
+                    answer = verdict.asText();
+                } else {
+                    throw failed;
+                }
             }
         }
         long used = AiTraces.currentTokens();
@@ -665,13 +705,9 @@ public class ExploreController {
      */
     private String judge(Instruction body, String composed, AtomicBoolean aborted, ActionTape tape,
                          RunVerdict verdict, FastReplay.Result walk, PageChrome chrome,
-                         List<ReplayCalls.ReplayCall> calls) {
-        Set<String> attached = new java.util.HashSet<>();
-        calls.forEach(call -> attached.add(call.expected()));
-        List<String> unmatched = StepExpectations.withExpectation(body.text()).stream()
-                .map(StepExpectations.Step::expected).filter(e -> !attached.contains(e)).toList();
+                         List<String> unmatched, String which) {
         Object[] reportOnly = Arrays.stream(toolsFor(null, composed, new LinkedHashSet<>(), aborted, tape, verdict,
-                        null, Set.of(), 3, Map.of()))
+                        null, Set.of(), 3, null))
                 .filter(t -> t instanceof ToolCallback cb && RunVerdict.TOOL.equals(cb.getToolDefinition().name()))
                 .toArray();
         String turn = FastReplay.verdictTurn(AiRunPrelude.withoutGoTo(body.text()), walk, unmatched,
@@ -679,8 +715,42 @@ public class ExploreController {
                 + StepExpectations.checklist(verdict.expected());
         System.out.println("[uptest] ai-cache karar turu: tek AI cagrisi, talimat " + turn.length() + " karakter");
         String answer = client.prompt().system(VERDICT_SYSTEM).user(turn).tools(reportOnly).call().content();
-        System.out.println("[uptest] ai-run: bitti — " + AiTraces.currentTokens() + " token (hizli calistir)");
+        System.out.println("[uptest] ai-run: bitti — " + AiTraces.currentTokens() + " token (" + which + ")");
         return answer;
+    }
+
+    /** The step expectations the code run kept no page for: the verdict turn judges them on the last page. */
+    private static List<String> unchecked(String scenario, FastReplay.Result code) {
+        Set<Integer> kept = new java.util.HashSet<>();
+        code.checkpoints().forEach(point -> kept.add(point.step()));
+        return StepExpectations.withExpectation(scenario).stream()
+                .filter(step -> !kept.contains(step.number())).map(StepExpectations.Step::expected).toList();
+    }
+
+    /**
+     * The result of a walk the CODE ended (WalkOver): what the tape shows done,
+     * and why it stopped. Reported by code, so no Beklenen is judged on a walk
+     * that never reached its page.
+     */
+    private static void stopped(RunVerdict verdict, ActionTape tape, String reason) {
+        List<String> done = WalkStory.of(tape.calls()).stream()
+                .filter(line -> "ok".equals(line.kind()) && line.depth() > 0)
+                .map(WalkStory.Line::text).toList();
+        System.out.println("[uptest] ai-run: kosu kodla durduruldu — " + reason);
+        verdict.reportResult(done, List.of("Koşu kodla durduruldu: " + reason + ". Bundan sonraki adımlar yapılmadı."),
+                List.of(), false);
+    }
+
+    private static <T extends Throwable> T causeOf(Throwable failure, Class<T> type) {
+        for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+            if (type.isInstance(cause)) {
+                return type.cast(cause);
+            }
+            if (cause.getCause() == cause) {
+                break;
+            }
+        }
+        return null;
     }
 
     private String summarised(PageChrome chrome, String raw, String scenario) {

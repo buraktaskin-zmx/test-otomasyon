@@ -293,6 +293,17 @@ Elsewhere:
   walk: MCP 0.0.82 on the Mac has no `browser_press_sequentially`, which the
   prompt and `do_steps` rely on, so `FocusedTyping` provides it in code
   (13.11.2026). The walk's first console line names what the MCP lacks.
+  **Steps in the guide's grammar are done by CODE, not the model**
+  (`CodeSteps` reads them, `StepRunner.runAll` performs them with the same
+  guarded tools; amounts split into lira/kuruş boxes): if every step reads
+  and takes, the only model call is the verdict turn; otherwise the agent
+  takes over at the first step code could not read or do, with the current
+  page. Measured reason: tape 4bc5c9f0, 17 steps, 32 turns, 192.735 tokens,
+  the agent never used do_steps. The token budget is off by default and a
+  spent budget or a stuck walk now ENDS the walk in code (`WalkOver`) —
+  that tape's wall only refused, and the model spent 13 more turns.
+  `set_date` reaches a near month with the calendar's arrows (that tape's
+  year list was hidden).
   A PASSED walk's tool calls go to `AI_RUN_CACHE` (`AiRunCache`,
   `ReplayCalls`: each target is the Playwright locator MCP echoed, turned into
   Playwright's own selector string — never a reference). "Hızlı çalıştır"

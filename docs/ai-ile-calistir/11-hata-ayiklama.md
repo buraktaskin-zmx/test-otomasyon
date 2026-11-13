@@ -29,8 +29,12 @@ söylenen üç sebep yanlış çıktı.
 | `[uptest] explore: sayfa 6200 ms yuklendi (overlay kalkti)` | waitWhileBusy |
 | `[uptest] explore: senaryoda gecmeyen onay 'evet' — reddedildi` | Onay engeli çalıştı |
 | `[uptest] explore: ayni cagri ayni sayfada ikinci kez — browser_type reddedildi` | Tekrar engeli |
-| `[uptest] explore: 4 islem ust uste olmadi — … reddedildi, sonuc isteniyor` | Takılma |
-| `[uptest] explore: token butcesi doldu (100233/100000) — … reddedildi` | Bütçe duvarı |
+| `[uptest] ai-run kod: 15/17 adım kodla okundu; 16. adım okunamadı: …` | Kodun okuyabildiği adımlar; okunamayan adımdan sonrasını ajan yapar ([§24.6](10-senaryo-yazim-rehberi.md)) |
+| `[uptest] ai-run kod 7. type "Orijinal Fatura No" = "2222" → YAPILMADI: …` | Kod bu adımı yapamadı (çoğunlukla ad ekrandakinden farklı) |
+| `[uptest] ai-run kod: ajan 7. adımdan devralıyor` / `bütün adımlar kodla yapıldı — yalnız karar turu` | Hangi yoldan devam edildiği |
+| `[uptest] explore: 4 islem ust uste olmadi — kosu kodla bitiriliyor` | Takılma; sonuç kodla bildirilir |
+| `[uptest] explore: token butcesi doldu (100233/100000) — kosu kodla bitiriliyor` | Bütçe duvarı (yalnız `token-budget` > 0 ise; varsayılan kapalı) |
+| `[uptest] ai-run: kosu kodla durduruldu — <neden>` | Yukarıdaki ikisinin sonucu: AI ÖZET'te "Koşu kodla durduruldu" |
 | `[uptest] explore: sayfayi yenileme (…) — reddedildi` | F5 engeli |
 | `[uptest] set_date: choose the month -> {…}` | Tarih aracının iç adımları |
 | `[uptest] explore: sonuc bildirildi — ajanin iddiasi GECTI (4 dogru, 0 gecemedi, 0 uyari, 2/3 beklenen cevaplandi; karar kodla kesinlesir)` | Ajanın iddiası; cevapsız Beklenen kodla Geçmedi olur |

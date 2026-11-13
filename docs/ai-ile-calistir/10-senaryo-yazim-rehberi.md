@@ -184,6 +184,31 @@ Geri butonuna tıkla                                      Açılan güncelleme e
 
 ---
 
+## 24.6 Kodun kendisinin yürüttüğü yazım kalıpları (13.11.2026'dan beri)
+
+Aşağıdaki kalıplarla yazılan adımları **Java kodu** okur ve yapar; model
+çağrılmaz ([§15.5](06-do-steps-ve-set-date.md)). Bütün adımlar böyle
+yazılmışsa koşunun tamamı kodla yürür ve sonunda **tek** bir AI turu karar
+verir. Ölçü: 17 adımlık fatura senaryosu 32 turdan 1 tura iner.
+
+| Kalıp (adlar tırnak içinde, ekranın yazdığı gibi) | Kodun yaptığı |
+|---|---|
+| `"Başlangıç Vadesi" alanına "27/11/2026" tarihini gir` | Takvimi açar, ayı oklarla bulur, güne tıklar |
+| `"Firma Seçimi" listesinden "ASAŞ ALÜMİNYUM SAN." seç` | Listeyi açar, gerekirse arar, seçer, seçildiğini okur |
+| `Ödeme Durumu "Ödenecek" olan ilk satırı seç` | O hücreyi taşıyan ilk satırı seçer |
+| `Açılan listenin arama kutusuna "san" yaz` | Odaktaki arama kutusuna yazar |
+| `"Fatura No" alanına "11113" yaz` | Kutuya yazar |
+| `"Toplam Tutar" alanına "1000,50" yaz` | Tutar alanıysa **lira ve kuruşu ayrı kutulara** yazar |
+| `"Fatura Oluştur" bağlantısına tıkla` / `"Devam" düğmesine tıkla` | Tıklar |
+| `"Oluşturma Tipi" alanında "Bilgi Girişi" seçeneğini işaretle` | Seçeneği işaretler |
+
+- Okuma sırayla yapılır ve **kalıba uymayan ilk adımda durur**. O adımdan
+  sonrasını ajan yapar; kodla yapılanları tekrarlamaz.
+- Ad ekrandakinden farklıysa (`"Orijinal Fatura No"` ↔ ekranda
+  `Orijinal Fatura Numarası`) kod o kutuyu bulamaz ve durur. Ajan
+  devralır ama tur harcanır; adı ekranın yazdığı gibi yazın.
+- Tarihi `gg/aa/yyyy` yazın; virgüllü tutar (`1000,50`) yazın, nokta değil.
+
 ## 24.5 Ön koşul ve Beklenen ne işe yarar, ne işe yaramaz
 
 | Bölüm | Ajana gider mi | Kod okur mu | Ne demek |

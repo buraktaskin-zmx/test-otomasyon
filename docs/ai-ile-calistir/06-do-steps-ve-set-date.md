@@ -89,21 +89,65 @@ sessizdir.
 
 ---
 
+### 15.5 Kod yürütmesi: adımları modelsiz yapmak (`CodeSteps`, 13.11.2026)
+
+**Neden:** bant `4bc5c9f0` ("fatura oluştur", 17 adım). Koşu 32 tur ve
+192.735 token harcadı, bitmedi. Her tur tek bir araç çağrısıydı; prompt
+"hepsini tek `do_steps`'te gönder" diyordu, model uymadı. Analistin sorusu:
+bu adımları kendi Java kodumuz yapamaz mı? Yapabilir, çünkü
+[§24.6](10-senaryo-yazim-rehberi.md)'daki yazım kalıpları kapalı bir dil.
+
+```
+"AI ile çalıştır" (ekran koddan açıldıysa)
+  CodeSteps.parse(senaryo)         adımları sırayla okur, ilk okunamayanda durur
+  StepRunner.runAll(okunanlar)     aynı sarılmış araçlarla: kapı, onay engeli, bant
+     ├─ adım altı Beklenen → o anki sayfa saklanır, DURMADAN devam
+     ├─ bir adım tutmazsa / ekran yeni bir uyarı verirse → dur
+  hepsi okundu + hepsi tamam   → tek karar turu (VERDICT_SYSTEM, §29) — model 1 kez
+  aksi halde                   → ajan GÜNCEL sayfayla devralır:
+                                 "1–k kodla yapıldı, tekrarlama; k+1'den devam et"
+```
+
+- Kalıplar ve eylemler: `tarihini gir` → `date` (`set_date`), `listesinden …
+  seç` → `select` (Select2 aç, gerekirse ara, seç, geri oku), `… olan ilk
+  satırı seç` → `row`, `arama kutusuna … yaz` → `search`, `alanına … yaz` →
+  `type`, `bağlantısına / düğmesine tıkla`, `seçeneğini işaretle` → `click`.
+- **Tutar:** `type`'ın kutusu lira–kuruş biçimindeyse (etiketli kutu, `","`,
+  adsız kutu) ve değerde virgül varsa ikiye bölünür. Her kutu tıklanır,
+  `ControlOrMeta+a` ile seçilir, tuş tuş yazılır. İki kutu da geri okunur.
+  Gerçek bantta denendi: "Toplam Tutar" `e722/e724`, "Orijinal Fatura Tutarı"
+  `e727/e729`.
+- Bant alt adımları gerçek araç adlarıyla tutar; Hızlı çalıştır kaydı,
+  `ClaimCheck`, "Adım adım" ve "Gherkin oluştur" değişmeden çalışır.
+- Konsol: `[uptest] ai-run kod: 17/17 adım kodla okundu`, her adım için
+  `[uptest] ai-run kod 5. date "Başlangıç Vadesi" = "27/11/2026" → tamam`.
+
+---
+
 ## 16. set_date
 
 **Dosya:** `DateTool.java`. Model hangi kutuya hangi tarihin gireceğini
-söyler, dört tarayıcı çağrısını kod yapar:
+söyler, tarayıcı çağrılarını kod yapar:
 
 ```
 set_date(target, "25/09/2026")
   1. click target                                     takvimi aç
-  2. select_option #ui-datepicker-year  ["2026"]      önce YIL
-  3. select_option #ui-datepicker-month ["8"]         sonra AY (jQuery UI 0 tabanlı: Eylül = 8)
+  2. evaluate: takvim hangi ayı gösteriyor?           (jQuery UI drawYear/drawMonth)
+  3a. hedef ≤ 24 ay uzaktaysa:  click .ui-datepicker-next / -prev  × fark
+  3b. değilse ya da okunamadıysa:
+      select_option #ui-datepicker-year  ["2026"]     önce YIL
+      select_option #ui-datepicker-month ["8"]        sonra AY (jQuery UI 0 tabanlı: Eylül = 8)
   4. click #ui-datepicker-div a:text-is("25")         en son GÜN (text-is: "2" ≠ "12")
   → "Set to 25/09/2026. … do not type into the box afterwards …"
 ```
 
+**Oklar neden (ölçüldü, bant `4bc5c9f0`, 13.11.2026):** "Başlangıç
+Vadesi"nin takvimi Kasım 2026'yı gösteriyordu ama yıl listesi gizliydi;
+`select_option` 5 saniye bekleyip `element is not visible` ile düştü. Ajan
+sonra "27"ye elle tıkladı. Yakın bir ay için kişinin bastığı okları
+kullanmak listeye bağımlılığı kaldırır.
+
 Sıra önemlidir: yıl ya da ay seçmek gün ızgarasını yeniden çizer, önce
-seçilen gün kaybolur. Bu dört çağrı **ham** araçlarla yapılır. Bütçeden
+seçilen gün kaybolur. Bu çağrılar **ham** araçlarla yapılır. Bütçeden
 yemez ve modelin hamlesi sayılmaz, ama kendi `[uptest] set_date:`
-satırlarını loglar.
+satırlarını loglar (`takvim 11/2026 gösteriyor`, `next month -> …`).

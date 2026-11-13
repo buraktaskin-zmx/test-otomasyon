@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class RunVerdictTest {
 
@@ -128,7 +129,7 @@ class RunVerdictTest {
     }
 
     @Test
-    @DisplayName("once the budget is spent every tool is refused, except the one that ends the walk")
+    @DisplayName("once the budget is spent the next tool ENDS the walk in code (13 refused turns, 4bc5c9f0)")
     void spentBudgetStopsEverythingButTheReport() {
         RunVerdict verdict = new RunVerdict();
         List<String> reached = new ArrayList<>();
@@ -139,8 +140,8 @@ class RunVerdictTest {
                 999, null, List.of(), new LinkedHashSet<>(), "", new AtomicBoolean(), tape,
                 verdict, broke);
 
-        String refused = ((ToolCallback) tools[1]).call("{\"element\":\"Devam\"}");
-        assertThat(refused).contains("TOKEN BUDGET SPENT").contains("report_result");
+        assertThatThrownBy(() -> ((ToolCallback) tools[1]).call("{\"element\":\"Devam\"}"))
+                .isInstanceOf(BudgetedTool.WalkOver.class).hasMessageContaining("token bütçesi doldu");
         assertThat(reached).isEmpty();
 
         ((ToolCallback) tools[0]).call("{\"succeeded\":[\"Giriş yapıldı.\"],\"passed\":false}");
@@ -205,7 +206,7 @@ class RunVerdictTest {
     }
 
     @Test
-    @DisplayName("12.11.2026, d88e4b14: click failed, refused, refused… — after four the walk is told to report")
+    @DisplayName("12.11.2026, d88e4b14: click failed, refused, refused… — after four the walk ends in code")
     void stuckWalkIsStopped() {
         RunVerdict verdict = new RunVerdict();
         List<String> reached = new ArrayList<>();
@@ -238,8 +239,9 @@ class RunVerdictTest {
         click.call("{\"target\": \"f1e204\"}");
         click.call("{\"target\": \"f1e204\"}");
 
-        assertThat(look.call("{}")).contains("STOP").contains("report_result");
-        assertThat(click.call("{\"target\": \"f1e999\"}")).contains("STOP");
+        assertThatThrownBy(() -> look.call("{}")).isInstanceOf(BudgetedTool.WalkOver.class)
+                .hasMessageContaining("üst üste olmadı");
+        assertThatThrownBy(() -> click.call("{\"target\": \"f1e999\"}")).isInstanceOf(BudgetedTool.WalkOver.class);
         assertThat(reached).containsExactly("browser_click", "browser_snapshot", "browser_snapshot");
 
         ((ToolCallback) tools[2]).call("{\"succeeded\":[],\"failed\":[\"Ekran yüklenmedi.\"],\"passed\":false}");

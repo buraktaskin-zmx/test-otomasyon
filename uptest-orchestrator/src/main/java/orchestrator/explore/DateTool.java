@@ -42,12 +42,45 @@ public class DateTool {
     private static final String YEAR = "#ui-datepicker-year";
     private static final String MONTH = "#ui-datepicker-month";
 
+    private static final String NEXT = PICKER + " .ui-datepicker-next";
+    private static final String PREV = PICKER + " .ui-datepicker-prev";
+
+    /** Further than this and the year/month lists are used rather than the arrows. */
+    static final int MAX_ARROWS = 24;
+
+    /**
+     * The month the open calendar shows (jQuery UI's own drawYear/drawMonth,
+     * else the lists' values) and whether its year/month lists can be used.
+     */
+    static final String SHOWN = """
+            () => {
+              const d = document.querySelector('#ui-datepicker-div');
+              if (!d) return 'SHOWN none';
+              const vis = e => !!e && !!(e.offsetWidth || e.offsetHeight || e.getClientRects().length)
+                && getComputedStyle(e).visibility !== 'hidden';
+              const y = d.querySelector('select.ui-datepicker-year');
+              const m = d.querySelector('select.ui-datepicker-month');
+              let yy = null, mm = null;
+              const i = window.jQuery && jQuery.datepicker && jQuery.datepicker._curInst;
+              if (i && typeof i.drawYear === 'number') { yy = i.drawYear; mm = i.drawMonth; }
+              else { if (y) yy = +y.value; if (m) mm = +m.value; }
+              return 'SHOWN ' + yy + ' ' + mm + ' ' + (vis(y) ? 1 : 0) + ' ' + (vis(m) ? 1 : 0);
+            }""";
+
+    private static final Pattern SHOWN_LINE = Pattern.compile("SHOWN (\\d{4}) (\\d{1,2}) ([01]) ([01])");
+
+    /** What the open calendar shows; month 0-based, as jQuery UI counts. */
+    record Shown(int year, int month, boolean yearList, boolean monthList) {
+    }
+
     private final ToolCallback click;
     private final ToolCallback selectOption;
+    private final ToolCallback evaluate;
 
-    private DateTool(ToolCallback click, ToolCallback selectOption) {
+    private DateTool(ToolCallback click, ToolCallback selectOption, ToolCallback evaluate) {
         this.click = click;
         this.selectOption = selectOption;
+        this.evaluate = evaluate;
     }
 
     /**
@@ -58,7 +91,12 @@ public class DateTool {
     static DateTool bind(ToolCallback[] callbacks) {
         ToolCallback click = find(callbacks, "browser_click");
         ToolCallback select = find(callbacks, "browser_select_option");
-        return click == null || select == null ? null : new DateTool(click, select);
+        ToolCallback evaluate = find(callbacks, "browser_evaluate");
+        if (evaluate != null && (evaluate.getToolDefinition().inputSchema() == null
+                || !evaluate.getToolDefinition().inputSchema().contains("\"function\""))) {
+            evaluate = null;
+        }
+        return click == null || select == null ? null : new DateTool(click, select, evaluate);
     }
 
     private static ToolCallback find(ToolCallback[] callbacks, String name) {
@@ -96,14 +134,29 @@ public class DateTool {
         String opened;
         try {
             opened = step("open the field", click, "{\"target\":" + quote(target) + "}");
-            // Year first, then month: each one redraws the day grid, so a day
-            // chosen before them is thrown away. The month is sent as jQuery
-            // UI's own 0-based value rather than its Turkish name — the name
-            // depends on the page's locale, the number does not.
-            step("choose the year", selectOption,
-                    "{\"target\":\"" + YEAR + "\",\"values\":[" + quote(year) + "]}");
-            step("choose the month", selectOption,
-                    "{\"target\":\"" + MONTH + "\",\"values\":[" + quote(String.valueOf(month - 1)) + "]}");
+            // Measured 13.11.2026, tape 4bc5c9f0, "Başlangıç Vadesi": the
+            // calendar opened showing November 2026, but its year list is
+            // hidden, and selecting in it waited out MCP's five seconds. So
+            // the month on show is READ, and a near month is reached with the
+            // arrows a person would press; the lists only for a far one.
+            Shown shown = shown();
+            int wanted = Integer.parseInt(year) * 12 + (month - 1);
+            int away = shown == null ? Integer.MAX_VALUE : wanted - (shown.year() * 12 + shown.month());
+            if (shown != null && Math.abs(away) <= MAX_ARROWS) {
+                for (int i = 0; i < Math.abs(away); i++) {
+                    step(away > 0 ? "next month" : "previous month", click,
+                            "{\"target\":" + quote(away > 0 ? NEXT : PREV) + "}");
+                }
+            } else {
+                // Year first, then month: each one redraws the day grid, so a day
+                // chosen before them is thrown away. The month is sent as jQuery
+                // UI's own 0-based value rather than its Turkish name — the name
+                // depends on the page's locale, the number does not.
+                step("choose the year", selectOption,
+                        "{\"target\":\"" + YEAR + "\",\"values\":[" + quote(year) + "]}");
+                step("choose the month", selectOption,
+                        "{\"target\":\"" + MONTH + "\",\"values\":[" + quote(String.valueOf(month - 1)) + "]}");
+            }
             // text-is, not a substring: "2" must not match "12" or "20".
             step("click the day", click,
                     "{\"target\":" + quote(PICKER + " a:text-is(\"" + day + "\")") + "}");
@@ -126,6 +179,29 @@ public class DateTool {
     private static String boxLine(String clicked) {
         String line = ReplayCalls.codeLine(clicked);
         return line.isEmpty() ? "" : "\n### Ran Playwright code\n```js\n" + line + "\n```";
+    }
+
+    /** The month on show, or null when it cannot be read (no evaluate, no calendar, old jQuery UI). */
+    private Shown shown() {
+        if (evaluate == null) {
+            return null;
+        }
+        try {
+            // Jackson, not quote(): the script has line breaks, which quote() leaves raw.
+            String answer = FocusedTyping.resultOf(evaluate.call("{\"function\":"
+                    + new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(SHOWN) + "}"));
+            Matcher m = answer == null ? null : SHOWN_LINE.matcher(answer);
+            if (m == null || !m.find()) {
+                return null;
+            }
+            Shown shown = new Shown(Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2)),
+                    "1".equals(m.group(3)), "1".equals(m.group(4)));
+            System.out.println("[uptest] set_date: takvim " + (shown.month() + 1) + "/" + shown.year()
+                    + " gösteriyor");
+            return shown;
+        } catch (RuntimeException | com.fasterxml.jackson.core.JsonProcessingException unreadable) {
+            return null;
+        }
     }
 
     /**

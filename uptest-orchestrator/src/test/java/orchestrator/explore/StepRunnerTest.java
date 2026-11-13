@@ -188,6 +188,52 @@ class StepRunnerTest {
         assertThat(ClaimCheck.unclicked(SCENARIO, tape.calls(), List.of())).isEmpty();
     }
 
+    private static final String WRITTEN = """
+            1. "Firma Seçimi" listesinden "ASAŞ ALÜMİNYUM SAN." seç
+            2. Ödeme Durumu "Ödenecek" olan ilk satırı seç
+            3. İşlemler panelindeki "Fatura İptal Et" düğmesine tıkla
+               Beklenen (bu adımdan hemen sonra kontrol et): "Fatura İptal" ekranı açılır
+            4. Açılan ekranda "Geri" düğmesine tıkla""";
+
+    @Test
+    @DisplayName("13.11.2026: steps in the guide's grammar are read and done by CODE, the Beklenen page kept")
+    void codeDoesTheWholeScenario() {
+        StepRunner runner = runner(WRITTEN);
+        CodeSteps.Parsed parsed = CodeSteps.parse(WRITTEN);
+        assertThat(parsed.all()).isTrue();
+
+        FastReplay.Result run = runner.runAll(parsed.steps());
+
+        assertThat(run.complete()).isTrue();
+        assertThat(clicked).containsExactly("e10", "e23", "e40", "e61", "e82");
+        // Not halted at the Beklenen: the page right after step 3 is kept for the verdict.
+        assertThat(run.checkpoints()).singleElement().satisfies(point -> {
+            assertThat(point.step()).isEqualTo(3);
+            assertThat(point.page()).contains("Fatura İptal").contains("Evet");
+        });
+        assertThat(run.done()).hasSize(4);
+        assertThat(ClaimCheck.unclicked(WRITTEN, tape.calls(), List.of())).isEmpty();
+    }
+
+    @Test
+    @DisplayName("code stops at the first step it cannot do, and says which, for the agent to take over")
+    void codeStopsWhereItCannot() {
+        String scenario = WRITTEN.replace("\"Fatura İptal Et\" düğmesine", "\"Fatura Sil\" düğmesine");
+        StepRunner runner = runner(scenario);
+        CodeSteps.Parsed parsed = CodeSteps.parse(scenario);
+
+        FastReplay.Result run = runner.runAll(parsed.steps());
+
+        assertThat(run.complete()).isFalse();
+        assertThat(run.stoppedAt()).isEqualTo(3);
+        assertThat(run.done()).hasSize(2);
+        assertThat(clicked).containsExactly("e10", "e23", "e40");
+        assertThat(CodeSteps.handover(parsed, run))
+                .contains("✓ 1. select \"Firma Seçimi\"")
+                .contains("Kod 3. adımı yapamadı")
+                .contains("Sen 3. adımdan devam et");
+    }
+
     @Test
     @DisplayName("a confirmation the scenario never named is refused inside the batch, and the batch stops")
     void unaskedConfirmationStopsTheBatch() {

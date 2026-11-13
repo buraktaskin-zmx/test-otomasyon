@@ -277,6 +277,23 @@ final class BudgetedTool implements ToolCallback {
     }
 
     /**
+     * The walk is over — the token budget is spent, or its actions keep
+     * failing — and the CODE ends it, the way BrowserClosed does.
+     *
+     * <p>Measured 13.11.2026, tape 4bc5c9f0: the budget wall answered every
+     * call past 100.000 tokens with "TOKEN BUDGET SPENT … call report_result
+     * NOW", and the model called 13 more tools anyway, each refused and each a
+     * ~6.000-token turn: 85.000 of the walk's 192.735 tokens bought nothing. A
+     * wall that only talks is the "a limit that only warns is not a limit"
+     * lesson once more. ExploreController reports the result from the tape.
+     */
+    static final class WalkOver extends RuntimeException {
+        WalkOver(String reason) {
+            super(reason);
+        }
+    }
+
+    /**
      * One budget and one visit history, shared by the tools of a single request.
      *
      * @param pending captions that must be touched; entries are REMOVED as
@@ -725,17 +742,19 @@ final class BudgetedTool implements ToolCallback {
         // above, so the walk can still report what it managed to do. Putting
         // this check first refused report_result too, and the run then ended
         // with nothing at all; the test pins the order.
+        // Thrown, not answered: the model ignored the answer (WalkOver).
         if (policy != null && policy.spentOut()) {
             System.out.println("[uptest] explore: token butcesi doldu (" + policy.used() + "/"
-                    + policy.budget() + ") — " + name() + " reddedildi");
-            return SPENT.formatted(policy.used());
+                    + policy.budget() + ") — kosu kodla bitiriliyor");
+            throw new WalkOver(String.format(java.util.Locale.forLanguageTag("tr-TR"),
+                    "token bütçesi doldu (%,d / %,d)", policy.used(), policy.budget()));
         }
         // Same exemption and the same shape as the budget wall: a walk whose
         // actions keep failing ends with a result, not with the budget.
         if (policy != null && policy.stuck()) {
             System.out.println("[uptest] explore: " + AiRunPolicy.STUCK_AFTER
-                    + " islem ust uste olmadi — " + name() + " reddedildi, sonuc isteniyor");
-            return STUCK;
+                    + " islem ust uste olmadi — kosu kodla bitiriliyor");
+            throw new WalkOver(AiRunPolicy.STUCK_AFTER + " işlem üst üste olmadı ya da reddedildi");
         }
         String banned = banned(input);
         if (banned != null) {

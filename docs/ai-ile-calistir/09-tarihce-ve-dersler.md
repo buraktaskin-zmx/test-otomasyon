@@ -20,6 +20,7 @@
 | 12.11 | d88e4b14 | 25 | 100.901 | ekran yüklenmedi | "Lütfen bekleyiniz"de ajan başlatılmamalı → e7faad3 |
 | 12.11 | 01604939 | — | — | about:blank | Overlay 5 sn'yi aştı, ajan F5'e bastı → BusyPage (7ceccac) |
 | 12.11 | a73ead34 | — | — | ASAŞ seçilemedi | Aynı kod, **kötü yazılmış senaryo** → [§24](10-senaryo-yazim-rehberi.md) |
+| 13.11 | bant 4bc5c9f0, "fatura oluştur" (17 adım) | 32 | 192.735 | bitmedi | Bütçe duvarından sonra **13 reddedilen tur** (~85.000 token) → duvar artık koşuyu kodla bitirir (`WalkOver`), token sınırı kapatıldı. Ajan `do_steps` kullanmadı → kurallı adımları kod yürütür (`CodeSteps`, [§15.5](06-do-steps-ve-set-date.md)). Takvim yıl listesi gizliydi → oklarla (§16) |
 
 ### 23.2 Commit'ler (bu yolu şekillendiren)
 
