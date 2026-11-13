@@ -6,10 +6,14 @@ import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * How an "AI ile çalıştır" walk ends: a structured result, not a paragraph.
@@ -58,6 +62,26 @@ public final class RunVerdict {
     private final List<String> refutedCaptions = new CopyOnWriteArrayList<>();
 
     /**
+     * The scenario's expectations (StepExpectations.all), each of which the
+     * model must answer for in {@code expectations}. Empty: nothing is held
+     * to an answer, exactly as before.
+     */
+    private volatile List<StepExpectations.Expectation> expected = List.of();
+
+    /** The model's {@code expectations} answers; null when the CODE reported the result. */
+    private volatile List<String> answers;
+
+    /** B-number → why the code says that expectation could not be judged where it is (ExpectationCheck). */
+    private final Map<Integer, String> misplaced = new ConcurrentHashMap<>();
+
+    /** "B2 GÖRÜLDÜ: …", "2) GÖRÜLMEDİ - …": the B-number an answer names. */
+    private static final Pattern ANSWER_NUMBER =
+            Pattern.compile("^\\s*B?\\s*(\\d+)\\s*[.):\\-]?\\s*", Pattern.CASE_INSENSITIVE);
+
+    /** The status word an answer starts with, once folded. */
+    private static final Pattern ANSWER_STATUS = Pattern.compile("^(gorulmedi|goruldu)\\b\\s*[:\\-–—]?\\s*");
+
+    /**
      * @param succeeded    steps carried out that behaved as they should
      * @param failed        steps not carried out, or that did not show what was expected
      * @param warnings      what the analyst should know that did not decide the result
@@ -79,7 +103,8 @@ public final class RunVerdict {
     public String reportResult(
             @ToolParam(description = "Every step of the instruction you carried out and that behaved as it "
                     + "should, in order, one Turkish sentence each: what you did and what the screen "
-                    + "showed. Pass an empty list if there were none.")
+                    + "showed. Steps only: the Beklenen go in expectations. Pass an empty list if there "
+                    + "were none.")
             List<String> succeeded,
             @ToolParam(description = "Every step you could not carry out, skipped, or where the screen did "
                     + "NOT show what the instruction expected, one Turkish sentence each saying which "
@@ -89,14 +114,51 @@ public final class RunVerdict {
                     + "unexpected dialog, a very slow screen, an ambiguous instruction step, a value that "
                     + "looked slightly different. One Turkish sentence each. Pass an empty list if none.")
             List<String> warnings,
+            @ToolParam(description = "One item for EVERY line of the BEKLENEN LİSTESİ at the end of the "
+                    + "instruction, with its B-number: \"B1 GÖRÜLDÜ: <what on the page shows it>\" or "
+                    + "\"B1 GÖRÜLMEDİ: <what the page shows instead>\". Judge each on the page the list "
+                    + "names for it: right after its step, or the LAST page. A page you are no longer "
+                    + "looking at does not count, and neither does what you expect a page to show. A "
+                    + "Beklenen with no item here counts as NOT seen. Pass an empty list only if the "
+                    + "instruction has no BEKLENEN LİSTESİ.")
+            List<String> expectations,
             @ToolParam(description = "true ONLY if every step was carried out AND every expected result "
                     + "(BEKLENEN) was seen on the screen. false otherwise.")
             boolean passed) {
+        answers = clean(expectations);
         result = new Result(clean(succeeded), clean(failed), clean(warnings), passed);
-        System.out.println("[uptest] explore: sonuc bildirildi — " + (result.passed() ? "GECTI" : "GECMEDI")
+        System.out.println("[uptest] explore: sonuc bildirildi — ajanin iddiasi "
+                + (result.passed() ? "GECTI" : "GECMEDI")
                 + " (" + result.succeeded().size() + " dogru, " + result.failed().size() + " gecemedi, "
-                + result.warnings().size() + " uyari)");
+                + result.warnings().size() + " uyari, " + answers.size() + "/" + expected.size()
+                + " beklenen cevaplandi; karar kodla kesinlesir)");
         return "Sonuç kaydedildi. Görev bitti.";
+    }
+
+    /**
+     * A result the CODE reports — the screen never opened, a cached call
+     * failed. It is already a failure; the expectations are not asked about.
+     */
+    public void reportResult(List<String> succeeded, List<String> failed, List<String> warnings,
+                             boolean passed) {
+        reportResult(succeeded, failed, warnings, List.of(), passed);
+        answers = null;
+    }
+
+    /** The expectations every report must answer for; set before the walk. */
+    public void expecting(List<StepExpectations.Expectation> expectations) {
+        expected = expectations == null ? List.of() : List.copyOf(expectations);
+    }
+
+    List<StepExpectations.Expectation> expected() {
+        return expected;
+    }
+
+    /** The code found expectation {@code number} cannot be judged where it is checked. */
+    void misplaced(int number, String why) {
+        if (why != null && !why.isBlank()) {
+            misplaced.put(number, why.strip());
+        }
     }
 
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -128,7 +190,7 @@ public final class RunVerdict {
             root = JSON.createObjectNode();
         }
         return reportResult(items(root.get("succeeded")), items(root.get("failed")),
-                items(root.get("warnings")), truth(root.get("passed")));
+                items(root.get("warnings")), items(root.get("expectations")), truth(root.get("passed")));
     }
 
     /** An array, an array written as a string, or one sentence — all read as a list. */
@@ -174,7 +236,9 @@ public final class RunVerdict {
     /** The result with the code's warnings after the agent's, or null when the agent never reported one. */
     public Result result() {
         Result r = result;
-        if (r == null || (added.isEmpty() && refutedFailures.isEmpty())) {
+        List<String> given = answers;
+        boolean judged = given != null && !expected.isEmpty();
+        if (r == null || (added.isEmpty() && refutedFailures.isEmpty() && !judged)) {
             return r;
         }
         List<String> succeeded = new ArrayList<>();
@@ -186,9 +250,62 @@ public final class RunVerdict {
         }
         List<String> failed = new ArrayList<>(r.failed());
         failed.addAll(refutedFailures);
+        if (judged) {
+            settleExpectations(given, succeeded, failed);
+        }
         List<String> warnings = new ArrayList<>(r.warnings());
         warnings.addAll(added);
         return new Result(succeeded, failed, warnings, r.claimedPassed());
+    }
+
+    /**
+     * Every expectation held to its answer, IN CODE: no answer, or anything
+     * but GÖRÜLDÜ, is a failure, so a Beklenen the model passes over in
+     * silence can no longer leave the run green (tape bd40c3ee). An answer
+     * names its B-number; one that does not is taken in order. An expectation
+     * the code found misplaced (ExpectationCheck) fails whatever the model
+     * said, because the page it is judged on did not show what it names.
+     */
+    private void settleExpectations(List<String> given, List<String> succeeded, List<String> failed) {
+        Map<Integer, String> byNumber = new HashMap<>();
+        List<String> unnumbered = new ArrayList<>();
+        for (String answer : given) {
+            Matcher number = ANSWER_NUMBER.matcher(answer);
+            if (number.find() && number.end() > 0) {
+                byNumber.putIfAbsent(Integer.parseInt(number.group(1)), answer.substring(number.end()).strip());
+            } else {
+                unnumbered.add(answer.strip());
+            }
+        }
+        int next = 0;
+        for (StepExpectations.Expectation e : expected) {
+            String answer = byNumber.get(e.number());
+            if (answer == null && next < unnumbered.size()) {
+                answer = unnumbered.get(next++);
+            }
+            String head = "Beklenen (" + e.where() + ") ";
+            String wrong = misplaced.get(e.number());
+            if (wrong != null) {
+                failed.add(head + "kontrol edilemedi: " + e.text() + " — " + wrong);
+                continue;
+            }
+            if (answer == null) {
+                failed.add(head + "kontrol edilmedi: " + e.text() + " — Ajan bu Beklenen için sonuç"
+                        + " bildirmedi; kod bunu Geçmedi saydı.");
+                continue;
+            }
+            // fold() maps letter for letter, so the status's length is the same in the original.
+            Matcher status = ANSWER_STATUS.matcher(TapeRenderer.fold(answer));
+            boolean known = status.find();
+            boolean seen = known && "goruldu".equals(status.group(1));
+            String evidence = known ? answer.substring(Math.min(answer.length(), status.end())).strip() : answer;
+            String tail = evidence.isBlank() ? "" : " — " + evidence;
+            if (seen) {
+                succeeded.add(head + "görüldü: " + e.text() + tail);
+            } else {
+                failed.add(head + "görülmedi: " + e.text() + tail);
+            }
+        }
     }
 
     /**

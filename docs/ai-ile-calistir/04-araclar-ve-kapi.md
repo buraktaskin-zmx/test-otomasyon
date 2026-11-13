@@ -19,7 +19,7 @@ ziyaret kümesi tek bir koşuya aittir. Ayrıca builder paylaşılır ve
 | 5 | `browser_select_option` | MCP | Gerçek `<select>` seçeneği | ✓ |
 | 6 | `browser_press_key` | MCP | Tek tuş (F5/Ctrl+R reddedilir) | ✓ |
 | 7 | `browser_handle_dialog` | MCP | Tarayıcı diyaloğu (onay sözcüğü engeline tabi) | ✓ |
-| 8 | `browser_press_sequentially` | MCP | **Hedefsiz** yazma: odaktaki kutuya (Select2 arama) | ✓ |
+| 8 | `browser_press_sequentially` | MCP; MCP sunmuyorsa kod (`FocusedTyping`: evaluate ile işaretle, `browser_type` ile yaz) | **Hedefsiz** yazma: odaktaki kutuya (Select2 arama). 0.0.82 Mac'te sunmadı (13.11.2026) | ✓ |
 | 9 | `set_date` | `DateTool` | Takvimi yıl → ay → gün sırasıyla kodla sürer | ✓ |
 | 10 | `do_steps` | `StepRunner` | ≤8 adımı tek turda, ada göre ([§15](06-do-steps-ve-set-date.md)) | — (kendi sayfasını ekler) |
 | 11 | `report_result` | `RunVerdict` | Sonucu bildirir, döngüyü bitirir | — |

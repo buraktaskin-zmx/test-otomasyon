@@ -114,6 +114,14 @@ final class FastReplay {
                     return "set_date bu koşuda yok";
                 }
                 result = dates.setDate(call.target(), call.dateFor(today));
+            } else if (FocusedTyping.TOOL.equals(call.tool()) && tools.get(call.tool()) == null) {
+                // The MCP lacks it; the walk used the code's own (FocusedTyping).
+                FocusedTyping typing = FocusedTyping.bind(raw);
+                if (typing == null) {
+                    return call.tool() + " bu koşuda yok";
+                }
+                result = typing.pressSequentially(TapeEvidence.arg(new TapeRenderer.Call(0, call.tool(), args, "", ""),
+                        "text"));
             } else {
                 ToolCallback tool = tools.get(call.tool());
                 if (tool == null) {

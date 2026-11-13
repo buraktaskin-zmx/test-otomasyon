@@ -33,7 +33,8 @@ söylenen üç sebep yanlış çıktı.
 | `[uptest] explore: token butcesi doldu (100233/100000) — … reddedildi` | Bütçe duvarı |
 | `[uptest] explore: sayfayi yenileme (…) — reddedildi` | F5 engeli |
 | `[uptest] set_date: choose the month -> {…}` | Tarih aracının iç adımları |
-| `[uptest] explore: sonuc bildirildi — GECTI (4 dogru, 0 gecemedi, 0 uyari)` | Ajanın iddiası |
+| `[uptest] explore: sonuc bildirildi — ajanin iddiasi GECTI (4 dogru, 0 gecemedi, 0 uyari, 2/3 beklenen cevaplandi; karar kodla kesinlesir)` | Ajanın iddiası; cevapsız Beklenen kodla Geçmedi olur |
+| `[uptest] explore: B2 son ekranda kontrol edilemez — [Kurum Adı, …] son ekranda yok, onceki bir ekrandaydi` | Son Beklenen yanlış yerde; o madde Geçmedi. Adımın altına `Beklenen:` olarak taşıyın |
 | `[uptest] explore: ajan 'Geri' adimini yapildi dedi ama bantta bu tiklama yok — sonuc GECMEDI'ye cevrildi` | ClaimCheck düzeltti |
 | `[uptest] ai-run: bitti — 34120 token, sonuc bildirildi=true` | Toplam |
 | `[uptest] explore: tarayici yok ("has been closed") — kosu sonlandiriliyor` | Pencere kapandı |

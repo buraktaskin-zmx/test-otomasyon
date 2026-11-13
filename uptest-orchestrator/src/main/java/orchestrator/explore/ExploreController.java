@@ -173,6 +173,9 @@ public class ExploreController {
             // Once the list is open the box already has the focus.
             "browser_press_sequentially");
 
+    /** The start of Spring's message when the model calls a tool it was not given. */
+    static final String UNKNOWN_TOOL = "No ToolCallback found for tool name:";
+
     private ToolCallback raw(String name) {
         for (ToolCallback callback : tools.getToolCallbacks()) {
             if (name.equals(callback.getToolDefinition().name())) {
@@ -244,6 +247,23 @@ public class ExploreController {
         }
         if (dates != null) {
             ours.add(dates);
+        }
+        // An allowed MCP tool the server does not serve is simply absent, and
+        // a call to it kills the whole walk (13.11.2026). The one the prompt
+        // relies on is provided in code when the MCP lacks it.
+        FocusedTyping typing = allowed != null && allowed.contains(FocusedTyping.TOOL)
+                ? FocusedTyping.bind(tools.getToolCallbacks()) : null;
+        if (typing != null) {
+            ours.add(typing);
+        }
+        if (allowed != null) {
+            Set<String> served = new java.util.HashSet<>();
+            usable.forEach(callback -> served.add(callback.getToolDefinition().name()));
+            List<String> missing = allowed.stream()
+                    .filter(name -> !served.contains(name) && !(typing != null && FocusedTyping.TOOL.equals(name)))
+                    .sorted().toList();
+            System.out.println("[uptest] ai-run: araclar — MCP'de olmayan " + (missing.isEmpty() ? "yok" : missing)
+                    + (typing != null ? "; " + FocusedTyping.TOOL + " kodla saglandi" : ""));
         }
         if (verdict != null) {
             ours.add(verdict);
@@ -579,7 +599,8 @@ public class ExploreController {
         if (answer == null) {
             String userTurn = AiRunPrelude.instruction(chrome.shown(opened, body.text(), pageCap), body.text(),
                     composed, body.mainMenu(),
-                    body.screen(), BudgetedTool.LARGEST_RESULT);
+                    body.screen(), BudgetedTool.LARGEST_RESULT)
+                    + StepExpectations.checklist(verdict.expected());
             Set<String> allowed = new java.util.HashSet<>(AI_RUN_TOOLS);
             if (opened.reached() == AiRunPrelude.Reached.NOTHING) {
                 allowed.add("browser_navigate");
@@ -591,14 +612,29 @@ public class ExploreController {
                     + " karakter, token butcesi " + runTokenBudget + ", cache " + visit.state);
             // The SAME client Ekran Keşfi uses — Spring's, configured. The only
             // difference is an advisor that cuts the old pages out of each turn.
-            answer = client.prompt()
-                    .system(RUN_SYSTEM + RESULT_RULES)
-                    .user(userTurn)
-                    .advisors(new CompactingAdvisor())
-                    .tools(toolsFor(null, userTurn, new LinkedHashSet<>(), aborted, tape, verdict,
-                            policy, allowed, runToolBudget, checkpoints))
-                    .call()
-                    .content();
+            try {
+                answer = client.prompt()
+                        .system(RUN_SYSTEM + RESULT_RULES)
+                        .user(userTurn)
+                        .advisors(new CompactingAdvisor())
+                        .tools(toolsFor(null, userTurn, new LinkedHashSet<>(), aborted, tape, verdict,
+                                policy, allowed, runToolBudget, checkpoints))
+                        .call()
+                        .content();
+            } catch (IllegalStateException unknown) {
+                // Spring throws this when the model names a tool it was not given;
+                // the walk is over either way, but the analyst gets the reason as a result.
+                String message = String.valueOf(unknown.getMessage());
+                if (!message.startsWith(UNKNOWN_TOOL) || verdict.isClosed()) {
+                    throw unknown;
+                }
+                String name = message.substring(UNKNOWN_TOOL.length()).strip();
+                System.out.println("[uptest] ai-run: ajan olmayan bir araci cagirdi (" + name + ") — kosu durdu");
+                verdict.reportResult(List.of(), List.of("Ajan bu koşuda olmayan bir aracı çağırdı (" + name
+                        + "); koşu orada durdu. Bu bir uygulama hatası değil, ajan aracı sorunudur."),
+                        List.of(), false);
+                answer = verdict.asText();
+            }
         }
         long used = AiTraces.currentTokens();
         System.out.println("[uptest] ai-run: bitti — " + used + " token, sonuc bildirildi="
@@ -639,7 +675,8 @@ public class ExploreController {
                 .filter(t -> t instanceof ToolCallback cb && RunVerdict.TOOL.equals(cb.getToolDefinition().name()))
                 .toArray();
         String turn = FastReplay.verdictTurn(AiRunPrelude.withoutGoTo(body.text()), walk, unmatched,
-                summarised(chrome, walk.lastPage(), body.text()));
+                summarised(chrome, walk.lastPage(), body.text()))
+                + StepExpectations.checklist(verdict.expected());
         System.out.println("[uptest] ai-cache karar turu: tek AI cagrisi, talimat " + turn.length() + " karakter");
         String answer = client.prompt().system(VERDICT_SYSTEM).user(turn).tools(reportOnly).call().content();
         System.out.println("[uptest] ai-run: bitti — " + AiTraces.currentTokens() + " token (hizli calistir)");
@@ -689,6 +726,9 @@ public class ExploreController {
         // A saved scenario's run ends in a structured result (RunVerdict);
         // Serbest Gözlem is an observation, not a test, and keeps its prose.
         RunVerdict verdict = aiRun ? new RunVerdict() : null;
+        if (verdict != null) {
+            verdict.expecting(StepExpectations.all(body.text()));
+        }
         try {
             String answer;
             if (aiRun) {
@@ -715,6 +755,8 @@ public class ExploreController {
                     TapeRenderer.render(tape.calls(), body.mainMenu(), body.expected());
             // The agent's "done" is held against the tape before anyone sees it.
             ClaimCheck.apply(verdict, body.text(), tape.calls(), rendered.steps());
+            // A final Beklenen about a screen the walk had already left fails, in code.
+            ExpectationCheck.apply(verdict, tape.calls());
             // After ClaimCheck: only a walk whose verdict survived it is cached.
             cache.settle(visit, verdict, tape, body.text());
             Map<String, Object> reply = new LinkedHashMap<>();

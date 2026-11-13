@@ -192,7 +192,7 @@ Geri butonuna tıkla                                      Açılan güncelleme e
 | Ön koşul | Evet | Yalnız dolaylı: onay engeli ve liste kısaltma **bütün** metne bakar | Ajan veri **yaratmaz**, yalnız okur. Ön koşul ortamda sağlanmıyorsa koşu kırmızı çıkar ama hata uygulamada değildir |
 | Adımlar | Evet, numaralı | ClaimCheck (yalnız numaralı basma adımları), liste kısaltma, PageChrome, onay engeli | Tırnaklı adlar burada işe yarar |
 | Adımlar içinde `Beklenen:` satırı | Evet, numarasız, adımın altında | `StepRunner` partiyi o adımdan sonra durdurur; cache'li koşuda tırnaklı ad kodla aranır ([§30](14-adim-cache.md)) | Ara durumu (açılan pencere, çıkan mesaj) o adımdan **hemen sonra** kontrol ettirir |
-| Beklenen | Evet | Kod **doğrulamaz** (onay engeli ve liste kısaltma yine bütün metne bakar); "Gherkin oluştur" THEN satırlarını buradan üretir | Ajan görüp görmediğine kendisi karar verir. Görünür ve tırnaklı yaz ki yanlış karar zorlaşsın |
+| Beklenen | Evet, her madde B-numarasıyla "BEKLENEN LİSTESİ"nde | Her madde için ajandan GÖRÜLDÜ / GÖRÜLMEDİ ister; cevapsız madde **Geçmedi**. Adları son ekranda yok ama önceki bir ekranda varsa **Geçmedi** ("kontrol edilemedi", [§17](07-sonuc-kayit-gherkin.md)). "Gherkin oluştur" THEN satırlarını buradan üretir | Görüp görmediğine yine ajan karar verir. Görünür ve tırnaklı yaz ki yanlış karar zorlaşsın. **Son ekranda olmayan bir şeyi buraya yazma** |
 
 **Bir adımın sonucunu o adımın altına yazın.** Sondaki Beklenen alanı ancak
 son ekranı görür. "Fatura İptal Et"in açtığı pencere, "Geri"ye basıldıktan
@@ -203,6 +203,23 @@ sonra artık yoktur:
 Beklenen: "Fatura İptal" ekranı açılır
 "Geri" düğmesine tıkla
 ```
+
+Aynı şey alanlar için de geçerli. Gerçek örnek (bant `bd40c3ee`): son adım
+"Geri" iken sondaki Beklenen'e güncelleme ekranının alanları yazılmıştı. Son
+ekran liste olduğu için bu madde kontrol edilemez ve kod **Geçmedi** sayar.
+Doğrusu, maddeleri o ekranı açan adımın altına yazmak:
+
+```
+İşlemler panelindeki "Fatura Güncelle" bağlantısına tıkla
+Beklenen: "Fatura Güncelle" ekranı açılır; üstteki "Kurum Adı", "Bayi Kodu", "Fatura No" düz metin olarak görünür
+Beklenen: "Yeni Fatura No", "Yeni Fatura Tutarı" alanları düzenlenebilir kutulardır
+Açılan güncelleme ekranında yalnızca "Geri" düğmesine tıkla
+```
+
+Sondaki Beklenen alanına yalnız Geri'nin sonucu yazılır: `"Firma Fatura
+İşlemleri" listesi yeniden görünür`. Yer tutucu yazmayın
+(`"<güncelleme ekranının başlığı>"`): ekranın gerçek başlığını yazın, yoksa
+madde hiçbir şeyi ölçmez.
 
 Ekran Keşfi'ndeki `TIKLAMA:` / `ZORUNLU:` satırları burada **çalışmaz**:
 senaryo metni numaralandırıldığı için satır başında durmazlar.

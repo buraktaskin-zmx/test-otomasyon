@@ -13,9 +13,10 @@
 | `succeeded` | `List<String>` | Yapılan ve doğru davranan her adım, Türkçe bir cümle |
 | `failed` | `List<String>` | Yapılamayan, atlanan ya da BEKLENEN'i göstermeyen her adım |
 | `warnings` | `List<String>` | Sonucu belirlemeyen ama bilinmesi gerekenler |
+| `expectations` | `List<String>` | BEKLENEN LİSTESİ'nin her satırı için bir madde: `B1 GÖRÜLDÜ: …` / `B1 GÖRÜLMEDİ: …` |
 | `passed` | `boolean` | Yalnız her adım yapıldı VE her BEKLENEN görüldüyse true |
 
-- Dört argüman da **zorunludur**. Model şemanın istediğini doldurur, izin
+- Beş argüman da **zorunludur**. Model şemanın istediğini doldurur, izin
   verdiğini atlar. "Hiç yok" `[]` ya da `""` ile söylenir.
 - `returnDirect = true`: sonuç modele değil çağırana döner. Sonraki tur
   olmaz. Model yine bir şey çağırırsa kapı `REPORTED` der.
@@ -51,6 +52,21 @@
      │   yoksa → verdict.refute(ad, "\"X\" düğmesine tıklanmadı: …")     │
      │          → o adı anan "succeeded" satırları ÇIKAR                 │
      │          → hata "failed"a EKLENİR                                 │
+     ├─────────────────────────────────────────────────────────────────┤
+     │ ExpectationCheck.apply  (son Beklenen ↔ son sayfa)               │
+     │   sondaki her Beklenen maddesinin adlarını çıkar                 │
+     │     (tırnaklı adlar; yoksa "A, B ve C alanları" listesi)          │
+     │   son sayfada OLMAYAN ama önceki bir sayfada OLAN ad ≥ 2 mi?      │
+     │     ("kapanır", "görünmez", "yok", "değil" diyen madde atlanır)  │
+     │   evet → verdict.misplaced(B-no, "… son ekranda yok; …")         │
+     ├─────────────────────────────────────────────────────────────────┤
+     │ Beklenen'lerin kodla kapanması (RunVerdict.settleExpectations)   │
+     │   StepExpectations.all: adım altındakiler + son liste → B1, B2…  │
+     │   her B için ajanın cevabı (B-numarasıyla, yoksa sırayla):       │
+     │     misplaced   → failed  "Beklenen (…) kontrol edilemedi: …"    │
+     │     cevap yok   → failed  "Beklenen (…) kontrol edilmedi: …"     │
+     │     GÖRÜLMEDİ / durumsuz → failed "Beklenen (…) görülmedi: …"    │
+     │     GÖRÜLDÜ     → succeeded "Beklenen (…) görüldü: … — kanıt"    │
      └─────────────────────────────────────────────────────────────────┘
                              │
                              ▼
@@ -64,12 +80,24 @@ de bunlar arasındaydı, `failed: []`. Analist tarayıcıyı izliyordu: ajan
 ikinci bir faturayı seçmişti ve pencere kapandı. "Yaptım" diyen ama yapmayan
 bir ajan yeşil sonuç alıyordu.
 
+**Beklenen neden kodla kapanıyor (ölçüldü, bant `bd40c3ee`, 12.11.2026):**
+"Güncelleme ekranındaki yeni değer alanları düzenlenebilir". Son Beklenen'in
+iki maddesi vardı: üstteki alanlar salt okunur, alttaki "Yeni …" alanlarının
+"hiçbiri düzenlenebilir değildir". İkinci madde bilerek yanlış yazılmıştı:
+sayfada `textbox "Yeni Fatura No"`, `textbox "Yeni Fatura Tutarı"` vardı, yani
+alanlar düzenlenebilirdi. Ajanın `report_result`'ı beş adımı saydı, Beklenen'e
+hiç değinmedi ve `failed: []`, `passed: true` ile bitti; koşu **Geçti**
+gösterildi. Ayrıca son adım "Geri" olduğu için son sayfa listeydi; "Kurum Adı",
+"Bayi Ünvanı", "Para Birimi" orada yoktu. Bu kurallar prompt'ta zaten
+yazıyordu. Bugünkü kod aynı bandı **Geçmedi** sayar: B1 ve B3 cevapsız, B2 ise
+yanlış yerde (`ExpectationCheckTest`, ve gerçek bant üzerinde ayrıca denendi).
+
 **ClaimCheck'in kontrol ETMEDİKLERİ:**
 
 | Kontrol edilmeyen | Neden |
 |---|---|
 | "seç", "yaz", "gir" adımları | Yalnız basma fiilleri bakılıyor. Bir seçimin **olduğu** banttan okunabilir ama doğru değerin seçildiği ayrı bir iş |
-| BEKLENEN'in gerçekten ekranda görüldüğü | Sayfadan değer okuyup karşılaştırmak gerekir. Bu yol bir doğrulama adımı atmaz |
+| BEKLENEN'in gerçekten ekranda görüldüğü | Sayfadan değer okuyup karşılaştırmak gerekir. Bu yol bir doğrulama adımı atmaz. Kod yalnız şunları zorlar: her Beklenen'e bir cevap verilmesi, ve son Beklenen'in adlarının son sayfada bulunması (yukarıdaki `ExpectationCheck`). "GÖRÜLDÜ" cevabının doğru olup olmadığına yine model karar verir |
 | Tırnaksız adlar | Adı okunamayan adım tahmin edilmez, olduğu gibi bırakılır |
 
 ---

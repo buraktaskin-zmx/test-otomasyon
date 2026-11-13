@@ -280,6 +280,16 @@ Elsewhere:
   several named steps in one turn; `BusyPage` waits out the loading overlay
   and refuses F5; `TargetCaption` lets the commit guard read what a clicked
   reference SAYS; `ClaimCheck` holds the agent's "done" against the tape.
+  Every Beklenen (under a step and in the final list, numbered B1, B2… by
+  `StepExpectations.all`) must be answered in `report_result`'s required
+  `expectations`; an unanswered one is Geçmedi in code, and
+  `ExpectationCheck` fails a final one whose names are missing from the last
+  page but were on an earlier one (tape bd40c3ee passed with neither answered).
+  The toolbox is the MCP's tools FILTERED by `AI_RUN_TOOLS`, so a listed name
+  the server does not serve is silently absent and a call to it killed the
+  walk: MCP 0.0.82 on the Mac has no `browser_press_sequentially`, which the
+  prompt and `do_steps` rely on, so `FocusedTyping` provides it in code
+  (13.11.2026). The walk's first console line names what the MCP lacks.
   A PASSED walk's tool calls go to `AI_RUN_CACHE` (`AiRunCache`,
   `ReplayCalls`: each target is the Playwright locator MCP echoed, turned into
   Playwright's own selector string — never a reference). "Hızlı çalıştır"

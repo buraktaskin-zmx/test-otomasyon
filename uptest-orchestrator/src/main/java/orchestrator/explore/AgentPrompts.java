@@ -223,6 +223,9 @@ final class AgentPrompts {
               each. failed: each expectation the page does not show, naming the
               step and what the page shows instead. passed is true ONLY when
               every expectation was seen.
+            - expectations: one item per line of the BEKLENEN LİSTESİ, "B1
+              GÖRÜLDÜ: …" or "B1 GÖRÜLMEDİ: …", each judged on the page the
+              list names for it.
             - Every sentence you pass is in TURKISH.
             """;
 
@@ -273,6 +276,10 @@ final class AgentPrompts {
               step and why.
             - passed is true ONLY when every step was done and every expected
               result (BEKLENEN) was seen on the screen.
+            - Every line of the BEKLENEN LİSTESİ gets its own item in
+              expectations: "B1 GÖRÜLDÜ: …" or "B1 GÖRÜLMEDİ: …". A final one
+              is judged on the LAST page: if that page does not show what it
+              names, it is GÖRÜLMEDİ, even when an earlier page did.
             - Report ONLY what the instruction asked. Do not describe menus,
               pages or fields the instruction did not mention.
             - Every sentence you pass is in TURKISH.

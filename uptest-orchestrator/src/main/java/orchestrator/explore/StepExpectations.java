@@ -105,6 +105,83 @@ final class StepExpectations {
         return out;
     }
 
+    /**
+     * One expectation the run must answer for: {@code number} is its B-number
+     * (B1, B2 … in the order the instruction carries them), {@code afterStep}
+     * the step it sits under, or 0 for an item of the final Beklenen list,
+     * which is judged on the last page.
+     */
+    record Expectation(int number, int afterStep, String text) {
+
+        /** Where it is judged, as the summary says it. */
+        String where() {
+            return afterStep > 0 ? afterStep + ". adımdan sonra" : "son ekranda";
+        }
+    }
+
+    /** The final section's header, as {@code docAsText} writes it: "Beklenen:" on its own line. */
+    private static final Pattern FINAL_HEADER =
+            Pattern.compile("^\\s*Beklenen(?:ler)?\\s*:\\s*$", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+
+    /**
+     * Every expectation of the scenario: those under a step first, in step
+     * order, then each "- " item of the final Beklenen list.
+     *
+     * <p><b>Why a list and not the prose.</b> Measured 12.11.2026, tape
+     * bd40c3ee: the final Beklenen had two items, the agent's report_result
+     * answered neither — five steps in {@code succeeded}, {@code failed: []},
+     * {@code passed: true} — and the run was shown green. A rule saying
+     * "passed only when every BEKLENEN was seen" was already in the prompt.
+     * RunVerdict now holds each of these to an answer.
+     */
+    static List<Expectation> all(String scenario) {
+        List<Expectation> out = new ArrayList<>();
+        for (Step step : withExpectation(scenario)) {
+            out.add(new Expectation(out.size() + 1, step.number(), step.expected()));
+        }
+        if (scenario == null) {
+            return out;
+        }
+        boolean inFinal = false;
+        for (String line : scenario.split("\\R")) {
+            if (FINAL_HEADER.matcher(line).matches()) {
+                inFinal = true;
+                continue;
+            }
+            if (!inFinal || line.isBlank()) {
+                continue;
+            }
+            String item = line.strip();
+            if (!item.startsWith("-")) {
+                inFinal = false;
+                continue;
+            }
+            item = item.substring(1).strip();
+            if (!item.isEmpty()) {
+                out.add(new Expectation(out.size() + 1, 0, item));
+            }
+        }
+        return out;
+    }
+
+    /**
+     * The list as the model is given it at the end of its instruction, so the
+     * B-numbers it must answer with are not left for it to count.
+     */
+    static String checklist(List<Expectation> expectations) {
+        if (expectations == null || expectations.isEmpty()) {
+            return "";
+        }
+        StringBuilder out = new StringBuilder("\n\nBEKLENEN LİSTESİ — report_result'ın expectations"
+                + " argümanında HER BİRİ için bir madde (B-numarasıyla, GÖRÜLDÜ ya da GÖRÜLMEDİ):\n");
+        for (Expectation e : expectations) {
+            out.append('B').append(e.number()).append(" (")
+                    .append(e.afterStep() > 0 ? e.afterStep() + ". adımdan HEMEN SONRAKİ ekranda" : "SON ekranda")
+                    .append("): ").append(e.text()).append('\n');
+        }
+        return out.toString();
+    }
+
     static List<String> quotedIn(String text) {
         List<String> out = new ArrayList<>();
         if (text == null) {

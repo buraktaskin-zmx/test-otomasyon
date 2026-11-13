@@ -314,6 +314,20 @@ ve hatalı bir `target` o anda ne yapılacağını söyleyen bir cevapla dönüy
 Bilinen boşluk: Gherkin oluştur bu adımı henüz `enter "Firma Seçimi" "san"`'a
 çevirmiyor (TapeRenderer `browser_press_sequentially`'yi tanımıyor).
 
+**Düzeltme, 13.11.2026 (Mac, MCP 0.0.82, konsoldan):** "0.0.82'de var" cümlesi
+gerçek bir koşuda doğrulanmamıştı ve yanlış çıktı. Ajan listeyi açtı ve tam
+prompt'un dediği gibi `browser_press_sequentially` çağırdı. Konsolda
+`IllegalStateException: No ToolCallback found for tool name:
+browser_press_sequentially` çıktı ve bütün koşu düştü. Ajanın araç kutusu,
+MCP'nin araçlarının `AI_RUN_TOOLS` ile **süzülmüş** hali; sunucunun sunmadığı
+bir ad listede olsa bile kutuda yoktur. Artık MCP bu aracı sunmuyorsa aynı adla
+kod sağlıyor (`FocusedTyping`): `browser_evaluate` odaktaki kutuyu (yoksa açık
+Select2'nin arama kutusunu) işaretler, `browser_type` (`slowly`, girişin de
+kullandığı yol) tuş tuş yazar. Konsol her koşunun başında
+`[uptest] ai-run: araclar — MCP'de olmayan …` satırını basar. Modelin
+verilmemiş bir araç çağırması da artık koşuyu düşürmez; koşu nedeni yazılı bir
+✗ ile biter. **Mac'te doğrulanmadı.**
+
 `40a2a7f` neden geri alındı (09:53 koşusu, konsoldan): giriş ve menü koddan
 yapıldı (`prelude=ON_SCREEN`), ama ajan senaryonun "ekranını aç" adımını yine
 yaptı ve ana menüye tıkladı; sayfa 14.275 karaktere çıktı, 2500'lük sınır onu
