@@ -352,12 +352,56 @@ final class BudgetedTool implements ToolCallback {
 
     @Override
     public String call(String input) {
-        return guarded(input, () -> invoke(input, null));
+        String fixed = roleTarget(input);
+        return guarded(fixed, () -> invoke(fixed, null));
     }
 
     @Override
     public String call(String input, ToolContext context) {
-        return guarded(input, () -> invoke(input, context));
+        String fixed = roleTarget(input);
+        return guarded(fixed, () -> invoke(fixed, context));
+    }
+
+    /** {@code textbox "Başlangıç Vadesi"}: a role and an accessible name, as a snapshot line prints them. */
+    private static final java.util.regex.Pattern ROLE_AND_NAME = java.util.regex.Pattern.compile(
+            "^\\s*(button|link|textbox|combobox|option|radio|checkbox|row|cell|tab|menuitem|searchbox|spinbutton"
+                    + "|listbox|heading)\\s+\"(.+)\"\\s*$");
+
+    /**
+     * A target written as a role and a name, turned into the selector that
+     * says exactly that.
+     *
+     * <p>Measured 13.11.2026 (ai-run 4e5a83fa): the agent sent
+     * {@code "target": "textbox \"Başlangıç Vadesi\""} and then
+     * {@code "link \"27\""} — the snapshot's own wording — and MCP answered
+     * both with {@code Unexpected token "" while parsing css selector}, two
+     * turns for nothing. The prompt already says "a role and a name is
+     * neither". It is, however, unambiguous: Playwright's role engine takes
+     * exactly that pair ({@code internal:role=textbox[name="…"s]}), the form
+     * "Hızlı çalıştır" sends and MCP 0.0.82 accepts. Anything else passes
+     * untouched.
+     */
+    static String roleTarget(String input) {
+        if (input == null || !input.contains("\"target\"")) {
+            return input;
+        }
+        try {
+            var root = new com.fasterxml.jackson.databind.ObjectMapper().readTree(input);
+            if (!(root instanceof com.fasterxml.jackson.databind.node.ObjectNode node)
+                    || !node.path("target").isTextual()) {
+                return input;
+            }
+            java.util.regex.Matcher m = ROLE_AND_NAME.matcher(node.get("target").asText());
+            if (!m.matches()) {
+                return input;
+            }
+            String name = m.group(2).replace("\\\"", "\"").replace("\\", "\\\\").replace("\"", "\\\"");
+            node.put("target", "internal:role=" + m.group(1) + "[name=\"" + name + "\"s]");
+            System.out.println("[uptest] explore: hedef '" + m.group(0).strip() + "' -> " + node.get("target").asText());
+            return node.toString();
+        } catch (Exception notJson) {
+            return input;
+        }
     }
 
     /**

@@ -137,9 +137,20 @@ set_date(target, "25/09/2026")
   3b. değilse ya da okunamadıysa:
       select_option #ui-datepicker-year  ["2026"]     önce YIL
       select_option #ui-datepicker-month ["8"]        sonra AY (jQuery UI 0 tabanlı: Eylül = 8)
-  4. click #ui-datepicker-div a:text-is("25")         en son GÜN (text-is: "2" ≠ "12")
+  4. click #ui-datepicker-div >> internal:role=link[name="25"s]   en son GÜN, rolüyle; "s" = tam ad ("2" ≠ "12")
   → "Set to 25/09/2026. … do not type into the box afterwards …"
 ```
+
+**Gün neden rolüyle (ölçüldü, ai-run `4e5a83fa`, 13.11.2026):** takvimin
+içinde iki "27" bağlantısı vardı; biri `nonprintable` sınıflı bir kopya ve
+erişilebilirlik ağacında bağlantı değil. `a:text-is("27")` ikisini de
+buldu, Playwright tıklamayı reddetti (strict mode). Playwright'ın kendi
+mesajı doğrusunu söylüyordu: `getByRole('link', { name: '27' })`.
+
+Aynı koşuda ajan hedefi `textbox "Başlangıç Vadesi"` biçiminde, yani sayfa
+dökümünün yazdığı gibi verdi ve MCP bunu CSS sanıp reddetti. `BudgetedTool`
+artık rol + ad biçimindeki bir hedefi `internal:role=textbox[name="…"s]`'e
+çevirir (`roleTarget`); başka her hedef olduğu gibi geçer.
 
 **Oklar neden (ölçüldü, bant `4bc5c9f0`, 13.11.2026):** "Başlangıç
 Vadesi"nin takvimi Kasım 2026'yı gösteriyordu ama yıl listesi gizliydi;

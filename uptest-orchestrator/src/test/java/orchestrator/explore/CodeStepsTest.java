@@ -195,7 +195,22 @@ class CodeStepsTest {
         assertThat(selects).isEmpty();
         assertThat(clicks).hasSize(3);
         assertThat(clicks.get(1)).contains(".ui-datepicker-next");
-        assertThat(clicks.get(2)).contains("a:text-is(\\\"27\\\")");
+        // By role: ai-run 4e5a83fa had a second, "nonprintable" "27" that is no link.
+        assertThat(clicks.get(2)).contains("#ui-datepicker-div >> internal:role=link[name=\\\"27\\\"s]");
+    }
+
+    @Test
+    @DisplayName("4e5a83fa: a target written as role + name becomes the role selector; others pass untouched")
+    void roleAndNameTargets() {
+        assertThat(BudgetedTool.roleTarget("{\"date\":\"27/11/2026\",\"target\":\"textbox \\\"Başlangıç Vadesi\\\"\"}"))
+                .contains("\"target\":\"internal:role=textbox[name=\\\"Başlangıç Vadesi\\\"s]\"")
+                .contains("\"date\":\"27/11/2026\"");
+        assertThat(BudgetedTool.roleTarget("{\"target\":\"link \\\"27\\\"\"}"))
+                .contains("internal:role=link[name=\\\"27\\\"s]");
+        assertThat(BudgetedTool.roleTarget("{\"target\":\"e701\"}")).isEqualTo("{\"target\":\"e701\"}");
+        assertThat(BudgetedTool.roleTarget("{\"target\":\"#select2-firma-container\"}"))
+                .isEqualTo("{\"target\":\"#select2-firma-container\"}");
+        assertThat(BudgetedTool.roleTarget("{\"text\":\"san\"}")).isEqualTo("{\"text\":\"san\"}");
     }
 
     @Test

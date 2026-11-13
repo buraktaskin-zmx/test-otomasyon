@@ -157,9 +157,14 @@ public class DateTool {
                 step("choose the month", selectOption,
                         "{\"target\":\"" + MONTH + "\",\"values\":[" + quote(String.valueOf(month - 1)) + "]}");
             }
-            // text-is, not a substring: "2" must not match "12" or "20".
+            // By ROLE, the link a person sees. Measured 13.11.2026 (ai-run
+            // 4e5a83fa): "#ui-datepicker-div a:text-is("27")" matched TWO
+            // links — a second copy with class "nonprintable" that is no link
+            // to the accessibility tree — and Playwright refused it (strict
+            // mode). Its own message named the one that is: getByRole('link',
+            // { name: '27' }). The exact name ("s") keeps "2" off "12" and "20".
             step("click the day", click,
-                    "{\"target\":" + quote(PICKER + " a:text-is(\"" + day + "\")") + "}");
+                    "{\"target\":" + quote(PICKER + " >> internal:role=link[name=\"" + day + "\"s]") + "}");
         } catch (RuntimeException failed) {
             return "Could not set " + date + ": " + failed.getMessage()
                     + " The calendar may not have opened, or this box may not be a date field at all. "
