@@ -293,6 +293,19 @@ final class StepRunner implements ToolCallback {
     private String click(String name) {
         AriaSnapshot page = AriaSnapshot.of(latestPage());
         List<AriaSnapshot.Node> found = byCaption(page, name, CLICKABLE);
+        if (found.isEmpty()) {
+            // No button or link carries the name, but a dropdown's LABEL does:
+            // open that dropdown, as CommonActions' click step does. Measured
+            // 13.11.2026 (ai-run 0b6fc87b): '"Döviz Cinsi" listesine tıkla'
+            // stopped the code run and cost the agent five turns.
+            String plain = LeanResults.unwrap(latestPage());
+            List<AriaSnapshot.Node> boxes = byLabel(page, name, Set.of("combobox")).stream()
+                    .filter(box -> !lineOf(plain, box.ref()).contains("[aria-hidden]"))
+                    .toList();
+            if (boxes.size() == 1) {
+                return act("browser_click", Map.of("target", boxes.get(0).ref(), "element", name));
+            }
+        }
         if (found.size() != 1) {
             return notOne(found, name, "tıklanabilir öğe");
         }

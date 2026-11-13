@@ -200,6 +200,7 @@ verir. Ölçü: 17 adımlık fatura senaryosu 32 turdan 1 tura iner.
 | `"Fatura No" alanına "11113" yaz` | Kutuya yazar |
 | `"Toplam Tutar" alanına "1000,50" yaz` | Tutar alanıysa **lira ve kuruşu ayrı kutulara** yazar |
 | `"Fatura Oluştur" bağlantısına tıkla` / `"Devam" düğmesine tıkla` | Tıklar |
+| `"Döviz Cinsi" listesine tıkla` | Listeyi açar (ad bir düğmede yoksa, liste etiketinde aranır). Seçenekleri kontrol eden bir Beklenen için: liste açık kalır, son ekran odur |
 | `"Oluşturma Tipi" alanında "Bilgi Girişi" seçeneğini işaretle` | Seçeneği işaretler |
 
 - Okuma sırayla yapılır ve **kalıba uymayan ilk adımda durur**. O adımdan

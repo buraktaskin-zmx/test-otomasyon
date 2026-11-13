@@ -53,7 +53,9 @@
      │   bantta o adı taşıyan BAŞARILI bir tık var mı?                  │
      │     kaynaklar: render edilmiş `click "X"` satırları,              │
      │                Playwright kodundaki name: 'X' / getByText('X'),  │
-     │                çağrının element argümanı                         │
+     │                çağrının element argümanı,                        │
+     │                tıklanan ref'in önceki sayfadaki adı ve ETİKETİ   │
+     │                (0b6fc87b: "Döviz Cinsi" listesi ref ile açıldı)  │
      │     karşılaştırma: katlanmış + boşluksuz, "içerir"                │
      │   yoksa → verdict.refute(ad, "\"X\" düğmesine tıklanmadı: …")     │
      │          → o adı anan "succeeded" satırları ÇIKAR                 │

@@ -148,7 +148,12 @@ final class ClaimCheck {
             }
         }
         if (calls != null) {
+            String lastPage = null;
             for (TapeRenderer.Call call : calls) {
+                if ("browser_snapshot".equals(call.tool()) && "OK".equals(call.outcome()) && call.result() != null) {
+                    lastPage = call.result();
+                    continue;
+                }
                 if (!"browser_click".equals(call.tool()) || !"OK".equals(call.outcome())) {
                     continue;
                 }
@@ -160,10 +165,41 @@ final class ClaimCheck {
                 if (!element.isBlank()) {
                     names.add(compact(element));
                 }
+                names.addAll(onPage(lastPage, TapeEvidence.arg(call, "target")));
             }
         }
         names.remove("");
         return names;
+    }
+
+    /**
+     * What a clicked reference was on the page the click was made on: its own
+     * caption and the label beside it.
+     *
+     * <p>Measured 13.11.2026 (ai-run 0b6fc87b): the agent opened "Döviz
+     * Cinsi" by clicking its combobox, f1e810. The combobox's own name is the
+     * value it shows, and MCP's line named it by an id, so nothing on the tape
+     * said "Döviz Cinsi" and this check turned a passed run red: "Döviz Cinsi
+     * düğmesine tıklanmadı". The page before the click says which field that
+     * reference is.
+     */
+    private static Set<String> onPage(String page, String target) {
+        Set<String> out = new LinkedHashSet<>();
+        if (page == null || target == null || target.isBlank()) {
+            return out;
+        }
+        AriaSnapshot snapshot = AriaSnapshot.of(page);
+        for (AriaSnapshot.Node node : snapshot.nodes()) {
+            if (node.ref().equals(target)) {
+                out.add(compact(node.caption()));
+                String label = snapshot.labelOf(node.ref());
+                if (label != null) {
+                    out.add(compact(label));
+                }
+            }
+        }
+        out.remove("");
+        return out;
     }
 
     /**

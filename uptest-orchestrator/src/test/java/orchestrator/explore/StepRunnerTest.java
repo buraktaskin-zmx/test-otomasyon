@@ -216,6 +216,33 @@ class StepRunnerTest {
     }
 
     @Test
+    @DisplayName("0b6fc87b: '\"Firma Seçimi\" listesine tıkla' opens the dropdown by its label; ClaimCheck counts it")
+    void clickOnADropdownLabelOpensIt() {
+        String scenario = "1. \"Firma Seçimi\" listesine tıkla";
+        StepRunner runner = runner(scenario);
+        CodeSteps.Parsed parsed = CodeSteps.parse(scenario);
+
+        FastReplay.Result run = runner.runAll(parsed.steps());
+
+        assertThat(run.complete()).isTrue();
+        assertThat(clicked).containsExactly("e10");
+        assertThat(ClaimCheck.unclicked(scenario, tape.calls(), List.of())).isEmpty();
+    }
+
+    @Test
+    @DisplayName("0b6fc87b: the agent clicked the combobox by reference only — its label still counts as clicked")
+    void referenceToALabelledDropdownCounts() {
+        String scenario = "1. \"Firma Seçimi\" listesine tıkla";
+        List<TapeRenderer.Call> calls = List.of(
+                new TapeRenderer.Call(1, "browser_snapshot", "{}", "OK", LIST),
+                new TapeRenderer.Call(2, "browser_click", "{\"target\":\"e10\"}", "OK",
+                        "### Ran Playwright code\n```js\nawait page.locator('#select2-firmIdx-container').click();\n```"));
+        assertThat(ClaimCheck.unclicked(scenario, calls, List.of())).isEmpty();
+        assertThat(ClaimCheck.unclicked("1. \"Fatura Oluştur\" bağlantısına tıkla", calls, List.of()))
+                .containsExactly("Fatura Oluştur");
+    }
+
+    @Test
     @DisplayName("code stops at the first step it cannot do, and says which, for the agent to take over")
     void codeStopsWhereItCannot() {
         String scenario = WRITTEN.replace("\"Fatura İptal Et\" düğmesine", "\"Fatura Sil\" düğmesine");
