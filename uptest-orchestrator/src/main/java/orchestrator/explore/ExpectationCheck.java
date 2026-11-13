@@ -45,7 +45,7 @@ final class ExpectationCheck {
 
     /** Marks every misplaced final expectation on the verdict. Does nothing without one. */
     static void apply(RunVerdict verdict, List<TapeRenderer.Call> calls) {
-        if (verdict == null || !verdict.isClosed() || verdict.expected().isEmpty()) {
+        if (verdict == null || !verdict.isClosed() || verdict.expected().isEmpty() || !verdict.answeredByModel()) {
             return;
         }
         List<String> pages = pages(calls);

@@ -117,7 +117,9 @@ final class ReplayCalls {
         }
         for (int i = start; i < calls.size(); i++) {
             Call call = calls.get(i);
-            if (!"OK".equals(call.outcome())) {
+            // A tape recorded before BudgetedTool.reportsError marks our own
+            // tools' "### Error" answers OK; those are failed calls too.
+            if (!"OK".equals(call.outcome()) || BudgetedTool.reportsError(call.result())) {
                 continue;
             }
             if (NOT_REPLAYABLE.contains(call.tool())) {

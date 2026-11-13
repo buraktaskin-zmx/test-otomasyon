@@ -2757,6 +2757,9 @@ button.db-screen:hover .db-screen-name { color: var(--link); text-decoration: un
 .sd-ai-block.is-ok li::before { content: "✓"; color: var(--ok); }
 .sd-ai-block.is-fail li::before { content: "✗"; color: var(--fail); }
 .sd-ai-block.is-warn li::before { content: "!"; color: var(--warn); }
+/* Why a step failed, after the dash. Weight 600 because DESIGN.md §2 allows
+   --fail as text on a pale ground (4.44:1) only bold; on white it is 4.83. */
+.sd-ai-why { color: var(--fail); font-weight: 600; }
 
 /* The one answer. Bold and ≥ 12px, which DESIGN.md §2 requires of red text
    on its pale ground (4.44:1). */

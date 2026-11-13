@@ -62,6 +62,13 @@ Beklenen. Tarih oynatılırken bugün + fark kullanılır; çürümez.
 `set_date`'in sonucuna eklenir ve oradan okunur.
 
 **Saklanmayanlar:** REDDEDİLEN / HATA alan çağrılar, snapshot'lar, prelude.
+Kendi araçlarımız (`browser_press_sequentially` kodla sağlandığında,
+`set_date`) hatayı istisna olarak değil `### Error …` diye başlayan bir cevap
+olarak döndürür. Bunlar da HATA sayılır (`BudgetedTool.reportsError`).
+Ölçüldü (13.11.2026, bant `4f5f0598`): ajan Firma Seçimi'ni açtı, yanlışlıkla
+kapattı, yazmayı denedi ("odakta kutu yok"), yeniden açıp yazdı ve koşu geçti.
+Ama başarısız yazma bantta `OK` göründüğü için kayda girdi, ve Hızlı çalıştır
+8 çağrının 3.'sünde durdu.
 **Yürüyüşü hiç saklatmayanlar** (neden konsolda `kaydedilmedi:` satırında):
 hedefi `aria-ref=…` olan, düzenli ifadeyle bulunan ya da tanınmayan bir
 bulucu; `browser_handle_dialog`, `browser_fill_form`, `browser_navigate`.

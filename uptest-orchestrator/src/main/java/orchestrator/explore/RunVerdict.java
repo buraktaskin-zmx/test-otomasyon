@@ -164,6 +164,11 @@ public final class RunVerdict {
         return expected;
     }
 
+    /** False when the CODE reported the result (the walk was stopped): no Beklenen is judged then. */
+    boolean answeredByModel() {
+        return answers != null;
+    }
+
     /** The code found expectation {@code number} cannot be judged where it is checked. */
     void misplaced(int number, String why) {
         if (why != null && !why.isBlank()) {

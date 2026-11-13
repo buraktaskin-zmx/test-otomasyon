@@ -363,6 +363,27 @@ final class BudgetedTool implements ToolCallback {
     }
 
     /**
+     * Whether a result that came back normally is a failure all the same.
+     *
+     * <p>MCP's own errors are thrown and recorded ERROR. Our own tools
+     * (FocusedTyping, set_date) ANSWER with {@code ### Error …}, and Spring
+     * hands that back as a JSON string, so the tape said OK. Measured
+     * 13.11.2026, tape 4f5f0598: a browser_press_sequentially that found no
+     * open dropdown was recorded OK, went into the cache, and "Hızlı
+     * çalıştır" stopped on it at call 3 of 8.
+     */
+    static boolean reportsError(String result) {
+        if (result == null) {
+            return false;
+        }
+        String text = LeanResults.unwrap(result).stripLeading();
+        if (text.startsWith("\"")) {
+            text = text.substring(1);
+        }
+        return text.startsWith("### Error");
+    }
+
+    /**
      * One path in and out, so every guard sees every call.
      *
      * The failure this exists for: an MCP error does not always come BACK, it
@@ -499,7 +520,8 @@ final class BudgetedTool implements ToolCallback {
         // read once, long afterwards, and it costs a few hundred kilobytes of
         // a directory that already holds Playwright traces.
         String answer = trim(result);
-        record(input, ActionTape.Outcome.OK, result, answer, began);
+        record(input, reportsError(result) ? ActionTape.Outcome.ERROR : ActionTape.Outcome.OK, result, answer,
+                began);
         if (policy != null) {
             policy.outcome(name(), input, result, false);
         }

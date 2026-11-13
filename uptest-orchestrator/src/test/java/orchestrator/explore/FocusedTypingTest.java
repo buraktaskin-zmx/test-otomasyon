@@ -91,6 +91,34 @@ class FocusedTypingTest {
     }
 
     @Test
+    @DisplayName("tape 4f5f0598: a failed typing answered as text is an error, and never reaches the cache")
+    void aFailedTypingIsNotCached() {
+        // Spring hands a @Tool's String answer back JSON-quoted: that is how it sat on the tape.
+        String failed = "\"### Error\\nNothing on the page has the keyboard focus to type into, and no dropdown"
+                + " is open.\"";
+        assertThat(BudgetedTool.reportsError(failed)).isTrue();
+        assertThat(BudgetedTool.reportsError("### Error\nlocator.click: Timeout")).isTrue();
+        assertThat(BudgetedTool.reportsError("[{\"text\":\"### Ran Playwright code\\n```js\\nawait x;\\n```\"}]"))
+                .isFalse();
+
+        String opened = "### Ran Playwright code\n```js\nawait page.getByRole('textbox', { name: 'Seçiniz' })"
+                + ".click();\n```";
+        String typed = "\"### Ran Playwright code\\n```js\\nawait page.locator('[data-uptest-focus=\\\"1\\\"]')"
+                + ".pressSequentially('ASAŞ ALÜMİNYUM SAN.');\\n```\"";
+        String args = "{\"text\":\"ASAŞ ALÜMİNYUM SAN.\"}";
+        List<TapeRenderer.Call> walk = List.of(
+                new TapeRenderer.Call(2, AiRunPrelude.MENU_TOOL, "{}", "OK", "açıldı"),
+                new TapeRenderer.Call(4, "browser_click", "{\"target\":\"e423\"}", "OK", opened),
+                new TapeRenderer.Call(6, "browser_click", "{\"target\":\"e423\"}", "OK", opened),
+                new TapeRenderer.Call(8, FocusedTyping.TOOL, args, "OK", failed),
+                new TapeRenderer.Call(11, "browser_click", "{\"target\":\"e423\"}", "OK", opened),
+                new TapeRenderer.Call(13, FocusedTyping.TOOL, args, "OK", typed));
+        ReplayCalls.Extracted extracted = ReplayCalls.fromWalk(walk, java.time.LocalDate.now());
+        assertThat(extracted.calls()).extracting(ReplayCalls.ReplayCall::tool)
+                .containsExactly("browser_click", "browser_click", "browser_click", FocusedTyping.TOOL);
+    }
+
+    @Test
     @DisplayName("Hızlı çalıştır replays a recorded browser_press_sequentially through the same code")
     void replayUsesIt() {
         List<String> typed = new ArrayList<>();

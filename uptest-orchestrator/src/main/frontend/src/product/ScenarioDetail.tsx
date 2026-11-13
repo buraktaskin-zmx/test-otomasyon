@@ -729,9 +729,24 @@ function AiList({ title, items, tone }: { title: string; items: string[]; tone: 
     <div className={"sd-ai-block is-" + tone}>
       <span className="sd-doc-label">{title}</span>
       <ul className="sd-ai-list">
-        {items.map((item, index) => <li key={index}>{item}</li>)}
+        {items.map((item, index) => <li key={index}>{tone === "fail" ? <FailedLine line={item} /> : item}</li>)}
       </ul>
     </div>
+  );
+}
+
+/**
+ * A failed line as the server writes it, "what was expected — why it failed"
+ * (RunVerdict): the reason after the dash is what the analyst acts on, so it
+ * is set apart in red. A line without the dash is shown as it is.
+ */
+function FailedLine({ line }: { line: string }) {
+  const at = line.indexOf(" — ");
+  if (at < 0) return <>{line}</>;
+  return (
+    <>
+      {line.slice(0, at)} — <span className="sd-ai-why">{line.slice(at + 3)}</span>
+    </>
   );
 }
 
