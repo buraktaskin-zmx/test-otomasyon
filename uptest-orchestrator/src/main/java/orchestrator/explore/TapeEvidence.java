@@ -125,7 +125,7 @@ public final class TapeEvidence {
         }
         if (!ok) {
             line.append(" | ✗ ").append(firstErrorLine(call.result()));
-        } else if ("set_date".equals(tool) && call.result() != null && !call.result().startsWith("Set to")) {
+        } else if ("set_date".equals(tool) && call.result() != null && !DateTool.wasSet(call.result())) {
             line.append(" | ✗ ").append(oneLine(call.result()));
         }
         String text = line.toString();

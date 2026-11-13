@@ -109,7 +109,7 @@ final class WalkStory {
             case "browser_click" -> click(call, ok, args);
             case "set_date" -> {
                 String label = label(text(args, "target"), text(args, "element"));
-                boolean took = ok && call.result() != null && call.result().startsWith("Set to");
+                boolean took = ok && DateTool.wasSet(call.result());
                 act(call, took, "\"" + label + "\" tarihi " + text(args, "date") + " olarak girildi");
             }
             case "browser_type" -> act(call, ok, "\"" + label(text(args, "target"), text(args, "element"))

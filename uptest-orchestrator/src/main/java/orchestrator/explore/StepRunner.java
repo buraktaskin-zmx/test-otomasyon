@@ -418,7 +418,7 @@ final class StepRunner implements ToolCallback {
         }
         String done = act("set_date", Map.of("target", found.get(0).ref(), "date", value == null ? "" : value));
         String answer = lastResultOf("set_date");
-        if (done.startsWith("tamam") && answer != null && !answer.startsWith("Set to")) {
+        if (done.startsWith("tamam") && answer != null && !DateTool.wasSet(answer)) {
             return "YAPILMADI: " + firstLine(answer);
         }
         return done;

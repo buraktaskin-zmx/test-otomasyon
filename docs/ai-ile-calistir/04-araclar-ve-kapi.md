@@ -15,7 +15,7 @@ ziyaret kümesi tek bir koşuya aittir. Ayrıca builder paylaşılır ve
 | 1 | `browser_snapshot` | MCP | Sayfanın erişilebilirlik ağacı | — |
 | 2 | `browser_click` | MCP | ref ya da CSS seçiciyle tık | ✓ |
 | 3 | `browser_type` | MCP | Kutuya yaz (`slowly` = gerçek tuş) | ✓ |
-| 4 | `browser_fill_form` | MCP | Birden çok alanı doldur | ✓ |
+| 4 | ~~`browser_fill_form`~~ | MCP | **13.11.2026'dan beri verilmiyor** (ai-run `6fd2b27e`): ajan kuruş kutularını bununla doldurdu, koşu geçti ama Hızlı çalıştır kaydı reddedildi; `fill()` maskeli kutuda da tutmaz | — |
 | 5 | `browser_select_option` | MCP | Gerçek `<select>` seçeneği | ✓ |
 | 6 | `browser_press_key` | MCP | Tek tuş (F5/Ctrl+R reddedilir) | ✓ |
 | 7 | `browser_handle_dialog` | MCP | Tarayıcı diyaloğu (onay sözcüğü engeline tabi) | ✓ |

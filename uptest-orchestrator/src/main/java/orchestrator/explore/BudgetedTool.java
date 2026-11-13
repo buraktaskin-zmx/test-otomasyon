@@ -434,14 +434,34 @@ final class BudgetedTool implements ToolCallback {
      * çalıştır" stopped on it at call 3 of 8.
      */
     static boolean reportsError(String result) {
+        String text = plain(result);
+        return text != null && text.startsWith("### Error");
+    }
+
+    /**
+     * A tool result as text: MCP's {@code [{"text":…}]} unwrapped, and our own
+     * tools' answers out of the JSON quotes Spring puts them in.
+     *
+     * <p>Measured 13.11.2026 (ai-run 6fd2b27e): set_date answered "Set to
+     * 27/11/2026", the tape held {@code "\"Set to 27/11/2026…\""}, and every
+     * reader that asked {@code startsWith("Set to")} — the code run, Adım
+     * adım, the cache, Gherkin oluştur — took a date that WAS set for one that
+     * was not. The code run stopped at step 5 and handed a working walk to the
+     * agent. Read a result through this, not raw.
+     */
+    static String plain(String result) {
         if (result == null) {
-            return false;
+            return null;
         }
-        String text = LeanResults.unwrap(result).stripLeading();
-        if (text.startsWith("\"")) {
-            text = text.substring(1);
+        String text = LeanResults.unwrap(result).strip();
+        if (text.length() >= 2 && text.startsWith("\"") && text.endsWith("\"")) {
+            try {
+                return new com.fasterxml.jackson.databind.ObjectMapper().readValue(text, String.class);
+            } catch (Exception notJson) {
+                return text.substring(1, text.length() - 1);
+            }
         }
-        return text.startsWith("### Error");
+        return text.startsWith("\"") ? text.substring(1) : text;
     }
 
     /**

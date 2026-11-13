@@ -134,7 +134,7 @@ final class FastReplay {
         }
         gone(result);
         boolean ok = result != null && !result.contains("### Error")
-                && (!"set_date".equals(call.tool()) || result.startsWith("Set to"));
+                && (!"set_date".equals(call.tool()) || DateTool.wasSet(result));
         tape.record(call.tool(), args, ok ? ActionTape.Outcome.OK : ActionTape.Outcome.ERROR, result,
                 Duration.ofNanos(System.nanoTime() - began).toMillis());
         return ok ? null : firstLine(result);

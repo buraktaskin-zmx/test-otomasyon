@@ -162,9 +162,15 @@ public class ExploreController {
      * walk spent 25 of its 52 turns on them, and the page now arrives with
      * every action's result (AiRunPolicy). Navigating is added back only when
      * the code could not log in and the agent has to.
+     *
+     * <p>No {@code browser_fill_form} since 13.11.2026 (ai-run 6fd2b27e): the
+     * agent filled the kuruş boxes with it, the walk passed, and the cache
+     * refused the whole walk ("browser_fill_form tekrar gönderilemez"), so
+     * "Hızlı çalıştır" stayed off. It writes with fill(), which a masked box
+     * ignores (CLAUDE.md), and browser_type / do_steps cover every box.
      */
     static final Set<String> AI_RUN_TOOLS = Set.of(
-            "browser_snapshot", "browser_click", "browser_type", "browser_fill_form",
+            "browser_snapshot", "browser_click", "browser_type",
             "browser_select_option", "browser_press_key", "browser_handle_dialog",
             // Types into whatever has the focus, with no target. Added
             // 12.11.2026: a dropdown's search box opens at the END of the page,

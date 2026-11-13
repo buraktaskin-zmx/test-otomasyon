@@ -199,6 +199,38 @@ class CodeStepsTest {
         assertThat(clicks.get(2)).contains("#ui-datepicker-div >> internal:role=link[name=\\\"27\\\"s]");
     }
 
+    /** set_date's answer exactly as the tape of ai-run 6fd2b27e held it: in JSON quotes, line breaks escaped. */
+    private static final String SET_ON_TAPE = "\"Set to 27/11/2026. Clicking the day closes the calendar and writes"
+            + " the value.\\n### Ran Playwright code\\n```js\\nawait page.getByRole('textbox', { name: 'Başlangıç"
+            + " Vadesi' }).click();\\n```\"";
+
+    @Test
+    @DisplayName("6fd2b27e: a date set_date DID set is read as set, by the code run, Adım adım and the cache")
+    void quotedSetToIsSet() {
+        assertThat(DateTool.wasSet(SET_ON_TAPE)).isTrue();
+        assertThat(DateTool.wasSet("Set to 27/11/2026.")).isTrue();
+        assertThat(DateTool.wasSet("\"Could not set 27/11/2026: Timeout\"")).isFalse();
+        assertThat(DateTool.wasSet(null)).isFalse();
+
+        List<TapeRenderer.Call> walk = List.of(
+                new TapeRenderer.Call(2, AiRunPrelude.MENU_TOOL, "{}", "OK", "açıldı"),
+                new TapeRenderer.Call(19, "set_date", "{\"date\":\"27/11/2026\",\"target\":\"f2e701\"}", "OK",
+                        SET_ON_TAPE));
+        ReplayCalls.Extracted cached = ReplayCalls.fromWalk(walk, java.time.LocalDate.of(2026, 11, 13));
+        assertThat(cached.usable()).isTrue();
+        assertThat(cached.calls()).singleElement().satisfies(call -> {
+            assertThat(call.target()).isEqualTo("internal:role=textbox[name=\"Başlangıç Vadesi\"i]");
+            assertThat(call.dayOffset()).isEqualTo(14);
+        });
+        assertThat(WalkStory.of(walk)).anyMatch(line -> "ok".equals(line.kind()) && line.text().contains("27/11/2026"));
+    }
+
+    @Test
+    @DisplayName("6fd2b27e: browser_fill_form is not offered — it refused a passed walk's cache")
+    void noFillForm() {
+        assertThat(ExploreController.AI_RUN_TOOLS).doesNotContain("browser_fill_form");
+    }
+
     @Test
     @DisplayName("4e5a83fa: a target written as role + name becomes the role selector; others pass untouched")
     void roleAndNameTargets() {

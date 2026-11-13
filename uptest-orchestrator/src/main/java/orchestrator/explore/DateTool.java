@@ -186,6 +186,12 @@ public class DateTool {
         return line.isEmpty() ? "" : "\n### Ran Playwright code\n```js\n" + line + "\n```";
     }
 
+    /** Whether a set_date result — as the tape holds it, JSON-quoted — says the date was set. */
+    static boolean wasSet(String result) {
+        String text = BudgetedTool.plain(result);
+        return text != null && text.startsWith("Set to");
+    }
+
     /** The month on show, or null when it cannot be read (no evaluate, no calendar, old jQuery UI). */
     private Shown shown() {
         if (evaluate == null) {

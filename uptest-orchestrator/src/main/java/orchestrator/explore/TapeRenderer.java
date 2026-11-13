@@ -148,7 +148,7 @@ public final class TapeRenderer {
                 }
                 String date = argOf(call, "date");
                 String field = scope.labelOf(refOf(call), "");
-                if (call.result() == null || !call.result().startsWith("Set to") || date.isBlank()) {
+                if (!DateTool.wasSet(call.result()) || date.isBlank()) {
                     notes.add("#" + call.seq() + " set_date tarihi yazamadı; satır üretilmedi.");
                 } else if (field.isBlank()) {
                     notes.add("#" + call.seq() + " \"" + date + "\" tarihi yazıldı ama hangi alana"

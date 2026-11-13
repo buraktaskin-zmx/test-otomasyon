@@ -128,7 +128,7 @@ final class ReplayCalls {
             if (!ACTIONS.contains(call.tool())) {
                 continue;
             }
-            if ("set_date".equals(call.tool()) && (call.result() == null || !call.result().startsWith("Set to"))) {
+            if ("set_date".equals(call.tool()) && !DateTool.wasSet(call.result())) {
                 continue;
             }
             ObjectNode args = object(call.args());
@@ -462,7 +462,9 @@ final class ReplayCalls {
         if (result == null) {
             return "";
         }
-        String plain = LeanResults.unwrap(result);
+        // plain(), not unwrap(): set_date's answer sits in JSON quotes on the
+        // tape, its line breaks escaped, so unwrap() left one long line.
+        String plain = BudgetedTool.plain(result);
         int start = plain.indexOf(CODE_HEADING);
         if (start < 0) {
             return "";

@@ -71,7 +71,16 @@ Ama başarısız yazma bantta `OK` göründüğü için kayda girdi, ve Hızlı 
 8 çağrının 3.'sünde durdu.
 **Yürüyüşü hiç saklatmayanlar** (neden konsolda `kaydedilmedi:` satırında):
 hedefi `aria-ref=…` olan, düzenli ifadeyle bulunan ya da tanınmayan bir
-bulucu; `browser_handle_dialog`, `browser_fill_form`, `browser_navigate`.
+bulucu; `browser_handle_dialog`, `browser_fill_form` (13.11.2026'dan beri ajana
+verilmiyor), `browser_navigate`.
+
+**Tırnaklı sonuçlar (ölçüldü, ai-run `6fd2b27e`, 13.11.2026):** kendi
+araçlarımızın cevabı (`set_date`, kodla sağlanan `browser_press_sequentially`)
+bantta JSON tırnakları içinde durur: `"\"Set to 27/11/2026…\""`. Bunu düz
+metin gibi okuyan her yer (`startsWith("Set to")`, satır satır Playwright
+kodu) başarılı bir tarihi başarısız saydı. Kod yürütmesi 5. adımda durdu ve
+ajan devraldı; "Adım adım" ✗ gösterdi; kutunun satırı da okunamadı. Banttan
+sonuç okuyan her yer artık `BudgetedTool.plain` / `DateTool.wasSet` kullanır.
 
 Eski (ada göre arayan) cache satırları okunamaz ve "eski biçimde" sayılır;
 bir "AI ile çalıştır" onları yeniden yazar.
