@@ -102,15 +102,16 @@ public class AiRunCache {
     /** "AI ile çalıştır": the cache is not read; the walk may write it. */
     Visit walked(String app, String product, String scenarioPath, String text, String cif) {
         UUID id = scenarioId(app, product, scenarioPath);
-        return new Visit(id, scenarioPath, sha256(text), cif, id == null ? State.NONE : State.WALKED,
+        return new Visit(id, scenarioPath, keyOf(text), cif, id == null ? State.NONE : State.WALKED,
                 id == null ? "kayıtlı senaryo değil" : null);
     }
 
     /** "Hızlı çalıştır": the cache this scenario's current text can use, or why there is none. */
     Visit lookup(String app, String product, String scenarioPath, String text, String cif) {
         UUID id = scenarioId(app, product, scenarioPath);
-        String hash = sha256(text);
-        Status status = status(id, hash);
+        String hash = keyOf(text);
+        Usable usable = usable(id, text);
+        Status status = usable.status();
         if (!status.available()) {
             System.out.println(PREFIX + "yok: " + status.reason() + " (" + scenarioPath + ")");
             return new Visit(id, scenarioPath, hash, cif, State.MISSING, status.reason());
@@ -118,32 +119,72 @@ public class AiRunCache {
         AiRunCacheEntity row = safeFind(id).orElseThrow();
         Visit visit = new Visit(id, scenarioPath, hash, cif, State.HIT,
                 status.stepCount() + " çağrı, kaynak bant " + row.getSourceTapeId());
-        visit.calls = ReplayCalls.fromJson(row.getStepsJson());
+        visit.calls = usable.calls();
         System.out.println(PREFIX + "HIT: " + visit.calls.size() + " çağrı (bant " + row.getSourceTapeId() + ", "
                 + row.getSuccessCount() + " başarılı tekrar)");
+        usable.renamed().forEach(rename -> System.out.println(PREFIX + "   değer güncel metinden: " + rename));
         return visit;
     }
 
     public Status status(String app, String product, String scenarioPath, String text) {
-        return status(scenarioId(app, product, scenarioPath), sha256(text));
+        return usable(scenarioId(app, product, scenarioPath), text).status();
     }
 
-    private Status status(UUID id, String hash) {
+    /** What a fast run of {@code text} would send, or why it cannot run. */
+    private record Usable(Status status, List<ReplayCall> calls, List<String> renamed) {
+        static Usable no(String reason) {
+            return new Usable(new Status(false, 0, null, reason), List.of(), List.of());
+        }
+    }
+
+    /**
+     * The row's calls adapted to the scenario as written NOW (ScenarioShape):
+     * its changed quoted values put in, its Beklenen re-attached from the
+     * current text. A row written before 13.11.2026 has no saved text and is
+     * held to the whole-text hash it was stored under.
+     */
+    private Usable usable(UUID id, String text) {
         if (id == null) {
-            return new Status(false, 0, null, "kayıtlı bir senaryo değil");
+            return Usable.no("kayıtlı bir senaryo değil");
         }
         Optional<AiRunCacheEntity> row = safeFind(id);
         if (row.isEmpty()) {
-            return new Status(false, 0, null, "kayıtlı akış yok; önce 'AI ile çalıştır' ile bir kez geçmeli");
-        }
-        if (!hash.equals(row.get().getTextHash())) {
-            return new Status(false, 0, null, "senaryo kayıttan sonra değişmiş; 'AI ile çalıştır' ile yeniden kaydedin");
+            return Usable.no("kayıtlı akış yok; önce 'AI ile çalıştır' ile bir kez geçmeli");
         }
         List<ReplayCall> calls = ReplayCalls.fromJson(row.get().getStepsJson());
         if (calls.isEmpty()) {
-            return new Status(false, 0, null, "kayıtlı akış eski biçimde; 'AI ile çalıştır' ile yeniden kaydedin");
+            return Usable.no("kayıtlı akış eski biçimde; 'AI ile çalıştır' ile yeniden kaydedin");
         }
-        return new Status(true, calls.size(), row.get().getCreatedAt(), null);
+        String saved = row.get().getScenarioText();
+        List<String> renamedLines = List.of();
+        if (saved == null) {
+            if (!sha256(text).equals(row.get().getTextHash())) {
+                return Usable.no("senaryo kayıttan sonra değişmiş; 'AI ile çalıştır' ile yeniden kaydedin");
+            }
+        } else {
+            if (!keyOf(text).equals(keyOf(saved))) {
+                return Usable.no("adımlar kayıttan sonra değişmiş (başlık, ön koşul ve Beklenen değişikliği akışı"
+                        + " bozmaz; adımdaki tırnaklı bir değer de bozmaz); 'AI ile çalıştır' ile yeniden kaydedin");
+            }
+            Map<String, String> renames = ScenarioShape.renames(saved, text);
+            ScenarioShape.Renamed renamed = ScenarioShape.rename(calls, renames);
+            if (!renamed.unplaced().isEmpty()) {
+                return Usable.no("değişen değer kayıtlı akışta bir hedefe karşılık gelmiyor ("
+                        + String.join(", ", renamed.unplaced()) + "); eski tıklama yeni değeri yapamaz."
+                        + " 'AI ile çalıştır' ile yeniden kaydedin");
+            }
+            calls = renamed.calls();
+            renamedLines = renames.entrySet().stream()
+                    .map(e -> "\"" + e.getKey() + "\" → \"" + e.getValue() + "\"").toList();
+        }
+        calls = ScenarioShape.realign(calls, text);
+        return new Usable(new Status(true, calls.size(), row.get().getCreatedAt(), null), calls, renamedLines);
+    }
+
+    /** The key a row is stored under: the steps' shape, or the whole text when it has no numbered steps. */
+    static String keyOf(String text) {
+        String shape = ScenarioShape.shape(text);
+        return sha256(shape != null ? shape : text);
     }
 
     /** A fast run hit a call that no longer works: the row goes, the button is disabled. */
@@ -206,8 +247,8 @@ public class AiRunCache {
             List<ReplayCall> calls = new ArrayList<>(extracted.calls());
             List<String> unmatched = ReplayCalls.align(calls, scenarioText);
             AiRunCacheEntity row = safeFind(visit.scenarioId).orElseGet(() -> new AiRunCacheEntity(visit.scenarioId));
-            row.store(visit.scenarioPath, visit.textHash, ReplayCalls.toJson(calls), calls.size(), tape.id(),
-                    visit.cif, Instant.now());
+            row.store(visit.scenarioPath, visit.textHash, scenarioText, ReplayCalls.toJson(calls), calls.size(),
+                    tape.id(), visit.cif, Instant.now());
             rows.save(row);
             visit.calls = calls;
             visit.saved = calls.size() + " çağrı kaydedildi";

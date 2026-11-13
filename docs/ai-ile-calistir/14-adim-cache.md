@@ -97,13 +97,28 @@ POST /api/v1/explore/cache-status {app, product, scenarioPath, text}
 → {available, stepCount, savedAt, reason}
 ```
 
-`text`, "AI ile çalıştır"ın gönderdiği metnin aynısıdır; cache onun
-SHA-256'sına bağlıdır. Düğmenin `title`'ı nedenini söyler:
+`text`, "AI ile çalıştır"ın gönderdiği metnin aynısıdır. 13.11.2026'dan beri
+akış metnin tamamına değil **adımlara** bağlıdır (`ScenarioShape`):
+
+| Değişiklik | Akış |
+|---|---|
+| Başlık, Ön koşul, Beklenen (sondaki ya da adım altındaki) | **Kalır**; Beklenen güncel metinden okunur, adım altı Beklenen yeniden bağlanır |
+| Bir adımdaki **tırnaklı** değer (`"ASAŞ ALÜMİNYUM SAN."` → `"SANKO DBS ÖDEMELERİ"`) | **Kalır**; yeni değer, eskisinin durduğu hedefe/argümana konur (`[name="…"]`, `text`, `values`) |
+| Değişen değer kayıtlı hiçbir hedefte yok (ör. `"Ödenecek"` → satır, kendi metniyle kaydedilmiş) | **Kapanır**: eski tıklama yeni değeri yapamaz, eski satıra basıp Geçti demek olurdu |
+| Adımın kendisi (eylem, sıra, tırnaksız sözcük) | **Kapanır** |
+
+Tırnaksız yazılmış bir değer adımın parçası sayılır: `Firma Seçimi alanından
+ASAŞ ALÜMİNYUM SAN. seç` satırında firmayı değiştirmek akışı kapatır. Değerleri
+tırnakla yazın. Kayıt anındaki metin `AI_RUN_CACHE.scenario_text`'te durur;
+bu kolon olmadan yazılmış (13.11.2026 öncesi) bir satır eskisi gibi metnin
+tamamına bağlıdır. Düğmenin `title`'ı nedenini söyler:
 
 | `reason` | Ne demek |
 |---|---|
 | kayıtlı akış yok | Bu senaryo hiç "AI ile çalıştır" ile geçmedi, ya da son Hızlı çalıştır bir adımda durup akışı sildi |
-| senaryo kayıttan sonra değişmiş | Doğal dil düzenlendi; akış eski metne aitti |
+| adımlar kayıttan sonra değişmiş | Bir adımın eylemi/sırası/tırnaksız metni değişti |
+| değişen değer kayıtlı akışta bir hedefe karşılık gelmiyor | Tırnaklı bir değer değişti ama kayıtlı çağrıların hiçbiri onu taşımıyor |
+| senaryo kayıttan sonra değişmiş | Eski (metnin tamamına bağlı) bir satır ve metin değişti |
 | kayıtlı akış eski biçimde | Önceki, ada göre arayan cache'ten kalma satır |
 
 ### 29.5 Konsol
@@ -136,7 +151,8 @@ listesinde yazar.
 
 ### 29.7 Tablo: `AI_RUN_CACHE`
 
-`scenario_id` (birincil anahtar), `scenario_path`, `text_hash`, `steps_json`
+`scenario_id` (birincil anahtar), `scenario_path`, `text_hash` (adımların
+biçiminin SHA-256'sı), `scenario_text` (kayıt anındaki metin), `steps_json`
 (`ReplayCall` listesi), `step_count`, `source_tape_id`, `cif`, `created_at`,
 `last_used_at`, `last_validated_at`, `hit_count`, `success_count`,
 `failure_count`. `ddl-auto=update` ilk açılışta kurar; `SCENARIO`'ya foreign

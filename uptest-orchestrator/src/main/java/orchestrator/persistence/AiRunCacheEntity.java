@@ -40,6 +40,16 @@ public class AiRunCacheEntity {
     @Column(name = "text_hash", nullable = false, length = 64)
     private String textHash;
 
+    /**
+     * The scenario text the walk ran, as sent. Since 13.11.2026 the row is
+     * bound to the steps only (ScenarioShape), and a changed quoted value is
+     * found by comparing the current steps with these. Nullable, so
+     * {@code ddl-auto=update} can add it to a table that already has rows;
+     * a row without it is keyed on the whole text, as before.
+     */
+    @Column(name = "scenario_text", length = Length.LONG32)
+    private String scenarioText;
+
     /** {@code ReplayCalls.ReplayCall} list as JSON: tool calls with page-independent targets. */
     @Column(name = "steps_json", nullable = false, length = Length.LONG32)
     private String stepsJson;
@@ -82,10 +92,11 @@ public class AiRunCacheEntity {
     }
 
     /** Replaces the steps, as after a newly passed walk; the counters start again. */
-    public void store(String scenarioPath, String textHash, String stepsJson, int stepCount,
+    public void store(String scenarioPath, String textHash, String scenarioText, String stepsJson, int stepCount,
                       String sourceTapeId, String cif, Instant now) {
         this.scenarioPath = scenarioPath;
         this.textHash = textHash;
+        this.scenarioText = scenarioText;
         this.stepsJson = stepsJson;
         this.stepCount = stepCount;
         this.sourceTapeId = sourceTapeId;
@@ -114,6 +125,7 @@ public class AiRunCacheEntity {
     public UUID getScenarioId() { return scenarioId; }
     public String getScenarioPath() { return scenarioPath; }
     public String getTextHash() { return textHash; }
+    public String getScenarioText() { return scenarioText; }
     public String getStepsJson() { return stepsJson; }
     public int getStepCount() { return stepCount; }
     public String getSourceTapeId() { return sourceTapeId; }

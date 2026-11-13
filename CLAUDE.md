@@ -299,7 +299,11 @@ Elsewhere:
   (`fastRun`, `FastReplay`) sends them again with the raw tools, reading the
   page only at checkpoints for one model turn (`VERDICT_SYSTEM`); the first
   call that errors fails the run in code and DELETES the row, so the button
-  is disabled until an agent walk passes again. "AI ile çalıştır" never reads
+  is disabled until an agent walk passes again. The row is bound to the
+  STEPS, not the whole text (`ScenarioShape`, analyst's rule 13.11.2026): a
+  new title, precondition or Beklenen keeps it, a changed QUOTED value is put
+  into the recorded target, a value no target carries or any other step
+  change switches it off. "AI ile çalıştır" never reads
   the cache. A "Beklenen:" line under a step
   (`StepExpectations`) is checked right after that step — `do_steps` stops
   there. Both: `docs/ai-ile-calistir/14-adim-cache.md`. The
