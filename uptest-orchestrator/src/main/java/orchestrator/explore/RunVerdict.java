@@ -211,8 +211,52 @@ public final class RunVerdict {
         } catch (Exception notJson) {
             root = JSON.createObjectNode();
         }
+        root = repaired(root);
         return reportResult(items(root.get("succeeded")), items(root.get("failed")),
                 items(root.get("warnings")), items(root.get("expectations")), truth(root.get("passed")));
+    }
+
+    /**
+     * The rest of the answer written INSIDE the first field's string.
+     *
+     * <p>Measured 13.11.2026, tape d7b61934 (Hızlı çalıştır's verdict turn):
+     * the model answered {@code {"succeeded": "[\"1. adım…\"], \"failed\": [],
+     * … \"expectations\": [\"B1 GÖRÜLDÜ…\", …], \"passed\": true}"}} — one
+     * key, its string holding every other key. Read as written, the run had no
+     * expectations and no {@code passed}: "0/5 beklenen cevaplandi", Geçmedi,
+     * on a verdict that said GÖRÜLDÜ five times. When a field's text, put back
+     * after its own key, parses as an object with more keys, that object is
+     * what the model meant.
+     */
+    static JsonNode repaired(JsonNode root) {
+        if (root == null || !root.isObject()) {
+            return root;
+        }
+        var fields = root.fields();
+        while (fields.hasNext()) {
+            var field = fields.next();
+            if (!field.getValue().isTextual()) {
+                continue;
+            }
+            String text = field.getValue().asText().strip();
+            if (!(text.startsWith("[") || text.startsWith("\"")) || !text.endsWith("}")) {
+                continue;
+            }
+            try {
+                JsonNode whole = JSON.readTree("{" + JSON.writeValueAsString(field.getKey()) + ": " + text);
+                if (whole.isObject() && whole.size() > 1) {
+                    com.fasterxml.jackson.databind.node.ObjectNode out =
+                            ((com.fasterxml.jackson.databind.node.ObjectNode) root).deepCopy();
+                    whole.fields().forEachRemaining(inner -> out.set(inner.getKey(), inner.getValue()));
+                    System.out.println("[uptest] explore: report_result '" + field.getKey()
+                            + "' metninin icine yazilmis " + whole.size() + " alan okundu");
+                    return out;
+                }
+            } catch (Exception notAnObject) {
+                // Only looked like one.
+            }
+        }
+        return root;
     }
 
     /** An array, an array written as a string, or one sentence — all read as a list. */

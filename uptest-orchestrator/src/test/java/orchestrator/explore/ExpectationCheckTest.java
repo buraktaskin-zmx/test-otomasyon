@@ -98,6 +98,28 @@ class ExpectationCheckTest {
     }
 
     @Test
+    @DisplayName("d7b61934: the whole answer written inside 'succeeded' is read, not lost as 0/5")
+    void answerInsideTheFirstString() {
+        RunVerdict verdict = new RunVerdict();
+        verdict.expecting(StepExpectations.all("1. \"Devam\" düğmesine tıkla\n"
+                + "   Beklenen (bu adımdan hemen sonra kontrol et): onay ekranı açılır\n\nBeklenen:\n"
+                + "- Onay ekranında \"Fatura Tipi\" alanı \"Normal\" değerini gösterir"));
+        // The verdict turn's report_result, exactly as the tape held its arguments.
+        verdict.acceptJson("{\"succeeded\": \"[\\\"1. adım: Devam düğmesine tıklandı ve onay ekranı açıldı.\\\"],"
+                + " \\\"failed\\\": [], \\\"warnings\\\": [\\\"10. adımda girilen 1000,50 tutarı onay ekranında"
+                + " 100.050,00 TL olarak gösterilmiştir.\\\"], \\\"expectations\\\": [\\\"B1 GÖRÜLDÜ: Onay ekranı"
+                + " açılmış.\\\", \\\"B2 GÖRÜLDÜ: Fatura Tipi alanı 'Normal' değerini gösterir.\\\"],"
+                + " \\\"passed\\\": true}\"}");
+
+        RunVerdict.Result result = verdict.result();
+        assertThat(result.succeeded()).contains("1. adım: Devam düğmesine tıklandı ve onay ekranı açıldı.")
+                .anyMatch(line -> line.startsWith("Beklenen (son ekranda) görüldü"));
+        assertThat(result.warnings()).singleElement().asString().contains("100.050,00");
+        assertThat(result.failed()).isEmpty();
+        assertThat(result.passed()).isTrue();
+    }
+
+    @Test
     @DisplayName("answers are matched by B-number, in any order; only GÖRÜLDÜ counts as seen")
     void answersByNumber() {
         RunVerdict verdict = verdict();

@@ -53,6 +53,16 @@ await page.getByRole('link', { name: 'Fatura İptal Et' }).click();
 | `getByText('Detay', { exact: true }).first()` | `internal:text="Detay"s >> nth=0` |
 | `locator('#select2-firma-container')` | `#select2-firma-container` |
 | `getByRole('row', {…}).getByRole('radio')` | `… >> internal:role=radio` |
+| Kuruş kutusu: lira kutusuyla AYNI satır (`getByRole('textbox', { name: 'Toplam Tutar' })`) | `<lira seçicisi> >> xpath=following::input[not(@type="hidden")] >> visible=true >> nth=0` |
+
+**Kuruş kutusu (ölçüldü, bant `705c39be`, 13.11.2026):** kuruş kutusunun
+kendi adı yok, MCP onu da "Toplam Tutar" diye yazdı. Kayıtta iki kutu tek
+seçiciye düştü ve Hızlı çalıştır "50"yi lira kutusuna yazdı (`100.050`,
+`00`). Artık aynı seçici farklı bir kutuya düştüğünde bantta o anki sayfaya
+bakılır (`ReplayCalls.isKurusOf`, `StepRunner.kurusBox` ile aynı kural);
+ikinci kutu birincinin kuruş kutusuysa "ondan sonraki ilk görünür giriş"
+olarak saklanır. Başka çakışmalar (iki listenin ikisi de "Seçiniz") olduğu
+gibi kalır.
 
 Her çağrı: araç, `target`, diğer argümanlar (`text`, `values`, `key`, …),
 tarih için **kayıt gününe olan gün farkı**, ve o adımın altına yazılmış

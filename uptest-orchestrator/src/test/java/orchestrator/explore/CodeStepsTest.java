@@ -226,6 +226,36 @@ class CodeStepsTest {
     }
 
     @Test
+    @DisplayName("705c39be: lira and kuruş came back with ONE selector; the kuruş call is cached as the box after it")
+    void kurusGetsItsOwnTarget() {
+        String typedLira = "### Ran Playwright code\n```js\nawait page.getByRole('textbox', { name: 'Toplam Tutar' })"
+                + ".pressSequentially('1000');\n```";
+        String typedKurus = "### Ran Playwright code\n```js\nawait page.getByRole('textbox', { name: 'Toplam Tutar' })"
+                + ".pressSequentially('50');\n```";
+        String opened = "### Ran Playwright code\n```js\nawait page.getByRole('combobox', { name: 'Seçiniz' }).click();\n```";
+        List<TapeRenderer.Call> walk = List.of(
+                new TapeRenderer.Call(2, AiRunPrelude.MENU_TOOL, "{}", "OK", "açıldı"),
+                new TapeRenderer.Call(3, "browser_snapshot", "{}", "OK", form()),
+                new TapeRenderer.Call(4, "browser_click", "{\"target\":\"e428\"}", "OK", opened),
+                new TapeRenderer.Call(5, "browser_type", "{\"target\":\"e722\",\"text\":\"1000\",\"slowly\":true}", "OK",
+                        typedLira),
+                new TapeRenderer.Call(6, "browser_snapshot", "{}", "OK", form()),
+                new TapeRenderer.Call(7, "browser_type", "{\"target\":\"e724\",\"text\":\"50\",\"slowly\":true}", "OK",
+                        typedKurus),
+                // Another dropdown still reading "Seçiniz": the same selector, NOT a kuruş box.
+                new TapeRenderer.Call(8, "browser_click", "{\"target\":\"e758\"}", "OK", opened));
+
+        ReplayCalls.Extracted cached = ReplayCalls.fromWalk(walk, java.time.LocalDate.now());
+
+        assertThat(cached.usable()).isTrue();
+        assertThat(cached.calls()).extracting(ReplayCalls.ReplayCall::target).containsExactly(
+                "internal:role=combobox[name=\"Seçiniz\"i]",
+                "internal:role=textbox[name=\"Toplam Tutar\"i]",
+                "internal:role=textbox[name=\"Toplam Tutar\"i]" + ReplayCalls.KURUS,
+                "internal:role=combobox[name=\"Seçiniz\"i]");
+    }
+
+    @Test
     @DisplayName("6fd2b27e: browser_fill_form is not offered — it refused a passed walk's cache")
     void noFillForm() {
         assertThat(ExploreController.AI_RUN_TOOLS).doesNotContain("browser_fill_form");

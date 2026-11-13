@@ -24,7 +24,13 @@
   dışıdır. Dizi, string'e yazılmış dizi ya da tek cümle kabul edilir;
   `passed` için true / "true" / "evet" geçerlidir. Ölçüldü (11.11.2026): ajan
   dizileri string olarak yazmıştı, yansıma fırlattı ve biten bir yürüyüş
-  hiçbir şey bildiremedi.
+  hiçbir şey bildiremedi. Ölçüldü (13.11.2026, bant `d7b61934`, Hızlı
+  çalıştır'ın karar turu): model bütün cevabı `succeeded`'in metninin İÇİNE
+  yazdı (`{"succeeded": "[…], \"failed\": […], \"expectations\": […],
+  \"passed\": true}"}`); okunduğu gibi `expectations` ve `passed` yoktu, sonuç
+  "0/5 beklenen cevaplandı" ile Geçmedi oldu. `RunVerdict.repaired`: bir alanın
+  metni kendi anahtarının ardına konunca birden çok anahtarlı bir nesne
+  oluyorsa o nesne okunur.
 
 ### 17.2 Karar nasıl hesaplanır
 

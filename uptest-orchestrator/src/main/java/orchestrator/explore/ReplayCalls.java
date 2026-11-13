@@ -11,7 +11,9 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -115,6 +117,8 @@ final class ReplayCalls {
                 start = i + 1;
             }
         }
+        Map<String, String> refSelector = new HashMap<>();
+        Map<String, String> selectorRef = new HashMap<>();
         for (int i = start; i < calls.size(); i++) {
             Call call = calls.get(i);
             // A tape recorded before BudgetedTool.reportsError marks our own
@@ -145,6 +149,15 @@ final class ReplayCalls {
                     }
                     selector = parsed.selector();
                     names.addAll(parsed.names());
+                    String known = refSelector.get(target);
+                    String first = selectorRef.get(selector);
+                    if (known != null) {
+                        selector = known;
+                    } else if (first != null && !first.equals(target) && isKurusOf(calls, i, first, target)) {
+                        selector = selector + KURUS;
+                    }
+                    selectorRef.putIfAbsent(parsed.selector(), target);
+                    refSelector.put(target, selector);
                 } else {
                     selector = target;
                 }
@@ -453,6 +466,45 @@ final class ReplayCalls {
         private static String shorten(String text) {
             return text.length() > 40 ? text.substring(0, 40) + "…" : text;
         }
+    }
+
+    /**
+     * The kuruş box, relative to the lira box's selector: the first visible
+     * input after it — the next box in the form, as Tab would reach it.
+     *
+     * <p>Measured 13.11.2026 (cache from tape 705c39be): the lira box e722
+     * and the kuruş box e724 came back from MCP with the SAME line,
+     * {@code getByRole('textbox', { name: 'Toplam Tutar' })} — the kuruş box
+     * has no name of its own — so the cache stored one selector for both,
+     * and "Hızlı çalıştır" typed "50" into the lira box: {@code 100.050},
+     * {@code 00}.
+     */
+    static final String KURUS = " >> xpath=following::input[not(@type=\"hidden\")] >> visible=true >> nth=0";
+
+    /**
+     * Whether {@code second} is the kuruş box of {@code first} on the page
+     * the walk was looking at — read off the tape's latest whole page before
+     * call {@code at}, with the same rule do_steps uses (StepRunner.kurusBox).
+     * Only then is a shared selector rewritten; any other two elements that
+     * share one ("Seçiniz" on two dropdowns, a box re-rendered under a new
+     * reference) are left as they are.
+     */
+    static boolean isKurusOf(List<Call> calls, int at, String first, String second) {
+        for (int i = at - 1; i >= 0; i--) {
+            Call call = calls.get(i);
+            if (!"browser_snapshot".equals(call.tool()) || !"OK".equals(call.outcome()) || call.result() == null) {
+                continue;
+            }
+            AriaSnapshot page = AriaSnapshot.of(call.result());
+            AriaSnapshot.Node lira = page.nodes().stream().filter(n -> n.ref().equals(first)).findFirst()
+                    .orElse(null);
+            if (lira == null) {
+                continue;
+            }
+            AriaSnapshot.Node kurus = StepRunner.kurusBox(page, lira);
+            return kurus != null && kurus.ref().equals(second);
+        }
+        return false;
     }
 
     /* ------------------------------------------------------------------ */
